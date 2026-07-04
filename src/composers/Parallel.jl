@@ -1,15 +1,6 @@
-# ============================================================================
-# Parallel: a generic branch composer over plain distributions
-# ============================================================================
-#
-# `Parallel(d1, d2, ...)` composes any `UnivariateDistribution`s into a set of
-# independent branches sharing one origin. A realisation is the vector of branch
-# values `[v1, v2, ...]`, one per branch. The branches are plain, independent
-# distributions and may themselves be composers, so trees nest recursively; that
-# nesting is the tree. This layer adds no censored-internal behaviour: in
-# particular it does not couple the branches through a shared latent origin (that
-# shared-origin specialisation is layered elsewhere). Here the joint is simply
-# the product of the branch densities.
+# `Parallel` composes plain distributions into independent branches off one
+# origin (see its docstring below); branches may themselves be composers, so
+# trees nest recursively.
 
 @doc raw"
 
@@ -17,8 +8,9 @@ Independent branches composed from any univariate distributions.
 
 `Parallel` places ``n`` branch distributions ``D_1, \dots, D_n`` off one origin,
 with the realisation the vector of branch values ``[v_1, \dots, v_n]``. A branch
-may itself be a [`Sequential`](@ref), [`Parallel`](@ref) or [`Resolve`](@ref)
-composer, so trees nest recursively and the nesting is the tree.
+may itself be a [`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref),
+[`Compete`](@ref) or [`Choose`](@ref) composer, so trees nest recursively and
+the nesting is the tree.
 
 `logpdf` is the sum of the per-branch log-densities,
 
@@ -77,7 +69,8 @@ Compose univariate distributions into [`Parallel`](@ref) branches.
 
 Each argument is a branch distribution; the realisation is the vector of branch
 values. Pass branches as positional arguments or a single vector/tuple. Any
-[`Sequential`](@ref) or [`Resolve`](@ref) child nests.
+[`Sequential`](@ref), [`Resolve`](@ref), [`Compete`](@ref) or [`Choose`](@ref)
+child nests.
 
 # Examples
 ```@example
@@ -101,8 +94,8 @@ Lowercase verb mirroring [`sequential`](@ref) / [`resolve`](@ref): the public
 constructor for a [`Parallel`](@ref) branch set. Pass branch distributions
 positionally (default names `:branch_1, :branch_2, ...`) or `name => dist` pairs
 to name the branches; a branch may itself be a [`Sequential`](@ref),
-[`Resolve`](@ref) or nested set. Prefer this verb over the bare struct
-constructor.
+[`Resolve`](@ref), [`Compete`](@ref), [`Choose`](@ref) or nested set. Prefer
+this verb over the bare struct constructor.
 
 # Arguments
 - `branches`: the branch distributions, either as positional distributions or as
@@ -180,14 +173,11 @@ pdf(d::Parallel, x::AbstractVector) = exp(logpdf(d, x))
 
 @doc "
 
-Sample a branch realisation. For plain branches this is one value per branch
-(nested children contributing their sub-vectors). For flat censored branches
-sharing one latent origin it is the full event-time vector
-`[origin, observed_1, ...]`. For a NESTED tree (a branch is itself a composer, or
-a [`Resolve`](@ref) branch) it is a NAMED event record keyed by
-`_flat_event_names`: one shared origin draw, each branch hung off it and
-each Resolve outcome sampled (the unsampled outcomes `missing`). See the
-censored-specialisation [`rand`](@ref) method.
+Sample a branch realisation as a `NamedTuple` keyed by the per-branch value
+names: one entry per leaf branch, a nested
+[`Sequential`](@ref)/[`Parallel`](@ref) branch contributing its own sub-values
+under dotted-joined names, and a [`Resolve`](@ref) branch contributing its own
+collapsed scalar.
 
 See also: [`Parallel`](@ref)
 "
