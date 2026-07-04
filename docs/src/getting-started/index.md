@@ -30,8 +30,9 @@ using ComposedDistributions
 ## What ComposedDistributions does
 
 ComposedDistributions composes per-event delay distributions into one object that describes a whole record.
+A composed object is a multi-state event process: named events linked by delays, which the composers wire into a tree.
 The same object scores observed records with `logpdf` and simulates new ones with `rand`, so a model is built once and used in both directions.
-It composes any [Distributions.jl](https://juliastats.org/Distributions.jl) `UnivariateDistribution`, with no censoring: this is the generic composition layer.
+It composes any [Distributions.jl](https://juliastats.org/Distributions.jl) `UnivariateDistribution`, with no censoring, so it is the generic composition layer.
 
 The building blocks are five composers.
 [`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.

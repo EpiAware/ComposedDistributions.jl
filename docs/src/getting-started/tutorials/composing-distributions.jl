@@ -45,12 +45,12 @@
 # ├─ convolve_distributions   the sum X + Y (Convolved)
 # └─ difference               the dual X - Y (Difference)
 #
-# Introspection (read or edit an assembled object)
-# ├─ winning_probabilities   the one_of per-cause winning probabilities
-# ├─ occurrence_probability  the any-event probability
-# ├─ params_table            the flat free-parameter inventory
-# ├─ event / event_names     fetch a child / the per-record key names
-# └─ update / prune / splice  edit values or topology
+# Reading and editing (inspect or edit an assembled object)
+# ├─ mean / var                     the composed marginal moments
+# ├─ observed_distribution          collapse a chain to its convolved total
+# ├─ params_table                   the flat free-parameter inventory
+# ├─ event / event_names            fetch a child / the per-record key names
+# └─ update / prune / splice / tie  edit values, topology or ties
 # ```
 
 # ## Packages used
@@ -168,12 +168,10 @@ event_names(resolution)
 
 racing = compete(:death => Gamma(1.5, 1.0), :discharge => Gamma(2.0, 1.5));
 
-# [`winning_probabilities`](@ref) reads the derived per-cause split, and
-# [`occurrence_probability`](@ref) sums it (one when every cause eventually
-# fires; below one when a [`NoEvent`](@ref) branch carries leftover mass for a
-# case that need not resolve at all).
+# The marginal any-event time is the `min` of the racing delays, so its survival
+# is the product of the per-cause survivals.
 
-winning_probabilities(racing)
+ccdf(racing, 3.0) ≈ ccdf(Gamma(1.5, 1.0), 3.0) * ccdf(Gamma(2.0, 1.5), 3.0)
 
 # Reach for `compete` when the outcome split is driven by competing risks on a
 # shared clock, so the probabilities follow from the delays rather than being
@@ -253,6 +251,26 @@ total = convolve_distributions(Gamma(2.0, 1.0), LogNormal(0.5, 0.4));
 
 mean(total) ≈ mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4))
 
+# ## Reading the composed marginal
+#
+# A composed chain has a marginal delay from its origin to its final event.
+# The moments are additive over the steps, so `mean` and `var` of a
+# [`Sequential`](@ref) sum the per-step moments.
+
+chain_moments = sequential(:onset_admit => Gamma(2.0, 1.0),
+    :admit_death => LogNormal(0.5, 0.4));
+
+mean(chain_moments), var(chain_moments)
+
+# [`observed_distribution`](@ref) collapses that chain to the single convolved
+# distribution of its origin-to-final gap, integrating the intermediate event
+# out.
+# Its mean matches the chain's overall mean.
+
+collapsed = observed_distribution(chain_moments);
+
+mean(collapsed) ≈ mean(chain_moments)
+
 # ## Parameters and priors
 #
 # A composed distribution carries a flat inventory of its free parameters.
@@ -303,8 +321,9 @@ replaced = update(template, :admit_death => Gamma(3.0, 1.5));
 event(replaced, :admit_death)
 
 # Two edits that change the tree shape are kept separate.
-# [`prune`](@ref) drops a branch (renormalising a [`Resolve`](@ref) arm), and
-# [`splice`](@ref) inserts a step around a node.
+# [`prune`](@ref) drops a branch from a node (renormalising a [`Resolve`](@ref)
+# arm's remaining probabilities), and [`splice`](@ref) inserts a step around a
+# node.
 
 three_way = resolve(:death => (Gamma(1.5, 1.0), 0.3),
     :discharge => (Gamma(2.0, 1.5), 0.4),
@@ -314,13 +333,9 @@ resolution_tree = compose((resolution = three_way, onset = Gamma(1.0, 1.0)));
 
 pruned = prune(resolution_tree, :resolution, :transfer);
 
-# Before pruning the three arms carry their original probabilities.
+# The `:transfer` outcome is gone from the pruned node's event layout.
 
-winning_probabilities(three_way)
-
-# After pruning, the death and discharge arms scale up to sum to one.
-
-winning_probabilities(event(pruned, :resolution))
+event_names(event(pruned, :resolution))
 
 # `splice` wraps a node in a chain, here adding a reporting delay after the
 # death branch.
@@ -329,6 +344,16 @@ spliced = splice(template, :admit_death;
     after = :death_report => Gamma(1.0, 2.0));
 
 event_names(event(spliced, :admit_death))
+
+# [`tie`](@ref) links leaves at several paths into one free parameter group, so
+# [`params_table`](@ref) inventories the tied occurrences once under the shared
+# tag rather than as separate parameters.
+
+shared_rate = compose((a = Gamma(2.0, 1.0), b = Gamma(2.0, 1.0)));
+
+tied = tie(shared_rate, :a, :b; name = :rate);
+
+unique(params_table(tied).edge)
 
 # ## Syntax reference
 #
@@ -355,6 +380,7 @@ event_names(event(spliced, :admit_death))
 # | `event(d, path...)` | fetch a child or descend a name path | read |
 # | `event_tree(d)` | the nested tree of event names | read |
 # | `event_names(d)` | the per-record key names | read |
+# | `observed_distribution(d)` | collapse a chain to its convolved total | read |
 # | `params_table(d)` | the flat free-parameter inventory | read |
 #
 # The address `path` in `event` / `update` / `prune` / `splice` / `tie` is the
@@ -378,11 +404,13 @@ event_names(event(spliced, :admit_death))
 #   `rand` generates one.
 # - [`convolve_distributions`](@ref) and [`difference`](@ref) combine two whole
 #   delays algebraically.
+# - `mean` and `var` read the composed marginal moments, and
+#   [`observed_distribution`](@ref) collapses a chain to its convolved total.
 # - [`params_table`](@ref) and [`build_priors`](@ref) attach parameters and
 #   support-derived priors to the same object.
 # - [`update`](@ref) edits the tree: `path => new_node` replaces nodes keeping
-#   the shape, while [`prune`](@ref) and [`splice`](@ref) are the two topology
-#   edits.
+#   the shape, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,
+#   and [`tie`](@ref) links leaves into one parameter group.
 #
 # ## Where next
 #
