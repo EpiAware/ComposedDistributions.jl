@@ -346,6 +346,16 @@ logpdf(resolved, x)
 # Arguments
 - `d`: the composed distribution, node, or leaf to check.
 
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = varying(t -> Gamma(2.0, 1.0 + 0.1t)),
+    admit = LogNormal(0.5, 0.4)))
+has_varying(tree)                                    # a varying leaf remains
+has_varying(instantiate(tree, Context(time = 5.0)))  # resolved: false
+```
+
 # See also
 - [`instantiate`](@ref): resolve every varying leaf against a context.
 - [`Varying`](@ref): the context-indexed leaf.
