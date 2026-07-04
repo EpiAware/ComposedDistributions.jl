@@ -74,6 +74,40 @@ function _covariate(ctx::Context, name::Symbol)
     return ctx.covariates[name]
 end
 
+# Whether a context carries a named covariate. The `Choose`-on-the-seam path uses
+# this to decide select-vs-resolve-all; a custom `AbstractContext` extends it.
+_has_covariate(ctx::Context, name::Symbol) = haskey(ctx.covariates, name)
+
+@doc "
+
+Add or override covariates on a [`Context`](@ref), returning a new context.
+
+`with_covariates(ctx; kwargs...)` is how the sampling layer of the *uncertain
+distributions* work threads its LATENT index into the same seam an OBSERVED
+covariate uses: starting from a per-record observed context (calendar `time`,
+`region`), it adds the parameter values it has sampled
+(`with_covariates(ctx; inc_shape = θ)`), and a [`Varying`](@ref) leaf keyed on
+that name resolves against them exactly as a time-varying leaf resolves against
+`time`. Observed and latent indices are the same covariate channel; the only
+difference is who fills the slot — the data, or the sampler. Later keys win over
+earlier ones.
+
+# Examples
+```@example
+using ComposedDistributions
+
+base = Context(time = 4.0)                       # observed covariates
+drawn = with_covariates(base; inc_shape = 2.3)   # sampler adds a latent param
+(drawn.covariates.time, drawn.covariates.inc_shape)
+```
+
+# See also
+- [`Context`](@ref), [`instantiate`](@ref), [`Varying`](@ref).
+"
+function with_covariates(ctx::Context; covariates...)
+    return Context(merge(ctx.covariates, NamedTuple(covariates)))
+end
+
 # --- the Varying leaf -------------------------------------------------------
 
 @doc "
@@ -243,7 +277,17 @@ end
 function instantiate(d::Parallel, ctx::AbstractContext)
     return Parallel(map(c -> instantiate(c, ctx), d.components), d.names)
 end
+# A `Choose` selects an alternative by an OBSERVED data field (its `selector`).
+# That is the categorical instance of covariate indexing, so it joins the same
+# seam: if the context carries the selector covariate, `instantiate` SELECTS that
+# alternative and resolves it (collapsing the disjunction to the chosen branch),
+# unifying `Choose`'s `kind`-keyword dispatch with the continuous covariate case.
+# Without the selector in the context there is no selection yet, so every
+# alternative is resolved and the `Choose` is kept (the forward-simulation form).
 function instantiate(d::Choose, ctx::AbstractContext)
+    if _has_covariate(ctx, d.selector)
+        return instantiate(_pick(d, _covariate(ctx, d.selector)), ctx)
+    end
     return Choose(d.names, map(c -> instantiate(c, ctx), d.alternatives),
         d.selector)
 end

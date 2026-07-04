@@ -167,3 +167,72 @@ end
     @test tbl.value == ref.value
     @test tbl.support == ref.support
 end
+
+@testitem "instantiate: node-level variation (a time-varying Resolve CFR)" begin
+    using Distributions
+
+    # A whole Resolve node varies with the context: the death-branch probability
+    # (the CFR) rises with calendar time. A univariate node (Resolve) IS a
+    # UnivariateDistribution, so it wraps in a Varying and rides the same seam —
+    # node-level variation falls out of the leaf seam for univariate nodes.
+    cfr(t) = 0.2 + 0.02 * t
+    node = varying(t -> resolve(:death => (Gamma(1.5, 1.0), cfr(t)),
+        :disch => Gamma(2.0, 1.5)))
+
+    # The reference is the node at t = 0 (CFR 0.2, residual 0.8).
+    @test node.reference == resolve(:death => (Gamma(1.5, 1.0), 0.2),
+        :disch => Gamma(2.0, 1.5))
+
+    # Resolving at t = 10 gives the concrete Resolve with CFR 0.4.
+    @test instantiate(node, Context(time = 10.0)) ==
+          resolve(:death => (Gamma(1.5, 1.0), 0.4), :disch => Gamma(2.0, 1.5))
+
+    # It nests as a univariate child of a chain and resolves in place.
+    chain = Sequential(Gamma(2.0, 1.0), node)
+    @test instantiate(chain, Context(time = 10.0)) ==
+          Sequential(Gamma(2.0, 1.0),
+        resolve(:death => (Gamma(1.5, 1.0), 0.4), :disch => Gamma(2.0, 1.5)))
+end
+
+@testitem "instantiate: a latent (sampled) parameter is just a covariate" begin
+    using Distributions
+
+    # An uncertain leaf: its shape is a parameter the sampler draws, named as a
+    # covariate. The same Varying/Context seam resolves it — the index is LATENT
+    # (filled by the sampler) rather than OBSERVED (filled by the data). This is
+    # the integration point for the uncertain-distributions work.
+    leaf = varying(θ -> Gamma(θ, 1.0); covariate = :inc_shape,
+        reference = Gamma(2.0, 1.0))
+    @test instantiate(leaf, Context(inc_shape = 3.0)) == Gamma(3.0, 1.0)
+
+    # `with_covariates` threads a sampled parameter onto an observed context, so
+    # observed covariates (time) and latent parameters (inc_shape) share one bag.
+    obs = Context(time = 4.0)
+    full = with_covariates(obs; inc_shape = 2.5)
+    @test full.covariates.time == 4.0
+    @test full.covariates.inc_shape == 2.5
+    @test instantiate(leaf, full) == Gamma(2.5, 1.0)
+
+    # Later keys win over earlier ones.
+    @test with_covariates(Context(a = 1); a = 9).covariates.a == 9
+end
+
+@testitem "instantiate: Choose selects on the seam when the selector is present" begin
+    using Distributions
+
+    ch = choose(:index => varying(t -> Gamma(2.0, 1.0 + 0.1 * t)),
+        :sourced => Gamma(4.0, 1.5); selector = :kind)
+
+    # No selector in the context: every alternative is resolved, the Choose kept
+    # (the forward-simulation form, where no data has named the branch).
+    resolved_all = instantiate(ch, Context(time = 10.0))
+    @test resolved_all isa ComposedDistributions.Choose
+    @test logpdf(resolved_all, 3.0; kind = :index) == logpdf(Gamma(2.0, 2.0), 3.0)
+
+    # Selector present: collapse to the chosen alternative, resolved at the
+    # context — the categorical selection unified with covariate indexing.
+    @test instantiate(ch, Context(kind = :index, time = 10.0)) == Gamma(2.0, 2.0)
+
+    # A stationary alternative selects with no other covariate needed.
+    @test instantiate(ch, Context(kind = :sourced)) == Gamma(4.0, 1.5)
+end

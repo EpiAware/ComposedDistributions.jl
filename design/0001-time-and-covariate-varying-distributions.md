@@ -335,11 +335,30 @@ larger questions stay open:
   structure and the reference's parameters as the free parameters, exactly as
   censoring bounds and modifiers already do.
 
-Deliberately **not** in this PR, and tracked by the open questions below: node-
-level variation (a time-varying `Resolve` CFR), full inventory of a varying
-map's own coefficients in `params_table`, folding `Choose` onto the seam, the
-renewal/recurrent operator itself, and the shared context contract with the
-uncertain-distributions work (which should be agreed before that lands).
+Also in this PR, extending the seam past bare leaves:
+
+- **Node-level variation** — a whole univariate node varies with the context. A
+  time-varying `Resolve` CFR is `varying(t -> resolve(:death => (d, cfr(t)), …))`:
+  because a `Resolve` is itself a `UnivariateDistribution`, node-level variation
+  falls out of the leaf seam with no new type, and `instantiate` resolves the node
+  in place inside a chain.
+- **`Choose` on the seam** — `Choose`'s `selector` is the categorical instance of
+  covariate indexing, so it now joins `instantiate`: if the context carries the
+  selector, `instantiate` SELECTS that alternative and resolves it (collapsing the
+  disjunction); without it, every alternative is resolved and the `Choose` kept.
+  One mechanism now spans categorical selection and continuous covariate indexing.
+- **The uncertain-work contract** — `Context` is the shared covariate bag and
+  `with_covariates(ctx; …)` threads the sampler's LATENT parameters into it, so an
+  uncertain leaf is just a `Varying` leaf keyed on a sampled-parameter name.
+  Observed and latent indices are one covariate channel; only who fills the slot
+  differs. `AbstractContext` is the type the uncertain work extends.
+
+Deliberately **not** in this PR, and tracked by the open questions below: full
+inventory of a varying map's own coefficients in `params_table` (a varying node
+is still opaque to introspection behind its reference), node-level variation for
+MULTIVARIATE nodes (a `Parallel`'s structure, as opposed to its leaves, which are
+already resolved), the renewal/recurrent operator itself, and ratifying the
+`AbstractContext` contract jointly with the uncertain-distributions author.
 
 ## Recommendation
 
@@ -364,21 +383,29 @@ uncertain-distributions work (which should be agreed before that lands).
 
 ## Open questions for review
 
-- **Context shape.** Is a single `AbstractContext` right, or a keyword bundle?
-  What fields are mandatory (time?) vs. optional (strata, sampled params)? This
-  is the interface to nail with the uncertain-distributions author.
-- **`Choose` unification.** Should `Choose` be re-expressed on top of the
-  covariate seam, kept as a specialised fast path, or left independent with only
-  shared naming/threading? It is the one existing node that already does
-  observed-covariate dispatch.
-- **How far does non-stationarity reach up the tree?** Leaves are the clear case.
-  Do node-level parameters vary too — a `Resolve`'s branch probabilities as a
-  function of time (a time-varying CFR)? The seam should have a story for
-  node-level `instantiate`, not only leaf-level.
-- **Core convenience vs. companion-only.** Is a bare closure `t ↦ Distribution`
-  lightweight enough to live in core behind the seam, with only heavier variants
-  (splines, GPs, Catalyst-coupled) in companions?
-- **Interaction with `params_table` / priors (#4).** A time-varying leaf's free
-  parameters are the coefficients of its `f` (e.g. spline weights), not the
-  parameters of any one realised `Distribution`. `free_leaf` / `params_table`
-  need a defined answer for what a varying leaf's inventory rows are.
+- **Context shape (partly settled).** This PR uses `Context`, an open
+  `NamedTuple` bag under `AbstractContext`, with no mandatory field —
+  `with_covariates` merges observed covariates and sampled parameters into one
+  channel. Still to ratify jointly with the uncertain-distributions author:
+  whether sampled parameters want their own reserved namespace inside the bag
+  (e.g. `ctx.params.…`) rather than sitting flat alongside `time`/`region`, and
+  whether `AbstractContext` needs a formal accessor protocol (`_covariate` /
+  `_has_covariate`) so a non-`Context` subtype can plug in.
+- **`Choose` unification (done here).** `Choose` now rides the seam: with the
+  selector in the context, `instantiate` selects and resolves that alternative;
+  without it, all alternatives resolve and the `Choose` is kept. Open: whether the
+  hot-path `logpdf(::Choose, x; kind)` should also be re-expressed on the context
+  channel, or stay the specialised fast path it is today.
+- **Node-level variation (done for univariate nodes).** A time-varying `Resolve`
+  CFR works as `varying(t -> resolve(…))` because a `Resolve` is univariate; the
+  node resolves in place inside a chain. Open: a MULTIVARIATE node whose own
+  structure (not just its leaves) varies — a `Parallel` cannot wrap in the
+  univariate `Varying`, though its leaves already resolve via descent.
+- **Core convenience vs. companion-only.** The bare closure `covariate ↦ Distribution`
+  (`Varying`) lives in core behind the seam; heavier variants (splines, GPs,
+  Catalyst-coupled) still belong in companions.
+- **Interaction with `params_table` / priors (#4).** Still open. A varying leaf's
+  free parameters are the coefficients of its `f` (e.g. spline weights), not the
+  parameters of any one realised `Distribution`. This PR treats the varying map as
+  fixed structure and inventories the reference's parameters; a fuller answer
+  (introspecting `f`'s own coefficients) is future work.
