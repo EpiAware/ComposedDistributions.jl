@@ -3,6 +3,7 @@
 # standard). Add doc-only deps (e.g. plotting, DocumenterCitations) here as the
 # docs grow. The package itself is pinned by path via `[sources]`.
 [deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 DocumenterVitepress = "4710194d-e776-4893-9690-8d956a29c365"
@@ -17,6 +18,7 @@ ComposedDistributions = {path = ".."}
 EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}
 
 [compat]
+Distributions = "0.25"
 Documenter = "1"
 DocumenterCitations = "1"
 DocumenterVitepress = "0.3"
