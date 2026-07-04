@@ -1,0 +1,353 @@
+# ============================================================================
+# Uncertain: a leaf whose parameters are themselves distributions
+# ============================================================================
+#
+# An `Uncertain` leaf pairs a concrete `template` with `specs`, priors attached
+# to the template's FREE parameters. The user-facing story (the hierarchical
+# model, the marginal `rand`, the collapse-by-`update`, the truncation
+# push-inside) lives in the docstrings below. Maintenance notes:
+#
+#   - The specs are priors attached to the template's free parameters, so the
+#     leaf protocol treats the uncertainty like a wrapper: `free_leaf` peels to
+#     the template's free delay and `rewrap_leaf`/`_update_leaf` rebuild the
+#     CONCRETE leaf WITHOUT the specs. Pinning values with `update` therefore
+#     collapses the uncertainty by design.
+#   - `_uncertain_specs` is the routing hook (default `nothing`,
+#     introspection.jl); wrapper types forward it exactly like `_shared_tag`
+#     (`Shared` here, `Truncated` in introspection.jl, the modifiers in the
+#     ModifiedDistributions extension).
+#   - The ONE special behaviour is `rand`, which draws the marginal by drawing
+#     each spec and rebuilding the concrete leaf through `_uncertain_leaf`. The
+#     rest of the univariate surface delegates to the template.
+
+@doc raw"
+
+A leaf distribution whose parameters are themselves distributions.
+
+`Uncertain` pairs a concrete `template` leaf with `specs`, a `NamedTuple`
+mapping parameter names (as in [`params_table`](@ref)'s `param` column) to
+distributions. A spec entry may itself be an `Uncertain`, so parameter
+uncertainty nests. Parameters without a spec stay fixed at the template's
+values, and the template's fixed wrapper structure (truncation, censoring) is
+carried through every draw via [`free_leaf`](@ref)/[`rewrap_leaf`](@ref).
+
+The generative model is hierarchical:
+
+```math
+\theta_j \sim \text{spec}_j, \qquad x \sim D(\theta),
+```
+
+with fixed parameters taken from the template. `rand` draws the marginal
+(parameters drawn internally). The rest of the univariate surface (scalar
+`logpdf`/`pdf`/`cdf`/`quantile`, the moments) delegates to the template, so it
+reports the leaf AT the template's central parameter values, NOT the marginal.
+Collapse an uncertain leaf to a concrete distribution by pinning its parameters
+with [`update`](@ref)`(tree, params)`.
+
+# Fields
+- `template`: the concrete (possibly wrapped) leaf supplying the family, the
+  fixed parameter values, and the fixed wrapper structure.
+- `specs`: `NamedTuple` of the uncertain parameters, each value a distribution
+  (possibly itself an `Uncertain`).
+
+# See also
+- [`uncertain`](@ref): the public constructor.
+- [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
+"
+struct Uncertain{L <: UnivariateDistribution, S <: NamedTuple} <:
+       UnivariateDistribution{ValueSupport}
+    "The concrete (possibly wrapped) template leaf: family, fixed parameter
+    values, and fixed wrapper structure (truncation / censoring)."
+    template::L
+    "`NamedTuple` of the uncertain parameters: each key a parameter name of the
+    template's free delay, each value a distribution (possibly `Uncertain`)."
+    specs::S
+
+    function Uncertain(template::L, specs::S) where {
+            L <: UnivariateDistribution, S <: NamedTuple}
+        template isa Uncertain && throw(ArgumentError(
+            "the template of an Uncertain must be a concrete distribution; " *
+            "nest uncertainty in the parameter specs instead"))
+        isempty(specs) && throw(ArgumentError(
+            "Uncertain needs at least one distribution-valued parameter; " *
+            "use the plain distribution for a fully fixed leaf"))
+        pnames = _leaf_param_names(template)
+        for (k, v) in pairs(specs)
+            k in pnames || throw(ArgumentError(
+                "unknown uncertain parameter $(repr(k)); the template " *
+                "$(template) has parameters $(collect(pnames))"))
+            v isa UnivariateDistribution || throw(ArgumentError(
+                "the spec for $(repr(k)) must be a UnivariateDistribution " *
+                "(a distribution over the parameter); got $(typeof(v))"))
+        end
+        return new{L, S}(template, specs)
+    end
+end
+
+@doc raw"
+
+Attach parameter uncertainty to a distribution: parameters that are themselves
+distributions, nestable to any depth.
+
+`uncertain` has three forms:
+
+- `uncertain(template; kwargs...)` wraps a concrete `template` leaf so the named
+  parameters are drawn from the given distributions rather than fixed. Each
+  keyword is a parameter name of the template's free delay (as in
+  [`params_table`](@ref)'s `param` column); a distribution value makes that
+  parameter uncertain, a `Real` value re-pins it to a new fixed value.
+- `uncertain(Family, args...)` (a type, e.g. `Gamma`) takes one positional
+  argument per parameter, in the family's constructor order: a
+  `UnivariateDistribution` makes that parameter uncertain, a `Real` fixes it.
+  The template is the family's default instance with the `Real` slots pinned;
+  the uncertain slots are driven by their specs.
+- `uncertain(Family; kwargs...)` is the keyword form on the family's
+  default-constructed template; every parameter must then be given explicitly.
+
+A spec may itself be an [`uncertain`](@ref) distribution, so hyper-uncertainty
+nests. The template may be a wrapped leaf (`truncated(...)`, a censoring
+wrapper): the wrapper is fixed structure re-applied to every draw. Apply such
+wrappers INSIDE the template. `truncated` is the exception: applied outside it
+pushes itself into the template automatically.
+
+The result is a `Distributions.UnivariateDistribution` and composes as a leaf
+everywhere ([`sequential`](@ref), [`parallel`](@ref), [`resolve`](@ref),
+[`compete`](@ref), [`choose`](@ref), [`shared`](@ref)): `rand` draws the
+marginal, and [`update`](@ref)`(tree, params)` collapses an uncertain leaf to
+its concrete template. In [`params_table`](@ref) an uncertain parameter's spec
+rides the row's `prior` column, so [`build_priors`](@ref) picks it up without an
+explicit override.
+
+# Arguments
+- `template`: the concrete (possibly wrapped) leaf distribution, or a
+  distribution type (e.g. `Gamma`).
+- `args...`: for the positional family form, one value per parameter (a
+  distribution for an uncertain parameter, a `Real` for a fixed one).
+
+# Keyword Arguments
+- `kwargs...`: parameter name `=` spec pairs. A distribution spec makes the
+  parameter uncertain; a `Real` re-pins the template's fixed value.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+# A literature-reported Gamma delay with an uncertain shape.
+u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+rand(u)
+
+# The positional family form: shape uncertain, scale fixed at 1.0.
+uncertain(Gamma, LogNormal(log(2.0), 0.2), 1.0)
+
+# Nested: the shape's prior location is itself uncertain.
+uncertain(Gamma(2.0, 1.0);
+    shape = uncertain(LogNormal(log(2.0), 0.2); mu = Normal(log(2.0), 0.1)))
+```
+
+# See also
+- [`Uncertain`](@ref): the wrapper type.
+- [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
+"
+function uncertain(template::UnivariateDistribution; kwargs...)
+    nt = values(kwargs)
+    pnames = _leaf_param_names(template)
+    for (k, v) in pairs(nt)
+        k in pnames || throw(ArgumentError(
+            "unknown parameter $(repr(k)) for $(template); expected one of " *
+            "$(collect(pnames))"))
+        v isa Union{Real, UnivariateDistribution} || throw(ArgumentError(
+            "the value for $(repr(k)) must be a Real (a fixed value) or a " *
+            "UnivariateDistribution (an uncertain parameter); got $(typeof(v))"))
+    end
+    spec_keys = Tuple(k for (k, v) in pairs(nt) if v isa UnivariateDistribution)
+    specs = NamedTuple{spec_keys}(Tuple(nt[k] for k in spec_keys))
+    fixed_keys = Tuple(k for (k, v) in pairs(nt) if v isa Real)
+    pinned = if isempty(fixed_keys)
+        template
+    else
+        tvals = params(free_leaf(template))
+        newvals = ntuple(length(pnames)) do i
+            pnames[i] in fixed_keys ? nt[pnames[i]] : tvals[i]
+        end
+        _update_leaf(template, newvals)
+    end
+    return Uncertain(pinned, specs)
+end
+
+# The positional family form: one argument per parameter, in the family's
+# constructor order. A `UnivariateDistribution` argument makes that positional
+# parameter uncertain, a `Real` fixes it. The family's default instance supplies
+# a valid concrete placeholder for the uncertain slots (the specs then drive the
+# draws), and the `Real` slots re-pin it, so this reduces to the keyword form.
+function uncertain(::Type{D}, arg1::Union{Real, UnivariateDistribution},
+        args::Union{Real, UnivariateDistribution}...) where {
+        D <: UnivariateDistribution}
+    probe = try
+        D()
+    catch
+        throw(ArgumentError(
+            "$(D) has no default template; pass a concrete template " *
+            "instead, e.g. uncertain($(nameof(D))(...); ...)"))
+    end
+    positional = (arg1, args...)
+    pnames = _leaf_param_names(probe)
+    length(positional) == length(pnames) || throw(ArgumentError(
+        "uncertain($(nameof(D)), ...) needs one positional argument per " *
+        "parameter; $(D) has parameters $(collect(pnames)) but got " *
+        "$(length(positional)) argument(s)"))
+    kwargs = NamedTuple{pnames}(positional)
+    return uncertain(probe; kwargs...)
+end
+
+function uncertain(::Type{D}; kwargs...) where {D <: UnivariateDistribution}
+    probe = try
+        D()
+    catch
+        throw(ArgumentError(
+            "$(D) has no default template; pass a concrete template " *
+            "instead, e.g. uncertain($(nameof(D))(...); ...)"))
+    end
+    nt = values(kwargs)
+    pnames = _leaf_param_names(probe)
+    for n in pnames
+        haskey(nt, n) || throw(ArgumentError(
+            "uncertain($(nameof(D)); ...) needs every parameter given " *
+            "explicitly; missing $(repr(n)) (expected $(collect(pnames)))"))
+    end
+    return uncertain(probe; kwargs...)
+end
+
+# --- the leaf-protocol hooks -------------------------------------------------
+#
+# The specs are priors ATTACHED to the template's free parameters, so the
+# prior/params interface sees through an `Uncertain` exactly like a fixed
+# wrapper: `free_leaf` peels to the template's free delay (its parameters ARE
+# the leaf's free parameters), and `rewrap_leaf` re-applies the template's
+# fixed wrapper structure around a rebuilt delay WITHOUT the uncertainty —
+# pinning definite values (an `update` from fitted draws) collapses the
+# uncertain leaf to its concrete distribution.
+
+free_leaf(d::Uncertain) = free_leaf(d.template)
+rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
+
+# A shared tag survives an uncertain leaf (a `shared(:inc, uncertain(...))`
+# is tagged outside, but forward for robustness when nested the other way).
+_shared_tag(d::Uncertain) = _shared_tag(d.template)
+
+# The uncertain-spec protocol hook (default `nothing` in introspection.jl):
+# an `Uncertain` reports its own specs, and the known wrapper leaves forward so
+# a wrapped uncertain leaf still exposes them to `params_table`'s prior column.
+# (Extension wrapper types add their own forwarding methods.)
+_uncertain_specs(d::Uncertain) = d.specs
+_uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
+
+# --- the univariate surface: delegate to the template ------------------------
+#
+# Every ordinary query is answered at the template's (central) parameter values,
+# so an `Uncertain` behaves like a plain distribution there. The scalar
+# `logpdf`/`cdf`/... and the moments are therefore NOT the marginal (which
+# integrates over the parameter draws); `rand` is the one method that draws the
+# marginal, and `update` collapses to a concrete leaf.
+
+# The uncertainty does not change the draw's element type.
+Base.eltype(::Type{<:Uncertain{L}}) where {L} = eltype(L)
+
+params(d::Uncertain) = params(d.template)
+minimum(d::Uncertain) = minimum(d.template)
+maximum(d::Uncertain) = maximum(d.template)
+insupport(d::Uncertain, x::Real) = insupport(d.template, x)
+
+logpdf(d::Uncertain, x::Real) = logpdf(d.template, x)
+pdf(d::Uncertain, x::Real) = pdf(d.template, x)
+cdf(d::Uncertain, x::Real) = cdf(d.template, x)
+logcdf(d::Uncertain, x::Real) = logcdf(d.template, x)
+ccdf(d::Uncertain, x::Real) = ccdf(d.template, x)
+logccdf(d::Uncertain, x::Real) = logccdf(d.template, x)
+quantile(d::Uncertain, q::Real) = quantile(d.template, q)
+
+mean(d::Uncertain) = mean(d.template)
+var(d::Uncertain) = var(d.template)
+std(d::Uncertain) = std(d.template)
+
+sampler(d::Uncertain) = d
+
+@doc "
+
+Draw the marginal of an uncertain distribution: draw every uncertain parameter
+from its spec (recursively, so a nested `Uncertain` spec draws via its own
+`rand`), rebuild the concrete leaf (fixed wrapper structure re-applied), then
+draw the value. Each call draws a fresh parameter set, so repeated draws are iid
+from the marginal.
+
+See also: [`Uncertain`](@ref), [`update`](@ref)
+"
+function Base.rand(rng::AbstractRNG, d::Uncertain)
+    return rand(rng, _uncertain_leaf(d.template,
+        map(spec -> rand(rng, spec), d.specs)))
+end
+
+# Rebuild the concrete leaf implied by drawn scalar parameter values: the
+# template's values overridden at each spec'd name by the draw, rebuilt through
+# the `free_leaf`/`rewrap_leaf` protocol so the fixed wrapper structure carries
+# through. Reused by `rand` (and available for a hand-written two-stage draw).
+function _uncertain_leaf(template, drawn::NamedTuple)
+    pnames = _leaf_param_names(template)
+    tvals = params(free_leaf(template))
+    newvals = ntuple(length(pnames)) do i
+        haskey(drawn, pnames[i]) ? drawn[pnames[i]] : tvals[i]
+    end
+    return _update_leaf(template, newvals)
+end
+
+@doc "
+
+Print an [`Uncertain`](@ref) leaf as its constructor form: the template and
+the `name = spec` pairs.
+
+See also: [`uncertain`](@ref)
+"
+function Base.show(io::IO, d::Uncertain)
+    specs = join(("$(k) = $(v)" for (k, v) in pairs(d.specs)), ", ")
+    print(io, "uncertain(", d.template, "; ", specs, ")")
+    return nothing
+end
+
+# Structural equality/hash (the composers' equality.jl loads before this type
+# exists, so the methods live here): same template, same specs.
+Base.:(==)(a::Uncertain, b::Uncertain) = a.template == b.template &&
+                                         a.specs == b.specs
+Base.hash(d::Uncertain, h::UInt) = hash(d.specs, hash(d.template,
+    hash(:Uncertain, h)))
+
+# --- truncation pushes inside ------------------------------------------------
+#
+# The eager `truncated` constructor computes the wrapped distribution's cdf at
+# the bounds. Truncating an uncertain distribution instead truncates the
+# TEMPLATE, so every draw is from the truncated concrete distribution — the
+# conditional (per-parameter-draw) semantics an observation model needs — and
+# `Truncated{Uncertain}` never exists. The method set mirrors the upstream
+# `truncated` signatures, so both the positional and `lower =`/`upper =` keyword
+# forms route here.
+
+function Distributions.truncated(d::Uncertain, lower::T,
+        upper::T) where {T <: Real}
+    return Uncertain(truncated(d.template, lower, upper), d.specs)
+end
+function Distributions.truncated(d::Uncertain, lower::Real, ::Nothing)
+    return Uncertain(truncated(d.template, lower, nothing), d.specs)
+end
+function Distributions.truncated(d::Uncertain, ::Nothing, upper::Real)
+    return Uncertain(truncated(d.template, nothing, upper), d.specs)
+end
+Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
+
+# --- has-uncertainty predicate ----------------------------------------------
+
+# Whether a node or (possibly wrapped) leaf carries any uncertain parameters.
+# `observed_distribution` uses it to reject collapsing a chain with uncertain
+# leaves to its convolved total (the template values are not the marginal).
+_has_uncertain(d::Union{Sequential, Parallel}) = any(_has_uncertain,
+    d.components)
+_has_uncertain(c::AbstractOneOf) = any(_has_uncertain, c.delays)
+_has_uncertain(d::Choose) = any(_has_uncertain, d.alternatives)
+_has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing

@@ -52,7 +52,10 @@ convolved total for a chain, the marginal time-to-resolution for a `Resolve`).
 For a genuinely multivariate [`Parallel`](@ref) (several independent observed
 endpoints) it returns the per-ENDPOINT `Vector`, one overall mean per branch
 endpoint, NOT the latent origin / intermediate events. Censoring is seen through
-to the free delay.
+to the free delay. An [`uncertain`](@ref) leaf contributes its TEMPLATE moment
+(parameter uncertainty is NOT propagated); draw the marginal with `rand`, or
+collapse the leaf to its concrete template with [`update`](@ref)`(tree, params)`
+to work with fixed parameters.
 
 For the FULL per-event breakdown (the origin and every event), take the moment of
 the [`latent`](@ref) form: `mean(latent(d))` returns the per-event `Vector`

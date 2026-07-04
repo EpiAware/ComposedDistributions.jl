@@ -22,6 +22,9 @@ A verb grammar for n-ary composition over any `Distributions.jl` distribution.
   `event_names`, `event`, and `event_tree`.
 - Turn the parameter table into a nested prior with `build_priors`, and edit the
   tree with `update`, `prune`, and `splice`.
+- Attach parameter uncertainty with `uncertain` (parameters that are themselves
+  distributions, nestable): `rand` draws the marginal, and `update(tree,
+  params)` collapses an uncertain leaf to its concrete template.
 - Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
   convolved total via `observed_distribution`), so its convolution and
   quadrature surface is reachable through this package alone.

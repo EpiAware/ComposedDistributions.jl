@@ -9,7 +9,10 @@ outcomes ([`Resolve`](@ref) / [`Compete`](@ref)) and data-selected disjunctions
 Tables.jl table, or a nested matrix to the same stack. Read the structure with
 [`params_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), build priors
 with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
-[`prune`](@ref) / [`splice`](@ref).
+[`prune`](@ref) / [`splice`](@ref). Attach parameter uncertainty with
+[`uncertain`](@ref) (parameters that are themselves distributions, nestable):
+`rand` draws the marginal, and [`update`](@ref) collapses an uncertain leaf to
+its concrete template.
 
 Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
 convolved total via [`observed_distribution`](@ref)), so its convolution and
@@ -56,6 +59,11 @@ using ConvolvedDistributions: ConvolvedDistributions, convolve_distributions,
 # is an upstream internal, so it is listed in `ei_ignore` in the QA config.
 using ConvolvedDistributions: _logccdf_ad_safe
 
+# Docstring-template helpers, imported here (centralised) and used by the
+# `@template` blocks in src/docstrings.jl.
+using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
+                           TYPEDFIELDS, TYPEDSIGNATURES
+
 # Register the standard EpiAware docstring conventions before any
 # docstrings are defined (see src/docstrings.jl).
 include("docstrings.jl")
@@ -77,6 +85,11 @@ export Choose, choose
 # Shared-parameter tie: tie a leaf across branches by name so the prior/params
 # interface treats its occurrences as one free parameter.
 export Shared, shared, tie
+
+# Parameter uncertainty: a leaf whose parameters are themselves distributions
+# (nestable). `rand` draws the marginal; `update(tree, params)` collapses an
+# uncertain leaf to its concrete template.
+export Uncertain, uncertain
 
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
@@ -121,6 +134,11 @@ include("composers/intervene.jl")
 # Shared (name-tagged tied leaf): after introspection (extends `free_leaf` /
 # `rewrap_leaf`) and intervene (reuses `_edit_at`).
 include("composers/Shared.jl")
+# Uncertain (distribution-valued parameters): after introspection (extends
+# `free_leaf` / `rewrap_leaf` / `_uncertain_specs`, reuses `_update_leaf` /
+# `_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
+# the tag wrapper).
+include("composers/Uncertain.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
