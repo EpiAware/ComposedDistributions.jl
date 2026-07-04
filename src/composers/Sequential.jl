@@ -1,7 +1,3 @@
-# `Sequential` composes plain distributions into a chain of additive steps
-# (see its docstring below); components may themselves be composers, so
-# chains nest recursively.
-
 @doc raw"
 
 A chain of independent steps composed from any univariate distributions.

@@ -1,17 +1,16 @@
-# `update`/`prune`/`splice` share one path-walk core (`_edit_at`): each op
-# resolves a name path (a `Symbol`, dotted `Symbol`, or tuple of edge names,
-# matching `event`) and rebuilds only the touched spine, so the result is a
-# fresh, valid composed distribution that scores and `rand`s. See each verb's
-# docstring below for its own semantics.
-
 # --- path-walk core ---------------------------------------------------------
-#
-# `_edit_at(node, path, op)` walks `path` from `node`, applying `op(target)` at
-# the addressed node and rebuilding the spine on the way back up. An empty path
-# applies `op` to `node` itself; otherwise `_edit_step` dispatches on the
-# composer type to find the named child, recurse, and rebuild with the edited
-# child swapped in.
 
+"""
+    _edit_at(node, path, op)
+
+The path-walk core shared by [`update`](@ref), [`prune`](@ref) and
+[`splice`](@ref): walks `path` from `node`, applying `op(target)` at the
+addressed node and rebuilding the spine on the way back up. `path` is a tuple
+of edge names, in the same forms [`event`](@ref) accepts. An empty path
+applies `op` to `node` itself; otherwise `_edit_step` dispatches on the
+composer type to find the named child, recurse, and rebuild with the edited
+child swapped in.
+"""
 function _edit_at(node, path::Tuple, op)
     isempty(path) && return op(node)
     return _edit_step(node, path, op)

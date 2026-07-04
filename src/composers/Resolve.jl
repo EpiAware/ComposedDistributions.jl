@@ -1,7 +1,3 @@
-# `Resolve` composes plain distributions into one_of outcomes (see its
-# docstring below): exactly one outcome occurs, governed by branch
-# probabilities that sum to one, lowering to a `MixtureModel`.
-
 # --- AbstractOneOf: the shared supertype for the one_of-outcome composers ---
 @doc raw"
 

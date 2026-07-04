@@ -1,15 +1,16 @@
-# Composed distributions score a flat vector-valued representation (consumed
-# by `logpdf`/AD), but present labelled outputs: a multivariate `rand` as a
-# `NamedTuple` keyed by per-value leaf names, `mean`/`var`/`std` of a
-# `Parallel` keyed by per-endpoint names. This file wraps the generic
-# `_composite_rand` (nesting.jl) realisation by name.
-
 # --- generic realisation ----------------------------------------------------
 
-# The vector-valued realisation of a composer: the generic per-leaf-value draw
-# (one value per leaf, a nested composer contributing its own sub-vector). A
-# `Resolve` child collapses to its marginal time-to-resolution (its univariate
-# `rand`), a `Choose` child to its first alternative.
+"""
+    _composer_rand(rng, d)
+
+The vector-valued realisation of a composer: the generic per-leaf-value draw
+(one value per leaf, a nested composer contributing its own sub-vector). A
+`Resolve` child collapses to its marginal time-to-resolution (its univariate
+`rand`), a `Choose` child to its first alternative. Composed distributions
+score this flat, vector-valued representation (consumed by `logpdf`/AD); the
+labelled outputs below (`_named_composer_rand`, `mean`/`var`/`std` of a
+`Parallel`) wrap it by name for users.
+"""
 function _composer_rand(rng::AbstractRNG, d::Union{Sequential, Parallel})
     return _composite_rand(rng, d.components, float(eltype(d)))
 end

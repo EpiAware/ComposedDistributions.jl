@@ -1,7 +1,3 @@
-# `Parallel` composes plain distributions into independent branches off one
-# origin (see its docstring below); branches may themselves be composers, so
-# trees nest recursively.
-
 @doc raw"
 
 Independent branches composed from any univariate distributions.

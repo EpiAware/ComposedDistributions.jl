@@ -1,7 +1,3 @@
-# `compose` is a constructor over the Sequential/Parallel composers (see its
-# docstring below), not a new tree type; the three front-ends build identical
-# stacks for the same structure, asserted by `==` in the tests.
-
 @doc "
 
 Build a nested composer stack from a friendly front-end input.
@@ -55,6 +51,9 @@ table = (name = [:a, :b, :c, :d],
 mat = [Gamma(2.0, 1.0) LogNormal(0.5, 0.4); Gamma(1.0, 1.0) Gamma(3.0, 1.0)]
 compose(nt) == compose(table) == compose(mat)
 ```
+
+The three front-ends are chosen to build identical stacks for the same
+structure, as the example above shows.
 
 # See also
 - [`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref): the composers

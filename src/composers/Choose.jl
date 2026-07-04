@@ -1,7 +1,3 @@
-# `Choose` is a data-selected disjunction (see its docstring below): unlike
-# `Resolve`/`Parallel`, alternatives share no common origin and are picked by a
-# data field (`selector`), not a branch probability.
-
 @doc raw"
 
 A data-selected disjunction over independent named alternatives.

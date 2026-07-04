@@ -42,26 +42,25 @@ function _split_edge_name(name::Symbol)
 end
 
 # --- flat event-name layout for a tree --------------------------------------
-#
-# `_flat_event_names(d)` returns the tuple of event names matching the flat event
-# vector `[E_0, E_1, ..., E_k]`: entry 1 is the root origin, then one name per
-# leaf event in depth-first order, exactly the layout `_tree_score` /
-# `_event_vector` consume. Built by appending into a `Symbol[]` and freezing to a
-# tuple, mirroring the `params_table` pre-order walk. Edge names are read from the
-# parent composer's `names` field (a leaf edge does not store its own name), so
-# each child is visited paired with its edge name.
 
-# `_flat_event_names(d)` is the internal worker behind the public
-# [`event_names`](@ref) (flat) accessor: the tuple of event names matching the
-# scored event vector `[E_0, E_1, ..., E_k]`, the root origin event followed by
-# one target event per edge in depth-first order. Event names are derived from
-# the composer's edge names (an edge `:onset_admit` gives origin `:onset` and
-# target `:admit`); an edge with a positional default name (`:step_i` /
-# `:branch_i`) contributes the positional event name `:event_i` instead. These
-# event names key a data row (a linelist column is an event time), distinct from
-# the edge names ([`component_names`](@ref) / the parameter inventory). A row
-# passed to `composed_distribution_model` is matched to the event vector by these
-# names, so field order does not matter.
+"""
+    _flat_event_names(d)
+
+The internal worker behind the public [`event_names`](@ref) (flat) accessor:
+the tuple of event names matching the scored event vector
+`[E_0, E_1, ..., E_k]`, the root origin event followed by one target event per
+edge in depth-first order. Built by appending into a `Symbol[]` and freezing
+to a tuple, mirroring the `params_table` pre-order walk; edge names are read
+from the parent composer's `names` field (a leaf edge does not store its own
+name), so each child is visited paired with its edge name.
+
+Event names are derived from the composer's edge names (an edge
+`:onset_admit` gives origin `:onset` and target `:admit`); an edge with a
+positional default name (`:step_i` / `:branch_i`) contributes the positional
+event name `:event_i` instead. These event names key a data row (a linelist
+column is an event time), distinct from the edge names
+([`component_names`](@ref) / the parameter inventory).
+"""
 function _flat_event_names(d::Union{Sequential, Parallel})
     names = Symbol[]
     counter = Ref(0)

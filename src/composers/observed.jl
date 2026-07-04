@@ -1,5 +1,3 @@
-# See `observed_distribution`'s docstring below for the collapsing rules.
-
 @doc "
 
 The univariate scalar a downstream observation observes for a composer.

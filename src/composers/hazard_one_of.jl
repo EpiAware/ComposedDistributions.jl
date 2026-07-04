@@ -1,11 +1,3 @@
-# `Compete` is the racing-hazards dual of `convolve_distributions` under
-# MINIMUM instead of sum (see its docstring below). Three views must agree:
-# `rand` draws a latent time per cause and returns the argmin; `logpdf` is the
-# one_of-risks likelihood (marginal or cause-resolved); and the forward
-# `convolve_distributions` stream is the per-outcome sub-density, sub-stochastic
-# (not renormalised). Ships against plain `Distributions.ccdf`/`logccdf`, so a
-# stock `Gamma`/`LogNormal` leaf races without a package-specific interface.
-
 @doc "
 
 Resolve risks by racing hazards: the dual of [`convolve_distributions`](@ref)
@@ -22,6 +14,13 @@ difference from the fixed-probability mixture [`Resolve`](@ref).
 
 Build it with the [`compete`](@ref) constructor by giving BARE delays
 (no branch probabilities): `compete(:death => D1, :recover => D2)`.
+
+Three views must agree: [`rand`](@ref) draws a latent time per cause and
+returns the argmin; [`logpdf`](@ref) is the one_of-risks likelihood (marginal
+or cause-resolved); and the forward [`convolve_distributions`](@ref) stream is
+the per-outcome sub-density, sub-stochastic (not renormalised). `Compete`
+ships against plain `Distributions.ccdf`/`logccdf`, so any stock univariate
+leaf races without a package-specific interface.
 
 # Fields
 - `names`: tuple of the one_of outcome names (`Symbol`s).
