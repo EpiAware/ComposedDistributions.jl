@@ -343,6 +343,9 @@ logpdf(resolved, x)
 `has_varying` walks the tree and returns `true` as soon as any leaf is a
 `Varying`; a fully stationary or fully-`instantiate`d tree returns `false`.
 
+# Arguments
+- `d`: the composed distribution, node, or leaf to check.
+
 # See also
 - [`instantiate`](@ref): resolve every varying leaf against a context.
 - [`Varying`](@ref): the context-indexed leaf.
