@@ -260,7 +260,8 @@ end
     # tie descends through the Compete to tag a leaf as shared.
     tied = tie(tree, (:path, :immediate), :other; name = :g)
     @test :g in params_table(tied).edge
-    @test event(tied, :path, :immediate) == Gamma(2.0, 1.0)
+    @test logpdf(event(tied, :path, :immediate), 1.5) ≈
+          logpdf(Gamma(2.0, 1.0), 1.5)
 end
 
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
