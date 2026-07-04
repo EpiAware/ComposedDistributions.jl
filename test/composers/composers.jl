@@ -240,6 +240,29 @@ end
     @test event(sp, :admit_death) isa Sequential
 end
 
+@testitem "intervene through a nested Compete: update, prune, tie" begin
+    using Distributions
+
+    node = compete(:immediate => Gamma(2.0, 1.0),
+        :delayed => resolve(:a => (Gamma(1.5, 1.0), 0.3),
+            :b => (Gamma(2.0, 1.5), 0.5), :c => (Gamma(1.0, 1.0), 0.2)))
+    tree = compose((path = node, other = Gamma(3.0, 1.0)))
+
+    # update descends through the Compete to replace a cause's leaf.
+    t2 = update(tree, (:path, :immediate) => Gamma(4.0, 2.0))
+    @test event(t2, :path, :immediate) == Gamma(4.0, 2.0)
+
+    # prune descends through the Compete into a nested Resolve cause.
+    pruned = event(prune(tree, :path, :delayed, :c), :path, :delayed)
+    @test length(pruned.names) == 2
+    @test sum(pruned.branch_probs) ≈ 1.0
+
+    # tie descends through the Compete to tag a leaf as shared.
+    tied = tie(tree, (:path, :immediate), :other; name = :g)
+    @test :g in params_table(tied).edge
+    @test event(tied, :path, :immediate) == Gamma(2.0, 1.0)
+end
+
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
     using Distributions
 
