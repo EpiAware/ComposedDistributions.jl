@@ -23,6 +23,16 @@ layer, and how it relates to the uncertain-distributions work) is written up in
   context and returns the same tree made concrete. It is the identity on fixed
   leaves and on a `nothing` context, so existing stationary trees are untouched.
 
+!!! warning "Always `instantiate` before scoring or sampling"
+    A [`Varying`](@ref) leaf behaves as its `reference` distribution (e.g. the
+    `t = 0` delay) until you call [`instantiate`](@ref). Scoring or sampling a
+    raw tree that still holds a `Varying` leaf — `logpdf(tree, x)`,
+    `rand(tree)` — does **not** error; it silently uses the reference, which is
+    a wrong answer against real per-record times. Always resolve first
+    (`resolved = instantiate(tree, Context(time = t))`) and score the resolved
+    tree. In a fitting loop, guard the call with
+    [`has_varying`](@ref): `@assert !has_varying(resolved)`.
+
 ## A time-varying delay
 
 ```@example varying

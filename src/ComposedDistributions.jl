@@ -82,7 +82,8 @@ export Shared, shared, tie
 # covariate (time, strata, ...); `instantiate(tree, Context(...))` resolves a tree
 # against a context to a concrete stationary tree. See
 # `design/0001-time-and-covariate-varying-distributions.md`.
-export Varying, varying, Context, AbstractContext, instantiate, with_covariates
+export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
+       has_varying
 
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;

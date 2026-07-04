@@ -128,6 +128,13 @@ evaluated at the context's covariate: `instantiate(leaf, Context(time = 4.0))`
 returns `f(4.0)`. Resolve a whole tree at a context and then score / sample /
 convolve the concrete result.
 
+!!! warning
+    Because the leaf delegates to `reference`, scoring or sampling a tree that
+    still holds a `Varying` leaf does NOT error — it silently uses the reference
+    (a wrong answer against real per-record covariates). Always
+    [`instantiate`](@ref) first, and guard a fitting loop with
+    [`has_varying`](@ref).
+
 The varying map `f` is FIXED STRUCTURE (like a truncation bound or a censoring
 window), so the introspection interface ([`params_table`](@ref), [`update`](@ref))
 treats the `reference`'s parameters as the free parameters and peels/rewraps
@@ -295,6 +302,11 @@ function instantiate(c::Resolve, ctx::AbstractContext)
     delays = map(x -> instantiate(x, ctx), c.delays)
     return Resolve(c.names, delays, c.branch_probs)
 end
+# NB `instantiate` treats a `Compete` as a container (walks `.delays`), whereas
+# `intervene.jl`'s `_edit_step` currently has no `Compete` method and rejects a
+# path into one (tracked separately). Keep these two hand-rolled tree-walks in
+# sync when the `_edit_step` gap is closed, so a `Compete` node is a container to
+# both.
 function instantiate(c::Compete, ctx::AbstractContext)
     delays = map(x -> instantiate(x, ctx), c.delays)
     return Compete(c.names, delays)
@@ -303,3 +315,37 @@ end
 # A tagged shared leaf keeps its tag through resolution (the resolved value is
 # still the same shared parameter group).
 instantiate(d::Shared, ctx::AbstractContext) = Shared(d.tag, instantiate(d.dist, ctx))
+
+# --- guarding against a forgotten `instantiate` -----------------------------
+
+@doc "
+
+Whether a composed distribution still contains an un-resolved [`Varying`](@ref) leaf.
+
+A `Varying` leaf delegates every `Distributions` method to its `reference` until
+the tree is resolved with [`instantiate`](@ref)`(tree, ctx)`, so scoring or
+sampling a raw tree that still holds a `Varying` leaf SILENTLY uses the reference
+(e.g. the `t = 0` delay) instead of the per-record value — a silent wrong answer,
+not an error. Guard a scoring/sampling call in a fitting loop with this predicate:
+
+```julia
+resolved = instantiate(tree, Context(time = t))
+@assert !has_varying(resolved)   # catch a forgotten instantiate before scoring
+logpdf(resolved, x)
+```
+
+`has_varying` walks the tree and returns `true` as soon as any leaf is a
+`Varying`; a fully stationary or fully-`instantiate`d tree returns `false`.
+
+# See also
+- [`instantiate`](@ref): resolve every varying leaf against a context.
+- [`Varying`](@ref): the context-indexed leaf.
+"
+has_varying(d::Varying) = true
+has_varying(::UnivariateDistribution) = false
+has_varying(d::Truncated) = has_varying(d.untruncated)
+has_varying(d::Shared) = has_varying(d.dist)
+has_varying(c::AbstractOneOf) = any(has_varying, c.delays)
+has_varying(d::Sequential) = any(has_varying, d.components)
+has_varying(d::Parallel) = any(has_varying, d.components)
+has_varying(d::Choose) = any(has_varying, d.alternatives)

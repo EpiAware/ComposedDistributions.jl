@@ -113,6 +113,32 @@ end
     ch = choose(:index => v(2.0), :sourced => Gamma(4.0, 1.5))
     rch = instantiate(ch, Context(time = 10.0))
     @test logpdf(rch, 3.0; kind = :index) == logpdf(Gamma(2.0, 2.0), 3.0)
+
+    # A Compete racing-hazard node: its varying delays resolve in place.
+    cmp = compete(:death => v(1.5), :recover => Gamma(3.0, 2.0))
+    rcmp = instantiate(cmp, Context(time = 10.0))
+    @test rcmp isa ComposedDistributions.Compete
+    @test rcmp == compete(:death => Gamma(1.5, 2.0), :recover => Gamma(3.0, 2.0))
+end
+
+@testitem "has_varying: flags an un-instantiated tree" begin
+    using Distributions
+
+    chain = sequential(:a => varying(t -> Gamma(2.0, 1.0 + 0.1 * t)),
+        :b => LogNormal(0.5, 0.4))
+
+    # A raw tree with a Varying leaf is flagged; the resolved tree is clean.
+    @test has_varying(chain)
+    @test !has_varying(instantiate(chain, Context(time = 3.0)))
+
+    # A stationary tree and a plain leaf are never flagged; a bare Varying is.
+    @test !has_varying(sequential(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4)))
+    @test !has_varying(Gamma(2.0, 1.0))
+    @test has_varying(varying(t -> Gamma(2.0, 1.0 + 0.1 * t)))
+
+    # It sees a Varying nested inside a one_of node.
+    @test has_varying(resolve(:death => (varying(t -> Gamma(1.5, 1.0 + 0.1 * t)), 0.3),
+        :disch => Gamma(2.0, 1.5)))
 end
 
 @testitem "instantiate: the convolution kernel varies with the context" begin
