@@ -35,8 +35,7 @@ See [documentation](https://epiaware.org/ComposedDistributions.jl/stable/) for a
 using ComposedDistributions, Distributions
 
 # A two-step delay chain, then its parameter table and a default prior set.
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
+tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
 params_table(tree)
 priors = build_priors(params_table(tree))
 
