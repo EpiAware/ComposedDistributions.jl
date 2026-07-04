@@ -10,18 +10,39 @@
 | [![cov ForwardDiff](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg?flag=ad-forwarddiff)](https://app.codecov.io/gh/EpiAware/ComposedDistributions.jl?flags%5B0%5D=ad-forwarddiff) | [![cov ReverseDiff](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg?flag=ad-reversediff)](https://app.codecov.io/gh/EpiAware/ComposedDistributions.jl?flags%5B0%5D=ad-reversediff) | [![cov Enzyme forward](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg?flag=ad-enzyme-forward)](https://app.codecov.io/gh/EpiAware/ComposedDistributions.jl?flags%5B0%5D=ad-enzyme-forward) | [![cov Enzyme reverse](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg?flag=ad-enzyme-reverse)](https://app.codecov.io/gh/EpiAware/ComposedDistributions.jl?flags%5B0%5D=ad-enzyme-reverse) | [![cov Mooncake reverse](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg?flag=ad-mooncake-reverse)](https://app.codecov.io/gh/EpiAware/ComposedDistributions.jl?flags%5B0%5D=ad-mooncake-reverse) | [![cov Mooncake forward](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg?flag=ad-mooncake-forward)](https://app.codecov.io/gh/EpiAware/ComposedDistributions.jl?flags%5B0%5D=ad-mooncake-forward) |
 <!-- badges:end -->
 
-_One-line description of ComposedDistributions._
+A verb grammar for n-ary composition over any `Distributions.jl` distribution.
 
 ## Why ComposedDistributions?
 
-- _List the package's key features here._
+- Compose delays into chains (`sequential`), independent branches (`parallel`),
+  fixed-probability or racing one_of outcomes (`resolve` / `compete`) and
+  data-selected disjunctions (`choose`), over any `UnivariateDistribution`.
+- Build a whole tree from a `NamedTuple`, a `Tables.jl` table, or a nested
+  matrix with `compose`, and read its structure with `params_table`,
+  `event_names`, `event`, and `event_tree`.
+- Turn the parameter table into a nested prior with `build_priors`, and edit the
+  tree with `update`, `prune`, and `splice`.
+- Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
+  convolved total via `observed_distribution`), so its convolution and
+  quadrature surface is reachable through this package alone.
+- No censoring: this is the generic composition layer.
 
 ## Getting started
 
 See [documentation](https://epiaware.org/ComposedDistributions.jl/stable/) for a full walkthrough.
 
 ```julia
-using ComposedDistributions
+using ComposedDistributions, Distributions
+
+# A two-step delay chain, then its parameter table and a default prior set.
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+params_table(tree)
+priors = build_priors(params_table(tree))
+
+# A death-vs-discharge competition (the death branch probability is the CFR).
+node = resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => Gamma(2.0, 1.5))
+mean(node)
 ```
 
 ## Where to learn more
