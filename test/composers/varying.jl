@@ -118,20 +118,21 @@ end
 @testitem "instantiate: the convolution kernel varies with the context" begin
     using Distributions
 
-    # A chain collapses to a Convolved kernel; with a varying step that kernel
-    # is context-dependent — resolve, then convolve.
-    tree = compose((onset_admit = varying(t -> Gamma(2.0, 1.0 + 0.1 * t)),
-        admit_death = LogNormal(0.5, 0.4)))
+    # A Sequential chain collapses to a Convolved kernel; with a varying step
+    # that kernel is context-dependent — resolve, then convolve. (A `compose`
+    # NamedTuple would build a Parallel, which has no single observed scalar.)
+    chain = sequential(:onset_admit => varying(t -> Gamma(2.0, 1.0 + 0.1 * t)),
+        :admit_death => LogNormal(0.5, 0.4))
 
-    k0 = observed_distribution(instantiate(tree, Context(time = 0.0)))
-    k5 = observed_distribution(instantiate(tree, Context(time = 5.0)))
+    k0 = observed_distribution(instantiate(chain, Context(time = 0.0)))
+    k5 = observed_distribution(instantiate(chain, Context(time = 5.0)))
 
     # Different contexts give different kernels; each equals the stationary
-    # collapse of the tree resolved at that context.
-    @test k0 == observed_distribution(compose((onset_admit = Gamma(2.0, 1.0),
-        admit_death = LogNormal(0.5, 0.4))))
-    @test k5 == observed_distribution(compose((onset_admit = Gamma(2.0, 1.5),
-        admit_death = LogNormal(0.5, 0.4))))
+    # collapse of the chain resolved at that context.
+    @test k0 == observed_distribution(sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4)))
+    @test k5 == observed_distribution(sequential(:onset_admit => Gamma(2.0, 1.5),
+        :admit_death => LogNormal(0.5, 0.4)))
     @test mean(k5) > mean(k0)
 end
 
@@ -156,9 +157,13 @@ end
 
     # params_table over a tree with a varying leaf matches the same tree built
     # from the leaf's reference: the varying map is fixed structure, so only the
-    # reference's free parameters are inventoried.
-    tree = compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4)))
-    ref_tree = compose((onset_admit = Gamma(2.0, 1.0),
-        admit_death = LogNormal(0.5, 0.4)))
-    @test params_table(tree) == params_table(ref_tree)
+    # reference's free parameters are inventoried. Compare the columns (a
+    # ParamsTable has no value-`==`), reached via the forwarded property access.
+    tbl = params_table(compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4))))
+    ref = params_table(compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4))))
+    @test tbl.edge == ref.edge
+    @test tbl.param == ref.param
+    @test tbl.value == ref.value
+    @test tbl.support == ref.support
 end

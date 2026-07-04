@@ -219,10 +219,10 @@ context.
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset_admit = varying(t -> Gamma(2.0, 1.0 + 0.1t)),
-    admit_death = LogNormal(0.5, 0.4)))
-at_day5 = instantiate(tree, Context(time = 5.0))   # concrete, stationary tree
-observed_distribution(at_day5)                      # the convolution kernel at t = 5
+chain = sequential(:onset_admit => varying(t -> Gamma(2.0, 1.0 + 0.1t)),
+    :admit_death => LogNormal(0.5, 0.4))
+at_day5 = instantiate(chain, Context(time = 5.0))  # concrete, stationary chain
+observed_distribution(at_day5)                     # the convolution kernel at t = 5
 ```
 
 # See also
