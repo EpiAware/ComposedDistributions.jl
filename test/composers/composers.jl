@@ -264,6 +264,40 @@ end
           logpdf(Gamma(2.0, 1.0), 1.5)
 end
 
+@testitem "rand_outcome(::Resolve): resolved name and delay, or missing" begin
+    using Distributions, Random
+
+    r = resolve(:event => (Gamma(1.5, 1.0), 0.4), :none => (NoEvent(), 0.6))
+    rng = MersenneTwister(3)
+    seen = Set{Symbol}()
+    for _ in 1:200
+        name, time = ComposedDistributions.rand_outcome(rng, r)
+        push!(seen, name)
+        name == :none ? (@test time === missing) : (@test time isa Real)
+    end
+    @test seen == Set([:event, :none])
+end
+
+@testitem "deprecated aliases: intervene, swap_child, cut_branch" begin
+    using Distributions
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    t2 = intervene(tree, :admit_death => Gamma(3.0, 1.5))
+    @test event(t2, :admit_death) == Gamma(3.0, 1.5)
+
+    nested = compose((resolution = compose((death = Gamma(1.5, 1.0),)),))
+    t3 = swap_child(nested, :resolution, :death => Gamma(3.0, 1.5))
+    @test event(t3, :resolution, :death) == Gamma(3.0, 1.5)
+
+    node = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.5), :transfer => (Gamma(1.0, 1.0), 0.2))
+    pruned = event(
+        cut_branch(compose((res = node,)), (:res, :transfer)), :res)
+    @test length(pruned.names) == 2
+    @test sum(pruned.branch_probs) ≈ 1.0
+end
+
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
     using Distributions
 
