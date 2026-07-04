@@ -16,13 +16,21 @@ const QA_CONFIG = (
     # Per-check Aqua relaxations, e.g. (; ambiguities = false). Empty = all on.
     aqua = (;),
 
-    # ExplicitImports `ignore`: symbols an extension legitimately imports
-    # non-publicly. Tuple of Symbols, e.g. (:_internal_helper,).
-    ei_ignore = (),
+    # ExplicitImports `ignore`: symbols imported non-publicly.
+    # `_logccdf_ad_safe` is a ConvolvedDistributions internal the racing-hazard
+    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag` is
+    # the internal tag protocol the ModifiedDistributions extension extends so a
+    # modified leaf peels its shared tag inside a composed tree.
+    ei_ignore = (:_logccdf_ad_safe, :_shared_tag),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
-    # `[`name`](@ref)`, e.g. (:pdf, :cdf, :logpdf).
-    crossref_ignore = (),
+    # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface
+    # that stays in CensoredDistributions (referenced from ported prose).
+    crossref_ignore = (:pdf, :cdf, :logpdf, :mean, :var, :std, :logcdf, :ccdf,
+        :logccdf, :quantile, :latent, :primary_censored, :interval_censored,
+        :double_interval_censored, :truncate_to_horizon, :chain_to_params,
+        :composed_distribution_model, :composed_parameters_model,
+        :record_distributions),
 
     # Extra docstring-format options, e.g.
     # (; exported_only_examples = true, require_field_docs = true).
