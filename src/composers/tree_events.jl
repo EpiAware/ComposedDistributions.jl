@@ -1,27 +1,8 @@
-# ============================================================================
-# Tree event names and by-name row -> event-vector mapping
-# ============================================================================
-#
-# A composed distribution carries two distinct name spaces:
-#
-#   - edge names (`k` of them for a `k`-edge composer): the `names` field used by
-#     `params_table` / `composed_parameters_model`. parameters belong to edges
-#     (an edge is a delay distribution with parameters), so edge names key the
-#     parameter inventory.
-#   - event names (`k + 1` of them): the origin event plus one target event per
-#     edge, in the same flat depth-first order as the scored event vector
-#     `[E_0, E_1, ..., E_k]`. observations are events (a linelist column is an
-#     event time: onset, admit, death, ...), so event names key a data row.
-#
-# Both name spaces are retained; they describe different things. This file
-# derives the event-name layout from the existing edge names and maps a
-# NamedTuple row to the flat event vector by name, so a reordered row scores
-# identically to an in-order one and a name the tree does not have errors
-# clearly. Positional fallback (`:event_i`) applies only when an edge name is a
-# positional default (`:step_i` / `:branch_i`), i.e. when the front-end was given
-# no real names to derive events from.
-#
-# Turing-free and distributions-led: this reads structure + names only.
+# Tree event names (edge name -> origin/target event names) and the by-name
+# row -> event-vector mapping used by downstream scoring. See `event_names`'s
+# docstring (introspection.jl) for the edge-name-vs-event-name distinction;
+# this file derives event names from edge names and matches a NamedTuple row
+# to the flat event vector by name.
 
 # --- edge-name -> (origin, target) event names ------------------------------
 

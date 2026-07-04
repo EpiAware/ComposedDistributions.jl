@@ -1,17 +1,8 @@
-# ============================================================================
-# Labelled NamedTuple outputs + the generic realisation of a composer
-# ============================================================================
-#
-# The composed distributions score a vector-valued representation (the flat
-# value vector consumed by `logpdf` / the AD paths), but their user-facing
-# outputs are self-labelling: a multivariate composed `rand` is presented as a
-# `NamedTuple` keyed by the per-value leaf names, and `mean`/`var`/`std` of a
-# `Parallel` as a `NamedTuple` keyed by the per-endpoint names. A univariate-
-# collapsible composer (a `Sequential` chain, a `Resolve`) keeps its scalar.
-#
-# The realisation of a plain composer is the per-leaf-value vector built by the
-# generic `_composite_rand` (nesting.jl); this file wraps it by name and provides
-# the small `_composer_rand` / `_sample_branch` helpers.
+# Composed distributions score a flat vector-valued representation (consumed
+# by `logpdf`/AD), but present labelled outputs: a multivariate `rand` as a
+# `NamedTuple` keyed by per-value leaf names, `mean`/`var`/`std` of a
+# `Parallel` keyed by per-endpoint names. This file wraps the generic
+# `_composite_rand` (nesting.jl) realisation by name.
 
 # --- generic realisation ----------------------------------------------------
 

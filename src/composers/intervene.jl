@@ -1,21 +1,8 @@
-# ============================================================================
-# Intervention: structural edits on a composed distribution tree
-# ============================================================================
-#
-# `update` rebuilds a tree's leaves with new parameter values; intervention is
-# the same recursive reconstruction with a node edit instead of a param update:
-# replace a named node's distribution, swap a child, cut a branch (a `Resolve`
-# arm or a `Choose` alternative, renormalising probs), or splice a before/after
-# change at a named node. Each op walks the tree by name path and rebuilds only
-# the touched spine, so the result is a fresh, valid composed distribution that
-# scores (`logpdf`) and `rand`s. The walk is hand-rolled and type-stable,
-# reusing `component_names` / `_rebuild` / `Resolve` / `Choose` rather
-# than adding tree types. Distributions-led: a node-to-node edit, Turing-free.
-#
-# Paths are tuples of edge names from the root (e.g.
-# `(:admit_path, :admit_resolution, :death)`); a single `Symbol` is a one-step
-# path. The op family mirrors the `apply(op, node)` shape from the
-# node-transform protocol: a public function resolves a path then applies an op.
+# `update`/`prune`/`splice` share one path-walk core (`_edit_at`): each op
+# resolves a name path (a `Symbol`, dotted `Symbol`, or tuple of edge names,
+# matching `event`) and rebuilds only the touched spine, so the result is a
+# fresh, valid composed distribution that scores and `rand`s. See each verb's
+# docstring below for its own semantics.
 
 # --- path-walk core ---------------------------------------------------------
 #
