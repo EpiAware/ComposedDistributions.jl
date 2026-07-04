@@ -1,0 +1,19 @@
+# PACKAGE-OWNED — scaffold writes this once and never overwrites it.
+# The documentation environment: Documenter + DocumenterVitepress (the org docs
+# standard). Add doc-only deps (e.g. plotting, DocumenterCitations) here as the
+# docs grow. The package itself is pinned by path via `[sources]`.
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
+DocumenterVitepress = "4710194d-e776-4893-9690-8d956a29c365"
+Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
+ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
+
+[sources]
+ComposedDistributions = {path = ".."}
+
+[compat]
+Documenter = "1"
+DocumenterCitations = "1"
+DocumenterVitepress = "0.3"
+Literate = "2"
