@@ -17,6 +17,11 @@ pages = [
         "Infrastructure and template sync" => "getting-started/infrastructure.md",
         "Customising your docs" => "getting-started/customising.md"
     ],
+    # Developer reference: the contracts a type must satisfy to take part in
+    # composition, grounded in the conformance suite under `test/interfaces.jl`.
+    "Developer" => [
+        "Interface contracts" => "developer/interface-contracts.md"
+    ],
     "API reference" => [
         "Public API" => "lib/public.md",
         "Internal API" => "lib/internals.md"
