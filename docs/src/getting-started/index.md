@@ -27,13 +27,44 @@ Load the package:
 using ComposedDistributions
 ```
 
+## What ComposedDistributions does
+
+ComposedDistributions composes per-event delay distributions into one object that describes a whole record.
+The same object scores observed records with `logpdf` and simulates new ones with `rand`, so a model is built once and used in both directions.
+It composes any [Distributions.jl](https://juliastats.org/Distributions.jl) `UnivariateDistribution`, with no censoring: this is the generic composition layer.
+
+The building blocks are five composers.
+[`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.
+The [`compose`](@ref) front-end lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same stack.
+
 ## A first example
 
-_Replace this with a short, runnable example that shows the package's main
-entry point._
+Compose two delays off a shared onset, then simulate and score a record.
+
+```@example overview
+using ComposedDistributions, Distributions, Random
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+
+record = rand(Xoshiro(1), tree)
+```
+
+The composed object scores that record straight back.
+
+```@example overview
+logpdf(tree, record)
+```
+
+Read its free parameters as a flat table, keyed by edge and parameter name.
+
+```@example overview
+params_table(tree)
+```
 
 ## Learning more
 
+- Work through the composers end to end in [Composing distributions](@ref composing-distributions).
 - Want the full interface? See the [Public API](@ref public-api).
 - See [Customising your docs](@ref customising) for how to make the
   seeded pages (this one included) your own.

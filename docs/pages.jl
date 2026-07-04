@@ -14,6 +14,9 @@ pages = [
     # `getting-started/` as the package grows.
     "Getting started" => [
         "Overview" => "getting-started/index.md",
+        "Tutorials" => [
+            "Composing distributions" => "getting-started/tutorials/composing-distributions.md"
+        ],
         "Infrastructure and template sync" => "getting-started/infrastructure.md",
         "Customising your docs" => "getting-started/customising.md"
     ],
