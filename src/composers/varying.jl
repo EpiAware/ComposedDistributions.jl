@@ -92,6 +92,12 @@ that name resolves against them exactly as a time-varying leaf resolves against
 difference is who fills the slot — the data, or the sampler. Later keys win over
 earlier ones.
 
+# Arguments
+- `ctx`: the [`Context`](@ref) to extend.
+
+# Keyword Arguments
+- `covariates...`: covariate `name = value` pairs to add or override.
+
 # Examples
 ```@example
 using ComposedDistributions

@@ -56,6 +56,11 @@ using ConvolvedDistributions: ConvolvedDistributions, convolve_distributions,
 # is an upstream internal, so it is listed in `ei_ignore` in the QA config.
 using ConvolvedDistributions: _logccdf_ad_safe
 
+# Docstring-template helpers, imported here (centralised) and used by the
+# `@template` blocks in src/docstrings.jl.
+using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
+                           TYPEDFIELDS, TYPEDSIGNATURES
+
 # Register the standard EpiAware docstring conventions before any
 # docstrings are defined (see src/docstrings.jl).
 include("docstrings.jl")

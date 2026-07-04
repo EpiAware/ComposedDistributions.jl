@@ -18,8 +18,8 @@
 # `test_docstring_format` (which checks the rendered docstrings) and the
 # Documenter + DocumenterVitepress build in `docs/make.jl`.
 
-using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
-                           TYPEDFIELDS, TYPEDSIGNATURES
+# The DocStringExtensions helpers used below are imported (centralised) in the
+# package's main module before this file is included.
 
 @template (FUNCTIONS, METHODS, MACROS) = """
                                          $(TYPEDSIGNATURES)
