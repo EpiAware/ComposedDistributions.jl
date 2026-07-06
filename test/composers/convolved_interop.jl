@@ -39,6 +39,39 @@ end
     @test length(convolve_distributions(r, series)) == length(series)
 end
 
+@testitem "convolve_distributions: Compete marginal (any-event time) drives a series" begin
+    using Distributions
+
+    series = [0.0, 1.0, 2.0, 4.0, 3.0]
+
+    # A Compete's observed quantity is its marginal any-event (first-event) time,
+    # a univariate delay, so it drives the series through the base univariate
+    # method with no bridge; `observed_distribution` returns it unchanged.
+    c = Compete(:recover => Gamma(2.0, 1.0), :die => Gamma(1.5, 2.0))
+    out = convolve_distributions(c, series)
+    @test observed_distribution(c) === c
+    @test out == convolve_distributions(observed_distribution(c), series)
+    @test length(out) == length(series)
+    @test all(>=(0), out)
+    # A finite window recovers only the mass that lands within it: the delayed
+    # counts never exceed the input mass pushed through them.
+    @test sum(out) <= sum(series)
+
+    # Staggered per-cause support floors (truncated causes) push the any-event
+    # time later, so fewer events land inside the window than the unfloored
+    # racing pair — a cross-check on the Compete marginal's discretised PMF. The
+    # exact per-lag values depend on `minimum(::Compete)` (the support floor the
+    # quadrature window keys off), which the concurrent Compete correctness fix
+    # revises; if that changes these outputs, reconcile at the update-branch.
+    cf = Compete(:recover => truncated(Gamma(2.0, 1.0); lower = 1.0),
+        :die => truncated(Gamma(1.5, 2.0); lower = 2.0))
+    outf = convolve_distributions(cf, series)
+    @test outf == convolve_distributions(observed_distribution(cf), series)
+    @test length(outf) == length(series)
+    @test all(>=(0), outf)
+    @test sum(outf) < sum(out)
+end
+
 @testitem "convolve_distributions: Parallel / Choose error informatively" begin
     using Distributions
 
