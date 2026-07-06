@@ -58,7 +58,7 @@ end
     @test mean(r) ≈ mean(mix)
     @test logpdf(r, 2.0) ≈ logpdf(mix, 2.0)
     @test cdf(r, 2.0) ≈ cdf(mix, 2.0)
-    @test winning_probabilities(r) == (death = 0.3, disch = 0.7)
+    @test probs(r) == (death = 0.3, disch = 0.7)
     @test occurrence_probability(r) ≈ 1.0
     # Residual: the last probability may be omitted (a bare delay).
     r2 = resolve(:death => (Gamma(1.5, 1.0), cfr), :disch => Gamma(2.0, 1.5))
@@ -89,7 +89,7 @@ end
     @test ccdf(c, t) ≈ exp(logccdf(c, t))
     @test cdf(c, t) ≈ 1 - ccdf(c, t)
     # Derived winning probabilities sum to one for proper causes.
-    wp = winning_probabilities(c)
+    wp = probs(c)
     @test sum(values(wp)) ≈ 1.0 atol = 1e-3
     # Monte-Carlo winning frequencies match the derived split.
     rng = MersenneTwister(42)
@@ -134,7 +134,7 @@ end
     d = compose(table)
     node = event(d, :death)
     @test node isa Resolve
-    @test winning_probabilities(node) == (death = 0.3, disch = 0.7)
+    @test probs(node) == (death = 0.3, disch = 0.7)
 end
 
 @testitem "compose: shared-origin branches front-end" begin
@@ -278,26 +278,6 @@ end
     @test seen == Set([:event, :none])
 end
 
-@testitem "deprecated aliases: intervene, swap_child, cut_branch" begin
-    using Distributions
-
-    tree = compose((onset_admit = Gamma(2.0, 1.0),
-        admit_death = LogNormal(0.5, 0.4)))
-    t2 = intervene(tree, :admit_death => Gamma(3.0, 1.5))
-    @test event(t2, :admit_death) == Gamma(3.0, 1.5)
-
-    nested = compose((resolution = compose((death = Gamma(1.5, 1.0),)),))
-    t3 = swap_child(nested, :resolution, :death => Gamma(3.0, 1.5))
-    @test event(t3, :resolution, :death) == Gamma(3.0, 1.5)
-
-    node = resolve(:death => (Gamma(1.5, 1.0), 0.3),
-        :disch => (Gamma(2.0, 1.5), 0.5), :transfer => (Gamma(1.0, 1.0), 0.2))
-    pruned = event(
-        cut_branch(compose((res = node,)), (:res, :transfer)), :res)
-    @test length(pruned.names) == 2
-    @test sum(pruned.branch_probs) ≈ 1.0
-end
-
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
     using Distributions
 
@@ -324,14 +304,12 @@ end
     @test unique(params_table(tied).edge) == [:g]
 end
 
-@testitem "observed_distribution / endpoint / convolve re-export" begin
+@testitem "observed_distribution / convolve re-export" begin
     using Distributions
 
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     od = observed_distribution(s)
     @test od isa Convolved
-    @test endpoint(s) === observed_distribution(s) ||
-          mean(endpoint(s)) ≈ mean(s)
     # The chain collapses to the convolution of its steps.
     cv = convolve_distributions(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     @test cdf(od, 5.0) ≈ cdf(cv, 5.0)

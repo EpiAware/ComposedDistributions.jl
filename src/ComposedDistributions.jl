@@ -35,7 +35,7 @@ using Random: AbstractRNG, default_rng
 
 # Functions extended with new methods.
 import Distributions: params, insupport, pdf, logpdf, cdf, logcdf,
-                      ccdf, logccdf, quantile, mean, var, std, sampler
+                      ccdf, logccdf, quantile, mean, var, std, sampler, probs
 import Base: minimum, maximum
 
 # Types, constructors, and helpers used without method extension.
@@ -75,12 +75,12 @@ include("docstrings.jl")
 
 # Generic composers and front-end constructors. `resolve(...)` builds the fixed-
 # probability mixture `Resolve`; `compete(...)` builds the racing-hazard
-# `Compete`. `NoEvent` marks an absorbing no-event branch;
-# `winning_probabilities` / `occurrence_probability` read the per-cause winning /
-# any-event probabilities of either node.
+# `Compete`. `NoEvent` marks an absorbing no-event branch; `Distributions.probs`
+# (extended, not re-exported) reads the per-outcome split of either node and
+# `occurrence_probability` its sum (the any-event probability).
 export Sequential, Parallel, Resolve, Compete, NoEvent,
        sequential, parallel, compete, resolve,
-       compose, as_mixture, winning_probabilities, occurrence_probability
+       compose, as_mixture, occurrence_probability
 
 # Data-selected disjunction (case selector over independent alternatives).
 export Choose, choose
@@ -111,13 +111,10 @@ export params_table, event_names, event_tree, event, update, build_priors,
 
 # Structural edits on a composed tree. `update` (the `path => new_node` method)
 # replaces a named node keeping the shape; `prune` drops a branch and `splice`
-# inserts a step (topology edits). `intervene` / `swap_child` / `cut_branch` are
-# deprecated aliases.
-export prune, splice, intervene, swap_child, cut_branch
+# inserts a step (topology edits).
+export prune, splice
 
-# `endpoint` collapses a chain to its terminal scalar (an alias for
-# `observed_distribution`).
-export endpoint, observed_distribution
+export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
 # convolution + quadrature through ComposedDistributions alone.
@@ -141,10 +138,11 @@ include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
-# introspection so it reuses `_rebuild`, `component_names`, `_split_edge`.
+# introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
+# the `update` value method.
 include("composers/intervene.jl")
-# Shared (name-tagged tied leaf): after introspection (extends `free_leaf` /
-# `rewrap_leaf`) and intervene (reuses `_edit_at`).
+# Shared (name-tagged tied leaf): after introspection so it can extend
+# `free_leaf`/`rewrap_leaf`, and after the structural edits (reuses `_edit_at`).
 include("composers/Shared.jl")
 # Uncertain (distribution-valued parameters): after introspection (extends
 # `free_leaf` / `rewrap_leaf` / `_uncertain_specs`, reuses `_update_leaf` /
@@ -159,8 +157,7 @@ include("composers/varying.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
-# Per-edge delay moments: after the composers it walks and observed.jl (used by
-# `endpoint`).
+# Per-edge delay moments: after the composers it walks and observed.jl.
 include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.
