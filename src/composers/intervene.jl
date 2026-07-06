@@ -1,30 +1,16 @@
-# ============================================================================
-# Intervention: structural edits on a composed distribution tree
-# ============================================================================
-#
-# `update` rebuilds a tree's leaves with new parameter values; intervention is
-# the same recursive reconstruction with a node edit instead of a param update:
-# replace a named node's distribution, swap a child, cut a branch (a `Resolve`
-# arm or a `Choose` alternative, renormalising probs), or splice a before/after
-# change at a named node. Each op walks the tree by name path and rebuilds only
-# the touched spine, so the result is a fresh, valid composed distribution that
-# scores (`logpdf`) and `rand`s. The walk is hand-rolled and type-stable,
-# reusing `component_names` / `_rebuild` / `Resolve` / `Choose` rather
-# than adding tree types. Distributions-led: a node-to-node edit, Turing-free.
-#
-# Paths are tuples of edge names from the root (e.g.
-# `(:admit_path, :admit_resolution, :death)`); a single `Symbol` is a one-step
-# path. The op family mirrors the `apply(op, node)` shape from the
-# node-transform protocol: a public function resolves a path then applies an op.
-
 # --- path-walk core ---------------------------------------------------------
-#
-# `_edit_at(node, path, op)` walks `path` from `node`, applying `op(target)` at
-# the addressed node and rebuilding the spine on the way back up. An empty path
-# applies `op` to `node` itself; otherwise `_edit_step` dispatches on the
-# composer type to find the named child, recurse, and rebuild with the edited
-# child swapped in.
 
+"""
+    _edit_at(node, path, op)
+
+The path-walk core shared by [`update`](@ref), [`prune`](@ref) and
+[`splice`](@ref): walks `path` from `node`, applying `op(target)` at the
+addressed node and rebuilding the spine on the way back up. `path` is a tuple
+of edge names, in the same forms [`event`](@ref) accepts. An empty path
+applies `op` to `node` itself; otherwise `_edit_step` dispatches on the
+composer type to find the named child, recurse, and rebuild with the edited
+child swapped in.
+"""
 function _edit_at(node, path::Tuple, op)
     isempty(path) && return op(node)
     return _edit_step(node, path, op)
@@ -46,6 +32,14 @@ function _edit_step(c::Resolve, path::Tuple, op)
         i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
     end
     return Resolve(c.names, delays, c.branch_probs)
+end
+
+function _edit_step(c::Compete, path::Tuple, op)
+    idx = _child_index(c.names, first(path), :Compete)
+    delays = ntuple(length(c.names)) do i
+        i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
+    end
+    return Compete(c.names, delays)
 end
 
 function _edit_step(d::Choose, path::Tuple, op)

@@ -1,34 +1,3 @@
-# ============================================================================
-# Compete: one_of risks by racing hazards (dual to convolve)
-# ============================================================================
-#
-# Where `convolve_distributions` sums independent delays (events in series, the
-# total time through a chain), one_of risks take the minimum of racing latent
-# delays (events compete, the first wins). `Compete` is that combinator:
-# given cause-specific delays `D_1..D_n` it represents
-#
-#   - the marginal `any-event` time `T = min_k D_k`, a univariate with survival
-#     `S(t) = ∏_k S_k(t)` and density `f(t) = ∑_j f_j(t) ∏_{k≠j} S_k(t)` (so it
-#     nests as a leaf like a convolved chain), and
-#   - the cause-resolved split (named outcomes) for the multivariate / event view:
-#     observing `(cause j, time t)` scores `f_j(t) ∏_{k≠j} S_k(t)`.
-#
-# Unlike the mixture `Resolve` (pick a branch by a fixed probability, then draw
-# its delay; cause and timing independent) the winning probability here is derived
-# from the hazards (`P(cause = j) = ∫ f_j ∏_{k≠j} S_k`) and timing is coupled.
-#
-# The three duals that must agree (the acceptance test):
-#   - `rand`: draw a latent time per cause, return `(argmin cause, min time)`.
-#   - `logpdf`: the one_of-risks likelihood, marginal `log ∑_j f_j ∏_{k≠j} S_k`
-#     or cause-resolved `log f_j + ∑_{k≠j} log S_k`.
-#   - forward `convolve_distributions(stack, series)`: per-outcome sub-density
-#     stream `series ⊛ pmf(f_j ∏_{k≠j} S_k)`, sub-stochastic (not renormalised).
-#
-# Ships against plain `Distributions.ccdf` / `logccdf` / `logpdf`, so a stock
-# `Gamma`/`LogNormal` leaf and a #470 SurvivalDistributions leaf both race. The
-# logpdf is a log-sum-exp of `logpdf` + `logccdf` terms (AD-safe, no `float`
-# stripping).
-
 @doc "
 
 Resolve risks by racing hazards: the dual of [`convolve_distributions`](@ref)
@@ -45,6 +14,13 @@ difference from the fixed-probability mixture [`Resolve`](@ref).
 
 Build it with the [`compete`](@ref) constructor by giving BARE delays
 (no branch probabilities): `compete(:death => D1, :recover => D2)`.
+
+Three views must agree: [`rand`](@ref) draws a latent time per cause and
+returns the argmin; [`logpdf`](@ref) is the one_of-risks likelihood (marginal
+or cause-resolved); and the forward [`convolve_distributions`](@ref) stream is
+the per-outcome sub-density, sub-stochastic (not renormalised). `Compete`
+ships against plain `Distributions.ccdf`/`logccdf`, so any stock univariate
+leaf races without a package-specific interface.
 
 # Fields
 - `names`: tuple of the one_of outcome names (`Symbol`s).

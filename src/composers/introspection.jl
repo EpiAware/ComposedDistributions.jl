@@ -1,31 +1,8 @@
-# ============================================================================
-# Prior introspection for composed distributions (Option A)
-# ============================================================================
-#
-# After `compose(structure)`, these helpers read the composed distribution's
-# free parameters so a user can define priors discoverably, against the
-# structure rather than by hand-matching `lm_oa`/`ls_oa`/... :
-#
-# - `params(d)` (extended on the composers): a nested, name-keyed structure
-#   mirroring the tree, leaves delegating to the standard/extended
-#   `Distributions.params`.
-# - `params_table(d)`: that structure flattened to a Tables.jl table, one row
-#   per scalar parameter, columns `edge | param | value | support` (the support
-#   being the edge distribution's variate support, the domain a prior respects).
-# - `event_names(d)` / `event(d, name)`: list the edge/event names of a
-#   composed distribution and fetch a child by name.
-#
-# Names come from the composers' `names` field, which every `compose` front-end
-# threads through (NamedTuple keys, table `name` column, matrix `names=`).
-#
-# implementation note (type stability): the `show` and `params`/`params_table`
-# traversals are hand-rolled, type-stable recursion over the component tuples,
-# not generic tree iterators (whose traversal is not type-stable for the
-# heterogeneous composer tree). Structure introspection for external code is
-# provided by `event_names`/`event_tree`/`event`, not a tree-walking interface.
-#
-# Distributions-led: this reads structure + `params` + `support`; it is not a
-# model generator and stays Turing-free.
+# Prior introspection helpers (`params`, `params_table`, `event_names`,
+# `event`); see their docstrings below. Implementation note: the `show` and
+# `params`/`params_table` traversals are hand-rolled, type-stable recursion
+# over the component tuples, not generic tree iterators (not type-stable for
+# the heterogeneous composer tree).
 
 # --- node headers ----------------------------------------------------------
 
@@ -228,12 +205,9 @@ end
 # the sampled value tuple `vals`. Used by the DynamicPPL extension's leaf
 # reconstruction to skip the argument check (so a sampler probing an out-of-support
 # point yields `-Inf` rather than throwing mid-gradient) only where the family
-# supports it. Pure reflection returning a `Bool` (constant w.r.t. the params), so a
-# zero-derivative primitive: the `ComposedDistributionsMooncakeExt` registers a
-# Mooncake `@zero_adjoint` for it so Mooncake reverse never traces its underlying
-# `jl_gf_invoke_lookup` foreigncall (which Mooncake on Julia LTS cannot
-# differentiate), keeping the reconstruction AD-safe on every backend and Julia
-# version.
+# supports it. Pure reflection returning a `Bool` (constant w.r.t. the params), so
+# `ComposedDistributionsMooncakeExt` shields it with a Mooncake `@zero_adjoint`,
+# keeping the reconstruction AD-safe under Mooncake reverse.
 function _ctor_has_check_args(ctor, vals::Tuple)
     return hasmethod(ctor, typeof(vals), (:check_args,))
 end
@@ -512,9 +486,10 @@ column), and a [`Resolve`](@ref) by its outcome names plus an optional
 `branch_probs` entry. A censored leaf is transparent: supply only the inner
 delay's parameters and the censoring is carried through.
 
-Pair with [`chain_to_params`](@ref) to read posterior means or a single draw
-from a Turing chain into the right NamedTuple, so `update(template, means)`
-returns a ready-to-`rand`/inspect distribution.
+Pair with `chain_to_params` (from a downstream Turing-fitting extension) to
+read posterior means or a single draw from a fitted chain into the right
+NamedTuple, so `update(template, means)` returns a ready-to-`rand`/inspect
+distribution.
 
 # Arguments
 - `d`: the composed distribution (or bare leaf) to update.
@@ -533,7 +508,7 @@ event(tree2, :onset_admit)
 
 # See also
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
-- [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
+- `chain_to_params`: build the NamedTuple from a fitted chain (downstream)
 - [`update`](@ref)`(d, path => new_node)`: replace whole nodes (same shape)
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
@@ -786,9 +761,9 @@ end
 Assemble the nested prior `NamedTuple` from a [`params_table`](@ref) inventory.
 
 `build_priors(table; priors, default)` turns the flat parameter table into the
-nested `NamedTuple` that [`composed_parameters_model`](@ref) (and [`update`](@ref))
-expect, so users define priors against the flat table rows rather than by hand-
-matching the tree.
+nested `NamedTuple` that a downstream `composed_parameters_model` (and
+[`update`](@ref)) expect, so users define priors against the flat table rows
+rather than by hand-matching the tree.
 
 For each row the prior is chosen in order:
 1. a user `priors` override for that `(edge, param)`, if present, else
@@ -833,7 +808,7 @@ nested.onset_admit.shape
 # See also
 - [`params_table`](@ref): the flat inventory keyed against.
 - [`default_prior`](@ref): the support-derived per-row default.
-- [`composed_parameters_model`](@ref), [`update`](@ref): consume the result.
+- `composed_parameters_model` (downstream), [`update`](@ref): consume the result.
 "
 function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
         default = default_prior)
@@ -886,10 +861,8 @@ end
 
 The FLAT event names of a composed distribution.
 
-`event_names(d)` returns the tuple of event names in the SAME flat depth-first
-layout as a `rand(latent(d))` draw and the per-event
-[`mean`](@ref)`(latent(d))`/`var(latent(d))`/`std(latent(d))`: the root origin
-event followed by one target event per leaf edge.
+`event_names(d)` returns the tuple of event names in flat depth-first order:
+the root origin event followed by one target event per leaf edge.
 An inner composer's events are exposed, so `compose((path = [a, b],))` lists the
 inner `(:onset, ...)` events rather than just the `(:path,)` edge. Event names
 are derived from the edge names (an edge `:onset_admit` gives origin `:onset` and

@@ -21,8 +21,8 @@ censoring: this is the generic composition layer.
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
+# A two-step delay chain, then its parameter table.
+tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
 params_table(tree)
 ```
 """
@@ -81,6 +81,13 @@ export Choose, choose
 # interface treats its occurrences as one free parameter.
 export Shared, shared, tie
 
+# Context-indexed (non-stationary) leaves: a `Varying` leaf varies with a
+# covariate (time, strata, ...); `instantiate(tree, Context(...))` resolves a tree
+# against a context to a concrete stationary tree. See
+# `design/0001-time-and-covariate-varying-distributions.md`.
+export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
+       has_varying
+
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
 # `event` fetches a child or descends a path.
@@ -124,6 +131,11 @@ include("composers/intervene.jl")
 # Shared (name-tagged tied leaf): after introspection (extends `free_leaf` /
 # `rewrap_leaf`) and intervene (reuses `_edit_at`).
 include("composers/Shared.jl")
+# Context-indexed leaves + the `instantiate` resolution seam. After every
+# composer type exists (it rebuilds Sequential/Parallel/Choose/Resolve/Compete/
+# Shared against a context) and after introspection (it extends free_leaf/
+# rewrap_leaf/_shared_tag for the Varying leaf).
+include("composers/varying.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
