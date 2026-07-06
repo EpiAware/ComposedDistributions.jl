@@ -240,6 +240,64 @@ end
     @test event(sp, :admit_death) isa Sequential
 end
 
+@testitem "intervene through a nested Compete: update, prune, tie" begin
+    using Distributions
+
+    node = compete(:immediate => Gamma(2.0, 1.0),
+        :delayed => resolve(:a => (Gamma(1.5, 1.0), 0.3),
+            :b => (Gamma(2.0, 1.5), 0.5), :c => (Gamma(1.0, 1.0), 0.2)))
+    tree = compose((path = node, other = Gamma(3.0, 1.0)))
+
+    # update descends through the Compete to replace a cause's leaf.
+    t2 = update(tree, (:path, :immediate) => Gamma(4.0, 2.0))
+    @test event(t2, :path, :immediate) == Gamma(4.0, 2.0)
+
+    # prune descends through the Compete into a nested Resolve cause.
+    pruned = event(prune(tree, :path, :delayed, :c), :path, :delayed)
+    @test length(pruned.names) == 2
+    @test sum(pruned.branch_probs) ≈ 1.0
+
+    # tie descends through the Compete to tag a leaf as shared.
+    tied = tie(tree, (:path, :immediate), :other; name = :g)
+    @test :g in params_table(tied).edge
+    @test logpdf(event(tied, :path, :immediate), 1.5) ≈
+          logpdf(Gamma(2.0, 1.0), 1.5)
+end
+
+@testitem "rand_outcome(::Resolve): resolved name and delay, or missing" begin
+    using Distributions, Random
+
+    r = resolve(:event => (Gamma(1.5, 1.0), 0.4), :none => (NoEvent(), 0.6))
+    rng = MersenneTwister(3)
+    seen = Set{Symbol}()
+    for _ in 1:200
+        name, time = ComposedDistributions.rand_outcome(rng, r)
+        push!(seen, name)
+        name == :none ? (@test time === missing) : (@test time isa Real)
+    end
+    @test seen == Set([:event, :none])
+end
+
+@testitem "deprecated aliases: intervene, swap_child, cut_branch" begin
+    using Distributions
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    t2 = intervene(tree, :admit_death => Gamma(3.0, 1.5))
+    @test event(t2, :admit_death) == Gamma(3.0, 1.5)
+
+    nested = compose((resolution = compose((death = Gamma(1.5, 1.0),)),))
+    t3 = swap_child(nested, :resolution, :death => Gamma(3.0, 1.5))
+    @test event(t3, :resolution, :death) == Gamma(3.0, 1.5)
+
+    node = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.5), :transfer => (Gamma(1.0, 1.0), 0.2))
+    pruned = event(
+        cut_branch(compose((res = node,)), (:res, :transfer)), :res)
+    @test length(pruned.names) == 2
+    @test sum(pruned.branch_probs) ≈ 1.0
+end
+
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
     using Distributions
 

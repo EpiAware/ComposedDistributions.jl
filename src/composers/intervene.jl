@@ -48,6 +48,14 @@ function _edit_step(c::Resolve, path::Tuple, op)
     return Resolve(c.names, delays, c.branch_probs)
 end
 
+function _edit_step(c::Compete, path::Tuple, op)
+    idx = _child_index(c.names, first(path), :Compete)
+    delays = ntuple(length(c.names)) do i
+        i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
+    end
+    return Compete(c.names, delays)
+end
+
 function _edit_step(d::Choose, path::Tuple, op)
     idx = _child_index(d.names, first(path), :Choose)
     alts = ntuple(length(d.names)) do i
