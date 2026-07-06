@@ -8,10 +8,13 @@ name: Benchmark history
 # HEAD so a timeline accumulates. Triggers are disjoint from
 # `benchmark.yaml` (push/tags here vs pull_request there), so the two
 # never run on the same event.
+# Push/tag triggers are disabled until ConvolvedDistributions is
+# registered (#41): AirspeedVelocity installs the package into a temp
+# environment where [sources] pins do not apply, so the unregistered
+# dependency can never resolve and every run fails. The PR-comparison
+# workflow is unaffected (it runs from a checkout, where [sources]
+# applies). Re-enable push/tags alongside the other #41 items.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 # `contents: write` lets JamesIves/github-pages-deploy-action push the
