@@ -58,7 +58,7 @@ end
     @test mean(r) ≈ mean(mix)
     @test logpdf(r, 2.0) ≈ logpdf(mix, 2.0)
     @test cdf(r, 2.0) ≈ cdf(mix, 2.0)
-    @test winning_probabilities(r) == (death = 0.3, disch = 0.7)
+    @test probs(r) == (death = 0.3, disch = 0.7)
     @test occurrence_probability(r) ≈ 1.0
     # Residual: the last probability may be omitted (a bare delay).
     r2 = resolve(:death => (Gamma(1.5, 1.0), cfr), :disch => Gamma(2.0, 1.5))
@@ -89,7 +89,7 @@ end
     @test ccdf(c, t) ≈ exp(logccdf(c, t))
     @test cdf(c, t) ≈ 1 - ccdf(c, t)
     # Derived winning probabilities sum to one for proper causes.
-    wp = winning_probabilities(c)
+    wp = probs(c)
     @test sum(values(wp)) ≈ 1.0 atol = 1e-3
     # Monte-Carlo winning frequencies match the derived split.
     rng = MersenneTwister(42)
@@ -134,7 +134,7 @@ end
     d = compose(table)
     node = event(d, :death)
     @test node isa Resolve
-    @test winning_probabilities(node) == (death = 0.3, disch = 0.7)
+    @test probs(node) == (death = 0.3, disch = 0.7)
 end
 
 @testitem "compose: shared-origin branches front-end" begin

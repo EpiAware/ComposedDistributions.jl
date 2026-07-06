@@ -32,7 +32,7 @@ using Random: AbstractRNG, default_rng
 
 # Functions extended with new methods.
 import Distributions: params, insupport, pdf, logpdf, cdf, logcdf,
-                      ccdf, logccdf, quantile, mean, var, std, sampler
+                      ccdf, logccdf, quantile, mean, var, std, sampler, probs
 import Base: minimum, maximum
 
 # Types, constructors, and helpers used without method extension.
@@ -67,12 +67,12 @@ include("docstrings.jl")
 
 # Generic composers and front-end constructors. `resolve(...)` builds the fixed-
 # probability mixture `Resolve`; `compete(...)` builds the racing-hazard
-# `Compete`. `NoEvent` marks an absorbing no-event branch;
-# `winning_probabilities` / `occurrence_probability` read the per-cause winning /
-# any-event probabilities of either node.
+# `Compete`. `NoEvent` marks an absorbing no-event branch; `Distributions.probs`
+# (extended, not re-exported) reads the per-outcome split of either node and
+# `occurrence_probability` its sum (the any-event probability).
 export Sequential, Parallel, Resolve, Compete, NoEvent,
        sequential, parallel, compete, resolve,
-       compose, as_mixture, winning_probabilities, occurrence_probability
+       compose, as_mixture, occurrence_probability
 
 # Data-selected disjunction (case selector over independent alternatives).
 export Choose, choose
