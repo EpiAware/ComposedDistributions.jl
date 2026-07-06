@@ -213,12 +213,9 @@ _uncertain_specs(d::Truncated) = _uncertain_specs(d.untruncated)
 # the sampled value tuple `vals`. Used by the DynamicPPL extension's leaf
 # reconstruction to skip the argument check (so a sampler probing an out-of-support
 # point yields `-Inf` rather than throwing mid-gradient) only where the family
-# supports it. Pure reflection returning a `Bool` (constant w.r.t. the params), so a
-# zero-derivative primitive: the `ComposedDistributionsMooncakeExt` registers a
-# Mooncake `@zero_adjoint` for it so Mooncake reverse never traces its underlying
-# `jl_gf_invoke_lookup` foreigncall (which Mooncake on Julia LTS cannot
-# differentiate), keeping the reconstruction AD-safe on every backend and Julia
-# version.
+# supports it. Pure reflection returning a `Bool` (constant w.r.t. the params), so
+# `ComposedDistributionsMooncakeExt` shields it with a Mooncake `@zero_adjoint`,
+# keeping the reconstruction AD-safe under Mooncake reverse.
 function _ctor_has_check_args(ctor, vals::Tuple)
     return hasmethod(ctor, typeof(vals), (:check_args,))
 end

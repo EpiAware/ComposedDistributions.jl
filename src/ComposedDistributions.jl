@@ -96,6 +96,13 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain
 
+# Context-indexed (non-stationary) leaves: a `Varying` leaf varies with a
+# covariate (time, strata, ...); `instantiate(tree, Context(...))` resolves a tree
+# against a context to a concrete stationary tree. See
+# `design/0001-time-and-covariate-varying-distributions.md`.
+export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
+       has_varying
+
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
 # `event` fetches a child or descends a path.
@@ -144,6 +151,11 @@ include("composers/Shared.jl")
 # `_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
 # the tag wrapper).
 include("composers/Uncertain.jl")
+# Context-indexed leaves + the `instantiate` resolution seam. After every
+# composer type exists (it rebuilds Sequential/Parallel/Choose/Resolve/Compete/
+# Shared against a context) and after introspection (it extends free_leaf/
+# rewrap_leaf/_shared_tag for the Varying leaf).
+include("composers/varying.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")

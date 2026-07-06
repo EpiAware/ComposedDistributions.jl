@@ -13,9 +13,11 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [weakdeps]
 ModifiedDistributions = "664e6f8c-d74f-44d3-9f37-f82699103046"
+Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [extensions]
 ComposedDistributionsModifiedDistributionsExt = "ModifiedDistributions"
+ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
 ConvolvedDistributions = "0.1"
@@ -23,6 +25,7 @@ Distributions = "0.25"
 DocStringExtensions = "0.9"
 LogExpFunctions = "0.3, 1"
 ModifiedDistributions = "0.1"
+Mooncake = "0.5"
 Random = "1"
 Tables = "1"
 julia = "1.11, 1.12"
