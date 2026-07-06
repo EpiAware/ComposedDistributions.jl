@@ -32,5 +32,6 @@ pages = [
     "API reference" => [
         "Public API" => "lib/public.md",
         "Internal API" => "lib/internals.md"
-    ]
+    ],
+    "Benchmarks" => "benchmarks.md"
 ]
