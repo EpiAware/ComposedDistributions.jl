@@ -50,11 +50,11 @@ mean(chain), var(chain)
 
 total = observed_distribution(chain)
 
-mean(total) ≈ mean(Gamma(4, theta))
+(chain_mean = mean(total), gamma_mean = mean(Gamma(4, theta)))
 
 # The variance matches too.
 
-var(total) ≈ var(Gamma(4, theta))
+(chain_var = var(total), gamma_var = var(Gamma(4, theta)))
 
 # The linear chain trick is exactly this identity: a chain of `k` exponential
 # steps of mean `theta` is a `Gamma(k, theta)` delay, so a smooth delay can be

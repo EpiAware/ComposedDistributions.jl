@@ -12,13 +12,13 @@
 Supertype of the covariate contexts a composed tree is resolved against.
 
 A subtype carries the covariates a [`Varying`](@ref) leaf reads. [`Context`](@ref)
-is the concrete open-`NamedTuple` implementation; the abstract type is the seam
-the `uncertain distributions` work can extend with its own sampled-parameter
+is the concrete open-`NamedTuple` implementation; the abstract type is what the
+`uncertain distributions` work can extend with its own sampled-parameter
 context. [`instantiate`](@ref) dispatches on `AbstractContext`.
 
 # See also
 - [`Context`](@ref): the concrete covariate bag.
-- [`instantiate`](@ref): the resolution seam.
+- [`instantiate`](@ref): resolves a tree against a context.
 "
 abstract type AbstractContext end
 
@@ -29,8 +29,8 @@ The covariate context a [`Varying`](@ref) leaf is resolved against.
 A `Context` is an open bag of covariates (a `NamedTuple`) — calendar `time`, a
 `region`/`stratum`, or (for the uncertain-distributions work) sampled parameter
 values. [`instantiate`](@ref) reads the covariate a leaf names from it. Build one
-with keyword covariates. It is open (rather than a fixed `time` field) so the
-same seam carries the uncertain-distributions work's sampled parameters; see
+with keyword covariates. It is open (rather than a fixed `time` field) so it can
+also carry the uncertain-distributions work's sampled parameters; see
 `design/0001-time-and-covariate-varying-distributions.md` for the rationale.
 
 # Examples
@@ -71,8 +71,9 @@ _has_covariate(ctx::Context, name::Symbol) = haskey(ctx.covariates, name)
 Add or override covariates on a [`Context`](@ref), returning a new context.
 
 `with_covariates(ctx; kwargs...)` is how the sampling layer of the *uncertain
-distributions* work threads its LATENT index into the same seam an OBSERVED
-covariate uses: starting from a per-record observed context (calendar `time`,
+distributions* work threads its LATENT index into the same covariate channel an
+OBSERVED covariate uses: starting from a per-record observed context (calendar
+`time`,
 `region`), it adds the parameter values it has sampled
 (`with_covariates(ctx; inc_shape = θ)`), and a [`Varying`](@ref) leaf keyed on
 that name resolves against them exactly as a time-varying leaf resolves against
@@ -117,7 +118,7 @@ ordinary leaf, and every `Distributions` method (`logpdf`, `cdf`, `mean`, `rand`
 `params`, ...) delegates to the `reference`, so a tree with varying leaves still
 scores and samples at its reference by default.
 
-[`instantiate`](@ref)`(d, ctx)` is the seam that swaps the reference for `f`
+[`instantiate`](@ref)`(d, ctx)` is the step that swaps the reference for `f`
 evaluated at the context's covariate: `instantiate(leaf, Context(time = 4.0))`
 returns `f(4.0)`. Resolve a whole tree at a context and then score / sample /
 convolve the concrete result.
@@ -142,7 +143,7 @@ design note's open questions).
 
 # See also
 - [`varying`](@ref): friendly constructor.
-- [`instantiate`](@ref): the resolution seam.
+- [`instantiate`](@ref): resolves the leaf against a context.
 - [`Context`](@ref): the covariate bag.
 "
 struct Varying{F, D <: UnivariateDistribution} <: UnivariateDistribution{Continuous}

@@ -171,7 +171,8 @@ racing = compete(:death => Gamma(1.5, 1.0), :discharge => Gamma(2.0, 1.5));
 # The marginal any-event time is the `min` of the racing delays, so its survival
 # is the product of the per-cause survivals.
 
-ccdf(racing, 3.0) ≈ ccdf(Gamma(1.5, 1.0), 3.0) * ccdf(Gamma(2.0, 1.5), 3.0)
+(racing_ccdf = ccdf(racing, 3.0),
+    product_ccdf = ccdf(Gamma(1.5, 1.0), 3.0) * ccdf(Gamma(2.0, 1.5), 3.0))
 
 # Reach for `compete` when the outcome split is driven by competing risks on a
 # shared clock, so the probabilities follow from the delays rather than being
@@ -227,7 +228,8 @@ record = rand(Xoshiro(7), tree)
 # The labelled draw round-trips through `logpdf`, either as the record or as its
 # flat vector of values.
 
-logpdf(tree, record) ≈ logpdf(tree, collect(values(record)))
+(from_record = logpdf(tree, record),
+    from_vector = logpdf(tree, collect(values(record))))
 
 # A `Resolve` node scores and samples its marginal time to resolution directly.
 
@@ -249,7 +251,8 @@ ComposedDistributions.rand_outcome(Xoshiro(7), resolution)
 
 total = convolve_distributions(Gamma(2.0, 1.0), LogNormal(0.5, 0.4));
 
-mean(total) ≈ mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4))
+(convolved_mean = mean(total),
+    summed_mean = mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4)))
 
 # ## Reading the composed marginal
 #
@@ -269,7 +272,7 @@ mean(chain_moments), var(chain_moments)
 
 collapsed = observed_distribution(chain_moments);
 
-mean(collapsed) ≈ mean(chain_moments)
+(collapsed_mean = mean(collapsed), chain_mean = mean(chain_moments))
 
 # ## Parameters and priors
 #
