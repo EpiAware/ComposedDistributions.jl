@@ -11,7 +11,8 @@
 #
 # Light tutorials emit `@example` blocks that Documenter runs in-process; keep
 # cheap tutorials here.
-const LIGHT_TUTORIALS = String[]
+const LIGHT_TUTORIALS = ["composing-distributions.jl",
+    "competing-outcomes.jl", "linear-chain.jl"]
 
 # Heavy tutorials (live MCMC fits, multi-backend AD, plotting) are each
 # executed once in a fresh subprocess so native/memory state cannot accumulate.
@@ -25,7 +26,11 @@ const TUTORIALS_SUBDIR = joinpath("getting-started", "tutorials")
 # heading should preserve the tutorial's `@id` (e.g.
 # `"# [Title](@id my-anchor)"`) so cross-references from other pages still
 # resolve in a fast build.
-const TUTORIAL_STUBS = Pair{String, String}[]
+const TUTORIAL_STUBS = [
+    "composing-distributions.md" => "# [Composing distributions](@id composing-distributions)",
+    "competing-outcomes.md" => "# [Competing outcomes: resolve versus compete](@id competing-outcomes)",
+    "linear-chain.md" => "# [Delay chains and the linear chain trick](@id linear-chain)"
+]
 
 # Regexes for URLs to skip during the (full-build) linkcheck, e.g. a page
 # published by a separate workflow that is not yet live.
