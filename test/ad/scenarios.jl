@@ -26,3 +26,30 @@ end
 # @testitem "ForwardDiff gradients (latent)" tags=[:ad, :forwarddiff] setup=[ADHelpers] begin
 #     test_working_backend("ForwardDiff"; category = :latent)
 # end
+
+# `_ctor_has_check_args` (src/composers/introspection.jl) is not yet called
+# from any scored path in this package — it is dormant reflection for a
+# future leaf reconstruction (the DynamicPPL composer-half extension, issue
+# #9) — so it never appears inside the `scenarios()` above. This item drives
+# it directly through Mooncake reverse to prove
+# `ComposedDistributionsMooncakeExt`'s `@zero_adjoint` shield holds ahead of
+# that caller landing: without the shield, Mooncake reverse errors tracing
+# `hasmethod`'s internals.
+@testitem "Mooncake extension: _ctor_has_check_args is AD-safe" tags=[
+    :ad, :mooncake, :mooncake_reverse] begin
+    using ADTypes: AutoMooncake
+    using ComposedDistributions
+    using ComposedDistributions: _ctor_has_check_args
+    using DifferentiationInterface: gradient
+    using Distributions: Gamma
+    using Mooncake
+
+    @test Base.get_extension(ComposedDistributions,
+        :ComposedDistributionsMooncakeExt) !== nothing
+
+    f(θ) = (_ctor_has_check_args(Gamma, (θ[1], θ[2])) ? 1.0 : 0.0) *
+           sum(abs2, θ)
+    θ0 = [2.0, 1.5]
+    g = gradient(f, AutoMooncake(config = nothing), θ0)
+    @test g ≈ 2 .* θ0
+end

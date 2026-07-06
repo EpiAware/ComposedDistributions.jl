@@ -43,3 +43,26 @@ end
     tbl = params_table(tree)
     @test tbl.param == [:shape, :scale, :mu, :sigma]
 end
+
+@testitem "Modified extension: uncertain specs seen through a modifier" begin
+    using Distributions, Random
+    using ModifiedDistributions: affine
+
+    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    au = affine(u; scale = 2.0, shift = 0.0)
+
+    # The spec protocol sees through the modifier, so the uncertainty is
+    # visible to the routing predicate and the prior column.
+    @test ComposedDistributions._uncertain_specs(au) == u.specs
+    @test has_uncertain(au)
+
+    # The marginal `rand` draws through the modifier (a fresh parameter each
+    # call), and `update` collapses the wrapped uncertainty, keeping the
+    # modifier's fixed structure.
+    tree = compose((onset_admit = au,))
+    @test all(isfinite, values(rand(Xoshiro(1), tree)))
+    collapsed = update(tree, (onset_admit = (shape = 3.0, scale = 1.0),))
+    leaf = event(collapsed, :onset_admit)
+    @test !has_uncertain(leaf)
+    @test ComposedDistributions.free_leaf(leaf) == Gamma(3.0, 1.0)
+end

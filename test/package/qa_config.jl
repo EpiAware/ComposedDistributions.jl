@@ -18,10 +18,11 @@ const QA_CONFIG = (
 
     # ExplicitImports `ignore`: symbols imported non-publicly.
     # `_logccdf_ad_safe` is a ConvolvedDistributions internal the racing-hazard
-    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag` is
-    # the internal tag protocol the ModifiedDistributions extension extends so a
-    # modified leaf peels its shared tag inside a composed tree.
-    ei_ignore = (:_logccdf_ad_safe, :_shared_tag),
+    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag` and
+    # `_uncertain_specs` are the internal tag/spec protocols the
+    # ModifiedDistributions extension extends so a modified leaf peels its
+    # shared tag and uncertain parameter specs inside a composed tree.
+    ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface

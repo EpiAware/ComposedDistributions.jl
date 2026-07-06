@@ -8,7 +8,10 @@
 
 # Mean / variance of a (possibly censored) leaf: that of its inner free delay.
 # A plain leaf is its own free leaf; a `Convolved` free-leafs to itself and so
-# reuses its additive `mean`/`var`.
+# reuses its additive `mean`/`var`. An `Uncertain` leaf free-leafs straight to
+# the template too (matching `mean`/`var(::Uncertain)`'s own delegation), so a
+# tree containing one silently reports the template moment; guard with
+# `has_uncertain` first if that matters.
 _leaf_mean(leaf) = mean(free_leaf(leaf))
 _leaf_var(leaf) = var(free_leaf(leaf))
 
@@ -26,7 +29,11 @@ convolved total for a chain, the marginal time-to-resolution for a `Resolve`).
 For a genuinely multivariate [`Parallel`](@ref) (several independent observed
 endpoints) it returns the per-ENDPOINT `Vector`, one overall mean per branch
 endpoint, NOT the origin / intermediate events. Censoring is seen through to
-the free delay.
+the free delay. An [`uncertain`](@ref) leaf contributes its TEMPLATE moment
+(parameter uncertainty is NOT propagated); guard with
+[`has_uncertain`](@ref)`(d)` if that matters, draw the marginal with `rand`, or
+collapse the leaf to its concrete template with [`update`](@ref)`(tree, params)`
+to work with fixed parameters.
 
 For a single event's own moment, fetch its distribution with [`event`](@ref)
 and take its mean directly, e.g. `mean(event(d, :onset_admit))`.

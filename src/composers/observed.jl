@@ -29,7 +29,16 @@ observed_distribution(seq)
 observed_distribution(d::UnivariateDistribution) = d
 
 function observed_distribution(d::Sequential)
+    # Structural errors (a Parallel step) first: they name the real
+    # obstruction, which realising would not remove.
     leaves = _observed_leaves(d.components)
+    # An uncertain leaf's template density/cdf is not the marginal, so the lazy
+    # convolved total it would feed is not the observed quantity; fail here with
+    # guidance rather than silently convolving the template values.
+    has_uncertain(d) && throw(ArgumentError(
+        "cannot collapse a chain with uncertain leaves to its observed " *
+        "convolved total; pin the parameters with `update(tree, params)` to " *
+        "collapse each uncertain leaf to its concrete template first"))
     return length(leaves) == 1 ? only(leaves) :
            convolve_distributions(leaves)
 end

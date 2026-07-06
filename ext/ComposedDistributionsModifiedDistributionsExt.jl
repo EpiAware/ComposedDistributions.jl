@@ -11,7 +11,8 @@
 # the seam, so no piracy).
 module ComposedDistributionsModifiedDistributionsExt
 
-import ComposedDistributions: free_leaf, rewrap_leaf, _shared_tag
+import ComposedDistributions: free_leaf, rewrap_leaf, _shared_tag,
+                              _uncertain_specs
 using ComposedDistributions: Shared
 import ModifiedDistributions: get_dist
 using ModifiedDistributions: Affine, Weighted, Transformed, affine
@@ -39,6 +40,16 @@ end
 _shared_tag(d::Affine) = _shared_tag(d.dist)
 _shared_tag(d::Weighted) = _shared_tag(d.dist)
 _shared_tag(d::Transformed) = _shared_tag(d.dist)
+
+# --- _uncertain_specs: see uncertain parameters through a modifier ----------
+#
+# A modifier over an `uncertain(...)` leaf must still expose the attached
+# parameter specs, so `params_table`'s prior column and the marginal `rand`
+# see through the modifier exactly like the tag protocol does.
+
+_uncertain_specs(d::Affine) = _uncertain_specs(d.dist)
+_uncertain_specs(d::Weighted) = _uncertain_specs(d.dist)
+_uncertain_specs(d::Transformed) = _uncertain_specs(d.dist)
 
 # --- get_dist: the composed `Shared` tag is transparent to the unwrap protocol
 
