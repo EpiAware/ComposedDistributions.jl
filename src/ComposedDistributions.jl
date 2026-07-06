@@ -21,8 +21,8 @@ censoring: this is the generic composition layer.
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
+# A two-step delay chain, then its parameter table.
+tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
 params_table(tree)
 ```
 """

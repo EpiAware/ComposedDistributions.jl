@@ -1,20 +1,7 @@
-# ============================================================================
-# Shared: a name-tagged sub-distribution tied across composed branches
-# ============================================================================
-#
-# `shared(:inc, dist)` tags a leaf with a name so two occurrences carrying the
-# same tag are one free parameter, not two. A parameter can appear in several
-# branches of a tree (e.g. an incubation `inc` in both the index and sourced
-# branches of a `choose`); without a tie the prior/params interface would
-# inventory, sample and update each occurrence independently and duplicate the
-# shared parameter. A `Shared` tag lets the interface dedup by name: inventory
-# once, sample once, place the one sampled value in every occurrence.
-#
-# The wrapper is transparent in the hot path: every `Distributions` method
-# delegates to the wrapped leaf, so `logpdf`/`rand`/`cdf`/... are unchanged and
-# AD flows straight through. Only the introspection (`params_table`), the
-# reconstruction (`update`) and the Turing parameter submodel
-# (`composed_parameters_model`) read the tag, deduping occurrences by it.
+# `Shared` tags a leaf so multiple occurrences of the same name are treated as
+# one free parameter (see its docstring below). It is transparent in the hot
+# path: every `Distributions` method delegates to the wrapped leaf, so AD
+# flows straight through; only introspection/reconstruction read the tag.
 
 @doc "
 
@@ -23,8 +10,8 @@ A name-tagged leaf tied across the branches of a composed distribution.
 `Shared` wraps a leaf distribution with a `tag` (a `Symbol`) marking it as a
 shared parameter group. Two `Shared` leaves carrying the SAME tag are treated as
 the SAME free parameter by the prior/params interface: [`params_table`](@ref)
-lists the group's parameters ONCE (deduped by tag),
-[`composed_parameters_model`](@ref) samples the group ONCE and places the sampled
+lists the group's parameters ONCE (deduped by tag), a downstream
+`composed_parameters_model` samples the group ONCE and places the sampled
 values in every occurrence, and [`update`](@ref) updates all occurrences from one
 entry. The wrapper is transparent to scoring and sampling (every distribution
 method delegates to the wrapped leaf), so it only changes how parameters are
@@ -211,9 +198,9 @@ by `paths` and wraps it in a [`Shared`](@ref) group tagged `name`, returning the
 rebuilt composed distribution. This is the tree-level, path-based spelling of
 [`shared`](@ref): `tie(d, p1, p2; name = :inc)` produces the EXACT same artefact
 as building `d` with `shared(:inc, leaf)` at each of those leaves, so every tag
-consumer ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref),
-[`composed_parameters_model`](@ref)) inventories, samples and updates the tied
-leaves as a single free parameter.
+consumer ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), a
+downstream `composed_parameters_model`) inventories, samples and updates the
+tied leaves as a single free parameter.
 
 Each `path` takes the SAME forms [`event`](@ref) and [`update`](@ref) accept: a
 bare `Symbol` direct child, a dotted-path `Symbol` (`:\"sourced.inc\"`, as in

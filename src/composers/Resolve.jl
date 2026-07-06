@@ -1,31 +1,4 @@
-# ============================================================================
-# Resolve: a generic disjunctive composer over plain distributions
-# ============================================================================
-#
-# `Resolve(:a => (d, p), :b => (d, p), ...)` composes any
-# `UnivariateDistribution`s into one_of outcomes: exactly one outcome occurs,
-# governed by branch probabilities that sum to one. It lowers to a
-# `Distributions.MixtureModel` over the outcome delays weighted by those
-# probabilities, so the realisation is a single time (the marginal
-# time-to-resolution). Because it stays univariate it nests inside
-# [`Sequential`](@ref) / [`Parallel`](@ref) as an ordinary child. This layer adds
-# no censored-internal behaviour: the generic composition only.
-
-# ----------------------------------------------------------------------------
-# AbstractOneOf: the shared supertype for the one_of-outcome composers
-# ----------------------------------------------------------------------------
-#
-# Two one_of-outcome composers share one event-tree behaviour and so one
-# supertype: the fixed-probability mixture [`Resolve`](@ref) (cause and timing
-# independent) and the racing-hazard [`Compete`](@ref) (the branch
-# probability derived from the hazards, timing coupled). The shared `compete(
-# ...)` constructor builds the right one: a `Compete` when no branch
-# probabilities are given, a `Resolve` when they are. The tree walkers
-# (`tree_events.jl` name layout, `nesting.jl` `_event_child_nleaves`,
-# `censored_specialisations.jl` scoring / `rand`, the introspection) dispatch on
-# `AbstractOneOf` wherever the behaviour is shared (one event slot per
-# outcome, the shared origin, the per-outcome `rand`), and on the concrete type
-# only where the scoring arithmetic differs (mixture weight vs hazard survival).
+# --- AbstractOneOf: the shared supertype for the one_of-outcome composers ---
 @doc raw"
 
 Shared supertype of the one_of-outcome composers.

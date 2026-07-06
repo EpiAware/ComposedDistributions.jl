@@ -1,23 +1,3 @@
-# ============================================================================
-# compose: the friendly front-end constructor for the composer stack
-# ============================================================================
-#
-# `compose` is a constructor over the [`Sequential`](@ref) / [`Parallel`](@ref)
-# composers: it does not introduce a new monolithic tree type. Three
-# friendly inputs all lower to the same nested composer stack:
-#
-# - a `NamedTuple` (named, recursive): a `Parallel` over the named children; a
-#   child that is itself a `NamedTuple` nests as a `Parallel`, a child that is a
-#   `Vector`/`Tuple` of distributions nests as a `Sequential`, a bare
-#   distribution is a leaf;
-# - a Tables.jl table with `name` and `dist` columns: a `Parallel` over the rows
-#   (the column-table equivalent of a flat `NamedTuple`);
-# - a nested `Matrix` of distributions: rows are `Parallel` branches and the
-#   columns within a row are `Sequential` steps (a branching grid).
-#
-# The mappings are chosen so the three inputs build identical stacks for the
-# same structure, which the tests assert by `==` on the composed objects.
-
 @doc "
 
 Build a nested composer stack from a friendly front-end input.
@@ -44,17 +24,17 @@ composers, not a new tree type.
 - nested `Matrix` of distributions: rows are [`Parallel`](@ref) branches and the
   columns within a row are [`Sequential`](@ref) steps. This orientation is
   canonical, so a one-column matrix is parallel leaf branches (one row each) and
-  a one-row matrix is a single [`Sequential`](@ref) chain (the lone row's
-  columns), not a `Parallel`.
+  a one-row matrix is a [`Parallel`](@ref)-of-one wrapping a [`Sequential`](@ref)
+  of the row's columns.
 
 # Contract
 
 `compose` ALWAYS returns a composer, never a bare univariate leaf.
 A single branch stays a [`Parallel`](@ref)-of-one and a single step a
 one-element [`Sequential`](@ref); the wrapper is never collapsed away.
-A bare leaf is used directly at the SCORING layer, where
-[`record_distributions`](@ref) and [`composed_distribution_model`](@ref) accept
-a bare `UnivariateDistribution`, so callers do not need `compose` to pass one
+A bare leaf is used directly at the SCORING layer, where downstream helpers
+such as `record_distributions` and `composed_distribution_model` accept a
+bare `UnivariateDistribution`, so callers do not need `compose` to pass one
 through.
 
 # Examples
@@ -71,6 +51,9 @@ table = (name = [:a, :b, :c, :d],
 mat = [Gamma(2.0, 1.0) LogNormal(0.5, 0.4); Gamma(1.0, 1.0) Gamma(3.0, 1.0)]
 compose(nt) == compose(table) == compose(mat)
 ```
+
+The three front-ends are chosen to build identical stacks for the same
+structure, as the example above shows.
 
 # See also
 - [`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref): the composers
