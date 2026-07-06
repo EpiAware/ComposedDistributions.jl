@@ -15,42 +15,57 @@ The package has four layers, each building on the one before.
 
 ## The verb map
 
-Every operator falls into one of four families.
+The verbs fall into five families, listed here as verb, what it does, and what it returns.
 
-```text
-Structural composition (wire named branches into a tree)
-├─ compose      lower a NamedTuple / table / matrix to the stack
-├─ sequential   conjunctive chain (steps add up)
-├─ parallel     independent branches off one shared origin
-├─ resolve      one outcome occurs by fixed probability
-├─ compete      racing hazards, first to fire wins
-├─ choose       a data field picks the branch
-├─ shared       tag a leaf as a tied parameter group at build time
-└─ tie          tie leaves at paths into one parameter group
+**Structural composition** wires named branches into a tree.
 
-Combination and lowering (join or collapse whole delays)
-├─ convolve_distributions   the sum X + Y (Convolved)
-├─ difference               the dual X - Y (Difference)
-├─ as_mixture               the MixtureModel view of a one_of node
-└─ observed_distribution    collapse a chain to its convolved total
+| Verb | What it does | Returns |
+|---|---|---|
+| `compose` | lowers a NamedTuple, table or matrix to the stack | a composer |
+| `sequential` | a conjunctive chain, where steps add up | [`Sequential`](@ref) |
+| `parallel` | independent branches off one shared origin | [`Parallel`](@ref) |
+| `resolve` | one outcome occurs by a fixed probability | [`Resolve`](@ref) |
+| `compete` | racing hazards, the first to fire wins | [`Compete`](@ref) |
+| `choose` | a data field picks the branch | [`Choose`](@ref) |
+| `shared` | tags a leaf as a tied parameter group at build time | a tied leaf |
+| `tie` | ties leaves at named paths into one parameter group | a tied tree |
 
-Parameters (read and prior the free parameters)
-├─ params_table    the flat free-parameter inventory (a Tables.jl table)
-├─ build_priors    support-derived default priors from that table
-└─ default_prior   the default prior for one parameter row
+**Combination and lowering** joins or collapses whole delays.
 
-Reading and editing (inspect or reshape an assembled tree)
-├─ event / event_names / event_tree  fetch a child / the record key names
-├─ mean / var                        the composed marginal moments
-├─ update                            replace values or whole nodes
-└─ prune / splice                    drop or insert a branch (topology)
+| Verb | What it does | Returns |
+|---|---|---|
+| `convolve_distributions` | the sum `X + Y` | [`Convolved`](@ref) |
+| `difference` | the dual `X - Y` | [`Difference`](@ref) |
+| `as_mixture` | the mixture view of a one_of node | a `MixtureModel` |
+| `observed_distribution` | collapses a chain to its convolved total | a convolved leaf |
 
-Deferred leaves (a leaf whose distribution resolves later)
-├─ varying / Context / instantiate   observed covariate picks the leaf
-├─ has_varying                       guard: un-instantiated leaves remain
-├─ uncertain                         distribution-valued parameters (priors)
-└─ has_uncertain                     guard: uncertain leaves remain
-```
+**Parameters** read and prior the free parameters.
+
+| Verb | What it does | Returns |
+|---|---|---|
+| `params_table` | the flat free-parameter inventory | a Tables.jl table |
+| `build_priors` | support-derived default priors from that table | a nested prior `NamedTuple` |
+| `default_prior` | the default prior for one parameter row | a `Distribution` |
+
+**Reading and editing** inspect or reshape an assembled tree.
+
+| Verb | What it does | Returns |
+|---|---|---|
+| `event` / `event_names` / `event_tree` | fetch a child or the record key names | a node, leaf or names |
+| `mean` / `var` | the composed marginal moments | a number or `NamedTuple` |
+| `update` | replaces parameter values or whole nodes | a same-shape tree |
+| `prune` / `splice` | drops or inserts a branch | an edited tree |
+
+**Deferred leaves** hold a distribution that resolves later.
+
+| Verb | What it does | Returns |
+|---|---|---|
+| `varying` / `Context` / `instantiate` | an observed covariate picks the leaf | a resolved tree |
+| `has_varying` | whether any un-instantiated leaf remains | a `Bool` |
+| `uncertain` | distribution-valued parameters that act as priors | an uncertain leaf |
+| `has_uncertain` | whether any uncertain leaf remains | a `Bool` |
+
+The deferred-leaf verbs are worked through in [Multi-strata trees and parameter uncertainty](@ref strata-uncertainty).
 
 ## Concept to primitive
 
