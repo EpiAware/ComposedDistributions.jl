@@ -31,7 +31,7 @@ function _edit_step(c::Resolve, path::Tuple, op)
     delays = ntuple(length(c.names)) do i
         i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
     end
-    return Resolve(c.names, delays, c.branch_probs)
+    return _rebuild(c, delays)
 end
 
 function _edit_step(c::Compete, path::Tuple, op)
@@ -48,7 +48,7 @@ function _edit_step(d::Choose, path::Tuple, op)
         i == idx ? _edit_at(d.alternatives[i], Base.tail(path), op) :
         d.alternatives[i]
     end
-    return Choose(d.names, alts, d.selector)
+    return _rebuild(d, alts)
 end
 
 # A leaf has no children: a non-empty path into it is an error.

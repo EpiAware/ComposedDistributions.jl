@@ -72,6 +72,22 @@ Read its free parameters as a flat table, keyed by edge and parameter name.
 params_table(tree)
 ```
 
+## Uncertain distributions
+
+A literature-reported delay rarely comes with exact parameters. Wrap the
+uncertainty inline with [`uncertain`](@ref): parameters that are themselves
+distributions, nestable to any depth. The result is still a univariate
+distribution, so it composes as a leaf everywhere, and `rand` draws the
+marginal (a fresh parameter draw each call); the rest of the surface reports
+the template's central values until you pin concrete parameters with
+[`update`](@ref) (guard against a forgotten collapse with `has_uncertain`).
+
+```@example overview
+u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+utree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
+has_uncertain(utree)
+```
+
 ## Key features
 
 - **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.

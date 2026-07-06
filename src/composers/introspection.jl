@@ -201,6 +201,14 @@ function rewrap_leaf(d::Truncated, inner)
         upper = d.upper)
 end
 
+# The uncertain-spec protocol: the NamedTuple of a leaf's distribution-valued
+# parameters (its attached priors), or `nothing` for a fully fixed leaf. The
+# default is `nothing`; `Uncertain` reports its specs and the wrapper leaves
+# forward (see Uncertain.jl), so a wrapped uncertain leaf still exposes them to
+# `params_table`'s `prior` column and the stack surfaces.
+_uncertain_specs(leaf) = nothing
+_uncertain_specs(d::Truncated) = _uncertain_specs(d.untruncated)
+
 # Whether a leaf distribution constructor `ctor` accepts a `check_args` keyword for
 # the sampled value tuple `vals`. Used by the DynamicPPL extension's leaf
 # reconstruction to skip the argument check (so a sampler probing an out-of-support
@@ -255,7 +263,7 @@ end
 A Tables.jl column table of a composed distribution's free parameters.
 
 The value [`params_table`](@ref) returns: a Tables.jl source (a column table)
-that prints as a padded `edge | param | value | support` table. It is a thin
+that prints as a padded `edge | param | value | support | prior` table. It is a thin
 wrapper over a `NamedTuple` of equal-length column vectors, forwarding the whole
 Tables.jl column interface and column access (`tbl.edge`, `tbl.param`, ...), so
 `Tables.istable`, `Tables.columns`, `Tables.getcolumn`, `DataFrame(tbl)` and
@@ -296,7 +304,7 @@ function Base.show(io::IO, t::ParamsTable)
 end
 
 # A padded ASCII table for `text/plain` display, so `params_table(d)` renders as
-# an actual table. Columns are `edge | param | value | support`; each cell is the
+# an actual table. Columns are `edge | param | value | support | prior`; each cell is the
 # `string` of the value, columns padded to their widest cell (header included).
 function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
     cols = getfield(t, :columns)
@@ -304,8 +312,9 @@ function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
     n = _nrows(t)
     println(io, "params_table ($n rows)")
     isempty(names) && return nothing
-    # Stringify every cell, then size each column to its widest entry.
-    cells = [string.(getindex(cols, nm)) for nm in names]
+    # Stringify every cell (an absent entry, e.g. a row with no attached
+    # prior, renders blank), then size each column to its widest entry.
+    cells = [_cell_string.(getindex(cols, nm)) for nm in names]
     headers = string.(names)
     widths = [maximum(length, vcat(headers[j], cells[j]); init = 0)
               for j in eachindex(names)]
@@ -320,6 +329,9 @@ function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
     end
     return nothing
 end
+
+# A blank cell for an absent (`nothing`) entry; `string` otherwise.
+_cell_string(x) = x === nothing ? "" : string(x)
 
 @doc "
 
@@ -339,6 +351,9 @@ of the composed distribution `d`, with columns:
 - `support`: the `(minimum, maximum)` variate support of that edge's
   distribution, the domain a prior over the edge must respect (from `minimum`/
   `maximum`/`support`).
+- `prior`: the attached prior of an [`uncertain`](@ref) parameter (its spec
+  distribution), or `nothing` for a fixed parameter. [`build_priors`](@ref)
+  uses a non-`nothing` entry ahead of its per-row default.
 
 Define priors against the rows of this table instead of hand-matching parameter
 names. Built from [`params`](@ref) (nested, name-keyed values) plus the edge
@@ -370,21 +385,22 @@ function params_table(
     params_col = Symbol[]
     values = Any[]
     supports = Any[]
+    priors = Any[]
     seen = Set{Symbol}()
-    _walk_rows!(edges, params_col, values, supports, seen, d, ())
+    _walk_rows!(edges, params_col, values, supports, priors, seen, d, ())
     return ParamsTable((edge = edges, param = params_col,
-        value = values, support = supports))
+        value = values, support = supports, prior = priors))
 end
 
 # Pre-order walk over the composer tree. `path` is the tuple of names from the
 # root to the current node. A composer recurses into its named children; a
 # `Resolve` additionally emits its branch-probability rows; a leaf emits one
 # row per scalar parameter. Hand-rolled recursion to stay type-stable.
-function _walk_rows!(edges, params_col, values, supports, seen,
+function _walk_rows!(edges, params_col, values, supports, priors, seen,
         d::Union{Sequential, Parallel}, path)
     names = component_names(d)
     for (name, child) in zip(names, d.components)
-        _walk_rows!(edges, params_col, values, supports, seen, child,
+        _walk_rows!(edges, params_col, values, supports, priors, seen, child,
             (path..., name))
     end
     return nothing
@@ -393,20 +409,20 @@ end
 # A `Choose`'s alternatives each contribute their own rows; a tag shared across
 # alternatives is deduped via `seen`, so a parameter tied across the index and
 # sourced branches is inventoried once.
-function _walk_rows!(edges, params_col, values, supports, seen,
+function _walk_rows!(edges, params_col, values, supports, priors, seen,
         d::Choose, path)
     for (name, alt) in zip(d.names, d.alternatives)
-        _walk_rows!(edges, params_col, values, supports, seen, alt,
+        _walk_rows!(edges, params_col, values, supports, priors, seen, alt,
             (path..., name))
     end
     return nothing
 end
 
-function _walk_rows!(edges, params_col, values, supports, seen,
+function _walk_rows!(edges, params_col, values, supports, priors, seen,
         c::Resolve, path)
     for (name, delay) in zip(c.names, c.delays)
         _is_no_event(delay) && continue
-        _walk_rows!(edges, params_col, values, supports, seen, delay,
+        _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
             (path..., name))
     end
     sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
@@ -416,16 +432,17 @@ function _walk_rows!(edges, params_col, values, supports, seen,
         push!(params_col, Symbol(c.names[k]))
         push!(values, p)
         push!(supports, sup)
+        push!(priors, nothing)
     end
     return nothing
 end
 
 # A racing-hazard node emits only its outcome delays' parameter rows; there is
 # no branch-probability block (the winning probability is derived, not free).
-function _walk_rows!(edges, params_col, values, supports, seen,
+function _walk_rows!(edges, params_col, values, supports, priors, seen,
         c::Compete, path)
     for (name, delay) in zip(c.names, c.delays)
-        _walk_rows!(edges, params_col, values, supports, seen, delay,
+        _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
             (path..., name))
     end
     return nothing
@@ -436,13 +453,17 @@ end
 # bounds are fixed structure, see `free_leaf`). A shared-tagged leaf
 # (`_shared_tag`) is inventoried once under its tag as the edge: the first
 # occurrence emits the rows, later occurrences with the same tag are skipped so
-# the tied parameter is listed once.
-function _walk_rows!(edges, params_col, values, supports, seen, leaf, path)
+# the tied parameter is listed once. An uncertain leaf's attached spec rides
+# each row's `prior` entry (`nothing` for a fully fixed parameter), so
+# `build_priors` picks the attached prior up without an explicit override.
+function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
+        path)
     tag = _shared_tag(leaf)
     tag !== nothing && tag in seen && return nothing
     inner = free_leaf(leaf)
     pnames = _leaf_param_names(leaf)
     vals = params(inner)
+    specs = _uncertain_specs(leaf)
     sup = (minimum(inner), maximum(inner))
     edge = tag === nothing ? _join_path(path) : tag
     tag === nothing || push!(seen, tag)
@@ -451,6 +472,8 @@ function _walk_rows!(edges, params_col, values, supports, seen, leaf, path)
         push!(params_col, pname)
         push!(values, v)
         push!(supports, sup)
+        push!(priors,
+            specs === nothing ? nothing : get(specs, pname, nothing))
     end
     return nothing
 end
@@ -543,7 +566,7 @@ function _update(d::Choose, params::NamedTuple, shared)
     alts = ntuple(length(d.names)) do i
         _update(d.alternatives[i], _child_params(params, d.names[i]), shared)
     end
-    return Choose(d.names, alts, d.selector)
+    return _rebuild(d, alts)
 end
 
 function _update(c::Resolve, params::NamedTuple, shared)
@@ -568,7 +591,7 @@ function _update(c::Compete, params::NamedTuple, shared)
     delays = ntuple(length(c.names)) do i
         _update(c.delays[i], _child_params(params, c.names[i]), shared)
     end
-    return Compete(c.names, delays)
+    return _rebuild(c, delays)
 end
 
 # A no-event marker carries no parameters, so `update` leaves it unchanged.
@@ -638,9 +661,20 @@ function _check_update_keys(params, ::Tuple, what; optional::Tuple = ())
 end
 
 # `_rebuild` for the composers (mirrors the extension's helper, kept core-side so
-# `update` is Turing-free).
+# `update` is Turing-free). Rebuilds a node of the same type and metadata around
+# a new children tuple (steps/branches, one_of outcome delays, Choose
+# alternatives); shared by the `update` / `intervene` structural edits.
 _rebuild(d::Sequential, components::Tuple) = Sequential(components, d.names)
 _rebuild(d::Parallel, components::Tuple) = Parallel(components, d.names)
+_rebuild(c::Resolve, delays::Tuple) = Resolve(c.names, delays, c.branch_probs)
+_rebuild(c::Compete, delays::Tuple) = Compete(c.names, delays)
+_rebuild(d::Choose, alts::Tuple) = Choose(d.names, alts, d.selector)
+
+# A composer node's children tuple, uniform across the node kinds (the field
+# holding them differs per type). Pairs with `_rebuild` for generic node walks.
+_node_children(d::Union{Sequential, Parallel}) = d.components
+_node_children(c::AbstractOneOf) = c.delays
+_node_children(d::Choose) = d.alternatives
 
 # --- build_priors: params_table + flat priors -> nested NamedTuple ----------
 
@@ -767,7 +801,9 @@ rather than by hand-matching the tree.
 
 For each row the prior is chosen in order:
 1. a user `priors` override for that `(edge, param)`, if present, else
-2. `default(row)`, the per-row default (support-derived [`default_prior`](@ref)
+2. the row's attached `prior` (an [`uncertain`](@ref) parameter's spec rides
+   the table's `prior` column), if present, else
+3. `default(row)`, the per-row default (support-derived [`default_prior`](@ref)
    unless a different `default` function is given).
 
 By default every row gets a sensible support-derived prior, so
@@ -816,6 +852,11 @@ function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
     params_col = Tables.getcolumn(table, :param)
     values = Tables.getcolumn(table, :value)
     supports = Tables.getcolumn(table, :support)
+    # The attached-prior column (an uncertain parameter's spec); tolerate its
+    # absence so a hand-built four-column table keeps working.
+    cols = Tables.columns(table)
+    attached = :prior in Tables.columnnames(cols) ?
+               Tables.getcolumn(cols, :prior) : nothing
     tree = Dict{Symbol, Any}()
     for i in eachindex(edges)
         edge = edges[i]
@@ -823,6 +864,8 @@ function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
         ovr = _prior_override(priors, edge, param)
         prior = if ovr !== nothing
             ovr
+        elseif attached !== nothing && attached[i] !== nothing
+            attached[i]
         elseif default !== nothing
             row = (; edge = edge, param = param,
                 value = values[i], support = supports[i])
