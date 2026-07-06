@@ -1,24 +1,3 @@
-# ============================================================================
-# Choose: a data-selected disjunction over independent sub-distributions
-# ============================================================================
-#
-# `Choose(:a => d_a, :b => d_b, ...; selector = :kind)` holds N named
-# alternatives, each an independent (sub-)distribution. Unlike
-# [`Resolve`](@ref) / [`Parallel`](@ref), the alternatives share no common
-# origin and carry no branch probability: a single data field (the `selector`,
-# e.g. `:kind`) picks which alternative scores / `rand`s / dispatches for a
-# given record. This is the index-vs-sourced split in the hanta model:
-# an `index` case (origin = its own infection) versus a `sourced` case
-# (origin = the source's onset, coupled). Neither `Parallel` (shared origin,
-# product) nor `Resolve` (shared origin, probabilistic mixture) fits; this is
-# a disjunctive node selected by data.
-#
-# The hot path is type-stable: the selected alternative is found by a
-# hand-rolled recursion over the name tuple (a function barrier on each
-# concrete alternative type), not a runtime type lookup or a `Dict` that breaks
-# inference. No `AbstractTrees` in the hot path. AD flows through the selected
-# alternative's own `logpdf`.
-
 @doc raw"
 
 A data-selected disjunction over independent named alternatives.
@@ -43,9 +22,13 @@ so inference of the hot-path `logpdf` is preserved.
 
 An alternative may itself be any distribution or a nested composer
 ([`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref), or another
-`Choose`), so a composed tree nests INSIDE a data-selected split. The reverse — a
-`Choose` as a child of a `Sequential` / `Parallel` / `compose` composer — is not
-currently supported (a `Choose` has no fixed contribution length) and is rejected.
+`Choose`), so a composed tree nests INSIDE a data-selected split. A `Choose`
+may ALSO nest the other way, as a child of a `Sequential` / `Parallel` /
+[`compose`](@ref) composer: the flat, data-free value path (`logpdf`/`rand`
+without a `kind`) commits to its FIRST alternative, so the node's flat width is
+that alternative's leaf count; every alternative must share that leaf count for
+the nested `Choose` to occupy one fixed flat slot, or the parent's width query
+errors.
 
 For prior introspection ([`params_table`](@ref), [`build_priors`](@ref),
 [`update`](@ref)) the alternatives' parameters are namespaced per alternative:

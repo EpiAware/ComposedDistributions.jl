@@ -15,8 +15,12 @@ pages = [
     "Getting started" => [
         "Overview" => "getting-started/index.md",
         "Time- and covariate-varying distributions" => "getting-started/varying-distributions.md",
-        "Infrastructure and template sync" => "getting-started/infrastructure.md",
-        "Customising your docs" => "getting-started/customising.md"
+        "Infrastructure and template sync" => "getting-started/infrastructure.md"
+    ],
+    # Developer reference: the contracts a type must satisfy to take part in
+    # composition, grounded in the conformance suite under `test/interfaces.jl`.
+    "Developer" => [
+        "Interface contracts" => "developer/interface-contracts.md"
     ],
     "API reference" => [
         "Public API" => "lib/public.md",

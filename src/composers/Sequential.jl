@@ -1,15 +1,3 @@
-# ============================================================================
-# Sequential: a generic chain composer over plain distributions
-# ============================================================================
-#
-# `Sequential(d1, d2, ...)` composes any `UnivariateDistribution`s into a chain
-# of additive steps. A realisation is the vector of cumulative event times
-# `[0, d1, d1 + d2, ...]`: the origin sits at zero and each step adds an
-# independent draw from the next component. The components are plain
-# distributions and may themselves be composers, so chains nest recursively;
-# that nesting is the tree. This layer adds no censored-internal behaviour:
-# it is the generic composition only.
-
 @doc raw"
 
 A chain of independent steps composed from any univariate distributions.
@@ -17,9 +5,9 @@ A chain of independent steps composed from any univariate distributions.
 `Sequential` links events ``E_0 \to E_1 \to \dots \to E_k`` through independent
 step distributions ``D_1, \dots, D_k``. A realisation is the flat vector of step
 values ``[v_1, \dots, v_k]`` (one value per step). A step may itself be a
-[`Sequential`](@ref), [`Parallel`](@ref) or [`Resolve`](@ref) composer, in
-which case it contributes its own flat sub-vector, so chains nest recursively and
-the nesting is the tree.
+[`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref), [`Compete`](@ref)
+or [`Choose`](@ref) composer, in which case it contributes its own flat
+sub-vector, so chains nest recursively and the nesting is the tree.
 
 `logpdf` sums the per-step log-densities over the matching slices of the value
 vector:
@@ -80,7 +68,8 @@ Compose univariate distributions into a [`Sequential`](@ref) chain.
 
 Each argument is a step distribution; the realisation is the vector of
 cumulative event times. Pass components as positional arguments or a single
-vector/tuple. Any [`Parallel`](@ref) or [`Resolve`](@ref) child nests.
+vector/tuple. Any [`Parallel`](@ref), [`Resolve`](@ref), [`Compete`](@ref) or
+[`Choose`](@ref) child nests.
 
 # Examples
 ```@example
@@ -103,8 +92,9 @@ Compose univariate distributions into a [`Sequential`](@ref) chain.
 Lowercase verb mirroring [`parallel`](@ref) / [`resolve`](@ref): the public
 constructor for a [`Sequential`](@ref) chain. Pass step distributions
 positionally (default names `:step_1, :step_2, ...`) or `name => dist` pairs to
-name the steps; a step may itself be a [`Parallel`](@ref), [`Resolve`](@ref) or
-nested chain. Prefer this verb over the bare struct constructor.
+name the steps; a step may itself be a [`Parallel`](@ref), [`Resolve`](@ref),
+[`Compete`](@ref), [`Choose`](@ref) or nested chain. Prefer this verb over the
+bare struct constructor.
 
 # Arguments
 - `steps`: the step distributions, either as positional distributions or as
@@ -205,14 +195,10 @@ pdf(d::Sequential, x::AbstractVector) = exp(logpdf(d, x))
 
 @doc "
 
-Sample a chain realisation. For a plain chain this is the step-value vector
-(one value per step, nested children contributing their own sub-vectors). For a
-flat censored chain (its steps carry primary censoring) it is the full
-event-time path `[E_0, ...]` including the latent origin draw. For a NESTED tree
-(a step is itself a composer, or a [`Resolve`](@ref) step) it is a NAMED event
-record keyed by `_flat_event_names`: a shared origin draw, each Resolve
-outcome sampled (the unsampled outcomes `missing`), so the whole tree path is one
-`rand`. See the censored-specialisation [`rand`](@ref) method.
+Sample a chain realisation as a `NamedTuple` keyed by the per-step value
+names: one entry per leaf step, a nested [`Sequential`](@ref)/[`Parallel`](@ref)
+step contributing its own sub-values under dotted-joined names, and a
+[`Resolve`](@ref) step contributing its own collapsed scalar.
 
 See also: [`Sequential`](@ref)
 "

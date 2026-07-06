@@ -1,23 +1,9 @@
-# ============================================================================
-# Varying: a context-indexed leaf and the `instantiate` resolution seam
-# ============================================================================
-#
-# A composed tree is stationary today: every leaf is a fixed
-# `UnivariateDistribution`. Non-stationarity — a delay that changes with
-# calendar time, a stratum, a region — is modelled here NOT by a new composer
-# verb but by generalising the LEAF. A [`Varying`](@ref) leaf carries a map
-# `covariate value -> UnivariateDistribution` and a `reference` distribution;
-# the seam [`instantiate`](@ref)`(tree, ctx)` walks a composed tree against a
-# [`Context`](@ref) and returns the same tree with every varying leaf resolved
-# to a concrete distribution. Scoring/sampling/convolving then run unchanged on
-# the resolved tree, so non-stationarity is resolved BEFORE those steps rather
-# than threaded through their hot paths.
-#
-# Design note: `design/0001-time-and-covariate-varying-distributions.md`. Time is
-# just one covariate; strata are another. The same seam is intended to carry the
-# `uncertain distributions` work (a latent, sampled index) by placing sampled
-# parameter values in the `Context` — hence `Context` holds an open NamedTuple of
-# covariates rather than a fixed `time` field.
+# Non-stationarity (a delay that changes with calendar time, a stratum, a
+# region) is modelled here by generalising the leaf rather than adding a new
+# composer verb; see the [`Varying`](@ref) and [`instantiate`](@ref)
+# docstrings below. The full design rationale, including how this seam is
+# intended to carry the uncertain-distributions work, is in
+# `design/0001-time-and-covariate-varying-distributions.md`.
 
 # --- the per-record / per-step context -------------------------------------
 
@@ -43,7 +29,9 @@ The covariate context a [`Varying`](@ref) leaf is resolved against.
 A `Context` is an open bag of covariates (a `NamedTuple`) — calendar `time`, a
 `region`/`stratum`, or (for the uncertain-distributions work) sampled parameter
 values. [`instantiate`](@ref) reads the covariate a leaf names from it. Build one
-with keyword covariates.
+with keyword covariates. It is open (rather than a fixed `time` field) so the
+same seam carries the uncertain-distributions work's sampled parameters; see
+`design/0001-time-and-covariate-varying-distributions.md` for the rationale.
 
 # Examples
 ```@example

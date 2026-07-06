@@ -21,8 +21,8 @@ censoring: this is the generic composition layer.
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
+# A two-step delay chain, then its parameter table.
+tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
 params_table(tree)
 ```
 """
@@ -42,6 +42,9 @@ using Distributions: Distributions, UnivariateDistribution, Distribution,
 
 using LogExpFunctions: log1mexp
 
+using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
+                           TYPEDFIELDS, TYPEDSIGNATURES
+
 import Tables
 
 # The convolution + quadrature substrate. Re-exported below so downstream
@@ -55,11 +58,6 @@ using ConvolvedDistributions: ConvolvedDistributions, convolve_distributions,
 # (the `Compete` methods are defined fully-qualified in hazard_one_of.jl). This
 # is an upstream internal, so it is listed in `ei_ignore` in the QA config.
 using ConvolvedDistributions: _logccdf_ad_safe
-
-# Docstring-template helpers, imported here (centralised) and used by the
-# `@template` blocks in src/docstrings.jl.
-using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
-                           TYPEDFIELDS, TYPEDSIGNATURES
 
 # Register the standard EpiAware docstring conventions before any
 # docstrings are defined (see src/docstrings.jl).
