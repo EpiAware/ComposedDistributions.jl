@@ -1,17 +1,3 @@
-# ============================================================================
-# TestUtils: a public interface-conformance harness for the composers
-# ============================================================================
-#
-# `ComposedDistributions.TestUtils.test_interface(d)` runs one interface
-# checklist over a composed distribution (or a bare leaf), so a downstream author
-# writing a new leaf / composer can drop it into their own `@testset` to verify
-# conformance. The package itself runs it over a fixture set in
-# `test/interfaces.jl` (see `example_fixtures`).
-#
-# The harness is deliberately dependency-light: it uses `Test` (a stdlib), the
-# package's own public surface, and `Tables`. It returns the `@testset` result so
-# a caller can assert on it.
-
 """
     ComposedDistributions.TestUtils
 
@@ -26,6 +12,22 @@ for a new composer node, asserting its `child_nleaves` / `child_logpdf` /
 [`example_fixtures`](@ref), [`test_rejects_invalid`](@ref),
 [`test_node_interface`](@ref), [`test_composed_interface`](@ref) and
 [`test_abstract_membership`](@ref) are exported from this submodule.
+
+The harness is dependency-light — `Test` (a stdlib), `Tables`, and the
+package's own public surface — and each check returns its `@testset` result
+so a caller can assert on it. The package runs the same checklist over its
+fixture set in `test/interfaces.jl` (see [`example_fixtures`](@ref)).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+using ComposedDistributions.TestUtils
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+TestUtils.test_interface(tree)
+nothing # hide
+```
 """
 module TestUtils
 
