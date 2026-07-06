@@ -14,8 +14,7 @@ pages = [
     # `getting-started/` as the package grows.
     "Getting started" => [
         "Overview" => "getting-started/index.md",
-        "Infrastructure and template sync" => "getting-started/infrastructure.md",
-        "Customising your docs" => "getting-started/customising.md"
+        "Infrastructure and template sync" => "getting-started/infrastructure.md"
     ],
     # Developer reference: the contracts a type must satisfy to take part in
     # composition, grounded in the conformance suite under `test/interfaces.jl`.
