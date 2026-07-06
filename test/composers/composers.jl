@@ -252,6 +252,30 @@ end
     @test event(nested, Symbol("admit_path.admit_death")) == LogNormal(0.5, 0.4)
 end
 
+@testitem "event: descriptive ArgumentError for an unknown child name" begin
+    using Distributions
+
+    nested = compose((
+        admit_path = compose((onset_admit = Gamma(2.0, 1.0),
+            admit_death = LogNormal(0.5, 0.4))),
+        onset_recover = Gamma(3.0, 1.0)))
+    # Mirrors update/prune/splice's "no child named ...; have [...]" style
+    # rather than a bare KeyError.
+    err = try
+        event(nested, :admit_path, :nonexistent)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin(":nonexistent", err.msg)
+    @test occursin(":onset_admit", err.msg)
+    @test occursin(":admit_death", err.msg)
+    @test_throws ArgumentError event(nested, :nope)
+    d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+    @test_throws ArgumentError event(d, :nope)
+end
+
 @testitem "build_priors and default_prior" begin
     using Distributions
 
