@@ -14,7 +14,19 @@ pages = [
     # `getting-started/` as the package grows.
     "Getting started" => [
         "Overview" => "getting-started/index.md",
+        "Concepts" => "getting-started/concepts.md",
+        "Tutorials" => [
+            "Composing distributions" => "getting-started/tutorials/composing-distributions.md",
+            "Competing outcomes" => "getting-started/tutorials/competing-outcomes.md",
+            "Delay chains and the linear chain trick" => "getting-started/tutorials/linear-chain.md"
+        ],
+        "FAQ" => "getting-started/faq.md",
         "Infrastructure and template sync" => "getting-started/infrastructure.md"
+    ],
+    # Developer reference: the contracts a type must satisfy to take part in
+    # composition, grounded in the conformance suite under `test/interfaces.jl`.
+    "Developer" => [
+        "Interface contracts" => "developer/interface-contracts.md"
     ],
     "API reference" => [
         "Public API" => "lib/public.md",

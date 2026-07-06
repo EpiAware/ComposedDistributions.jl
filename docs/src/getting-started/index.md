@@ -27,60 +27,49 @@ Load the package:
 using ComposedDistributions
 ```
 
+## What ComposedDistributions does
+
+ComposedDistributions composes per-event delay distributions into one object that describes a whole record.
+A composed object is a multi-state event process: named events linked by delays, which the composers wire into a tree.
+The same object scores observed records with `logpdf` and simulates new ones with `rand`, so a model is built once and used in both directions.
+It composes any [Distributions.jl](https://juliastats.org/Distributions.jl) `UnivariateDistribution`, with no censoring, so it is the generic composition layer.
+
+The building blocks are five composers.
+[`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.
+The [`compose`](@ref) front-end lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same stack.
+
+The package has four layers, each building on the one before.
+
+- **Leaves** are any Distributions.jl `UnivariateDistribution`, used directly as the per-event delays.
+- **Composers** wire named leaves into an event tree.
+- **Combination and lowering** join or collapse whole delays with [`convolve_distributions`](@ref), [`difference`](@ref) and [`observed_distribution`](@ref).
+- **Parameters and edits** read and reshape an assembled tree with [`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref) and [`splice`](@ref).
+
+The [Concepts](@ref concepts) page maps each modelling concept to the verb that builds it.
+
 ## A first example
 
-Compose delays into a chain with [`sequential`](@ref) (or build a whole tree
-from a `NamedTuple` with [`compose`](@ref)). Edge names like `:onset_admit`
-carry the event names, and a draw is labelled by them:
+Compose two delays off a shared onset, then simulate and score a record.
 
-```@example quickstart
+```@example overview
 using ComposedDistributions, Distributions, Random
 
-chain = sequential(:onset_admit => Gamma(2.0, 1.0),
-    :admit_death => LogNormal(0.5, 0.4))
-event_names(chain)
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+
+record = rand(Xoshiro(1), tree)
 ```
 
-```@example quickstart
-rand(Xoshiro(1), chain)
+The composed object scores that record straight back.
+
+```@example overview
+logpdf(tree, record)
 ```
 
-Overall moments collapse the chain to its observed total:
+Read its free parameters as a flat table, keyed by edge and parameter name.
 
-```@example quickstart
-mean(chain)
-```
-
-Competing outcomes use [`resolve`](@ref) (fixed branch probabilities — the
-death branch's probability is a CFR) or [`compete`](@ref) (racing hazards,
-winning probabilities derived):
-
-```@example quickstart
-node = resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => Gamma(2.0, 1.5))
-winning_probabilities(node)
-```
-
-## Reading structure and building priors
-
-[`params_table`](@ref) flattens a tree's free parameters into one row per
-scalar, and [`build_priors`](@ref) turns it into a nested prior `NamedTuple`
-(override only the rows you care about):
-
-```@example quickstart
-tbl = params_table(chain)
-```
-
-```@example quickstart
-priors = build_priors(tbl)
-priors.onset_admit
-```
-
-Fitted values go back in with [`update`](@ref), which returns a new tree of
-the same shape:
-
-```@example quickstart
-update(chain, (onset_admit = (shape = 3.0, scale = 1.5),
-    admit_death = (mu = 0.7, sigma = 0.5)))
+```@example overview
+params_table(tree)
 ```
 
 ## Uncertain distributions
@@ -88,37 +77,30 @@ update(chain, (onset_admit = (shape = 3.0, scale = 1.5),
 A literature-reported delay rarely comes with exact parameters. Wrap the
 uncertainty inline with [`uncertain`](@ref): parameters that are themselves
 distributions, nestable to any depth. The result is still a univariate
-distribution, so it composes as a leaf everywhere, and `rand` draws the marginal
-(a fresh parameter draw each call):
+distribution, so it composes as a leaf everywhere, and `rand` draws the
+marginal (a fresh parameter draw each call); the rest of the surface reports
+the template's central values until you pin concrete parameters with
+[`update`](@ref) (guard against a forgotten collapse with `has_uncertain`).
 
-```@example quickstart
-u = uncertain(Gamma, LogNormal(log(2.0), 0.2), 1.0)
-rand(Xoshiro(2), u)
+```@example overview
+u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+utree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
+has_uncertain(utree)
 ```
 
-The positional family form above makes the shape uncertain and fixes the scale
-at `1.0`; the keyword form
-`uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))` is equivalent.
-The rest of the univariate surface delegates to the template's central values,
-so pin the parameters with [`update`](@ref) to collapse an uncertain leaf to a
-concrete distribution on which the full ordinary surface works:
+## Key features
 
-```@example quickstart
-utree = sequential(:onset_admit => u, :admit_death => LogNormal(0.5, 0.4))
-concrete = update(utree, (onset_admit = (shape = 2.0, scale = 1.0),
-    admit_death = (mu = 0.5, sigma = 0.4)))
-logpdf(concrete, [1.5, 0.8])
-```
-
-An uncertain parameter's spec also rides [`params_table`](@ref)'s `prior`
-column, so [`build_priors`](@ref) picks it up without an explicit override:
-
-```@example quickstart
-build_priors(params_table(utree)).onset_admit.shape
-```
+- **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.
+- **One structure, many front-ends.** [`compose`](@ref) lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same composer stack.
+- **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree.
+- **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolve_distributions`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
+- **Automatic differentiation.** Scoring is differentiable through ForwardDiff, ReverseDiff, Mooncake and Enzyme, so a composed distribution drops into a probabilistic-programming fit.
 
 ## Learning more
 
+- Find the right verb by intent on the [Concepts](@ref concepts) page.
+- Work through the composers end to end in [Composing distributions](@ref composing-distributions).
+- See mutually exclusive outcomes in [Competing outcomes](@ref competing-outcomes) and multi-step delays in [Delay chains and the linear chain trick](@ref linear-chain).
 - Want the full interface? See the [Public API](@ref public-api).
 - Want to report a problem or ask a question? Open an issue or start a
   discussion on the [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).

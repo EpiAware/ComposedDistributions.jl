@@ -1,17 +1,3 @@
-# ============================================================================
-# Collapsing a composer to the single scalar quantity it observes
-# ============================================================================
-#
-# A downstream observation (censoring, truncation) observes one scalar quantity.
-# `observed_distribution` lowers a composer to that quantity:
-#   - a `UnivariateDistribution` (a leaf, a `Convolved`, a `Resolve`) is already
-#     the observed scalar and is returned unchanged;
-#   - a `Sequential` chain's observed quantity is the total elapsed time from
-#     origin to the terminal event, the convolution of its steps, returned as a
-#     `Convolved` via the re-exported `convolve_distributions`.
-# A `Parallel` has several independent endpoints and so no single observed
-# scalar; it is not lowered here.
-
 @doc "
 
 The univariate scalar a downstream observation observes for a composer.
