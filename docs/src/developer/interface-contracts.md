@@ -3,32 +3,36 @@
 This page is the reference for what makes a type a _valid_ participant in composition, stated as the exact method contract the package relies on.
 A composer combines named child distributions into an event tree; the tree walkers reach every node and leaf through a small set of methods, so any type that implements those methods composes with the built-ins with no extra work.
 
-The interface-conformance suite in `test/interfaces.jl` checks these contracts over every built-in node shape and a user-defined node, so the prose here and the tests stay in sync.
-To add a valid member, implement the methods listed for its role and run the suite over an instance.
+The reusable interface-conformance suite `ComposedDistributions.TestUtils` checks these contracts over every built-in node shape and a user-defined node, and the package runs it in `test/interfaces.jl`, so the prose here and the tests stay in sync.
+To add a valid member, subtype the right abstract, implement the methods listed for its role, and run `test_composed_interface` (or `test_interface` for a plain leaf) over an instance.
 
 ## The type landscape
 
-Only the one_of-outcome family shares a supertype.
-The named-child composers are sibling multivariate distributions; leaves and leaf wrappers are univariate.
+The composer nodes share one supertype, `AbstractComposedDistribution{F, S}`.
+The named-child composers and the univariate one_of family sit under it; leaves and leaf wrappers are plain univariate distributions under no composer supertype.
 
 ```text
-Distribution{Multivariate, Continuous}
-├── Sequential   named steps in series (a chain)
-├── Parallel     named branches off one shared origin (a fan-out)
-└── Choose       data-selected disjoint alternatives (a row picks one)
+Distribution{F, S}
+└── AbstractComposedDistribution{F, S}   named children → an event tree
+    ├── AbstractMultiChild{S}            positional, tree-walked together
+    │   ├── Sequential                   named steps in series (a chain)
+    │   └── Parallel                     named branches off one origin (fan-out)
+    ├── Choose                           data-selected disjoint alternatives
+    └── AbstractOneOf                    one univariate time-to-event marginal
+        ├── Resolve                      a fixed-probability mixture
+        └── Compete                      racing hazards (soonest cause fires)
 
-UnivariateDistribution{Continuous}
-├── AbstractOneOf   one univariate time-to-event marginal
-│   ├── Resolve     a fixed-probability mixture over competing outcomes
-│   └── Compete     racing hazards (the soonest cause fires)
-├── Shared          a tied leaf (one free parameter across branches)
-└── NoEvent         an absorbing no-event branch
-
-plain leaves: any Distributions.jl UnivariateDistribution
+plain univariate leaves (no composer supertype):
+    Shared    a tied leaf (one free parameter across branches)
+    NoEvent   an absorbing no-event branch
+    any Distributions.jl UnivariateDistribution
 ```
 
-`AbstractOneOf` is the only shared abstract: the tree walkers dispatch on it wherever the two one_of nodes behave alike (one event slot per outcome, the shared origin, the per-outcome draw) and on the concrete type only where the scoring arithmetic differs.
-`Sequential`, `Parallel` and `Choose` are concrete siblings with no common composer abstract; membership is a structural fact the suite pins down rather than a type relation.
+`AbstractComposedDistribution` is parametric on variate form `F` (`Univariate` / `Multivariate`), so one supertype spans the univariate one_of members and the multivariate event-tree composers while preserving `Distribution{F, S}`.
+`AbstractMultiChild` is an intermediate that groups the two positional multi-child composers (`Sequential`, `Parallel`) the tree walkers dispatch over together; `Choose` is a sibling, not a multi-child node; and `AbstractOneOf` re-roots the univariate one_of family under the composed supertype, so it stays a `UnivariateDistribution` while sharing the composed abstract.
+The tree walkers still dispatch on `AbstractOneOf` wherever the two one_of nodes behave alike (one event slot per outcome, the shared origin, the per-outcome draw) and on the concrete type only where the scoring arithmetic differs.
+Downstream extension packages (CensoredDistributions and its siblings) dispatch on these supertypes, so the names and shape match the shared contract.
+`test_abstract_membership` pins the membership down as a test, so a type filed under the wrong supertype fails.
 
 ## The composer-node contract
 
@@ -86,6 +90,7 @@ child_logpdf(node, out, 0, child_nleaves(node))
 ## The one_of-outcome family: `AbstractOneOf`
 
 The two one_of-outcome nodes share the supertype `AbstractOneOf`: [`Resolve`](@ref) (the fixed-probability mixture, cause and timing independent) and [`Compete`](@ref) (racing hazards, with the winning probability derived from the hazards).
+`AbstractOneOf` subtypes `AbstractComposedDistribution{Univariate, Continuous}`, so the one_of family is the univariate arm of the composer hierarchy.
 Both are univariate marginals, so each occupies a single flat slot and satisfies the node contract through the univariate-leaf base case.
 
 A valid member subtypes `AbstractOneOf`, stores its outcome `names`, and implements the standard univariate interface (`logpdf`, `rand`, and the moments it can compute) so the marginal is a proper distribution.
@@ -141,6 +146,29 @@ free_leaf(rewrap_leaf(d, Gamma(3.0, 1.5)))   # Gamma(3.0, 1.5)
 
 ## Keeping the hierarchy honest
 
-The conformance suite in `test/interfaces.jl` is the machine-checkable statement of these contracts.
-It runs the node interface over a plain leaf, `Sequential`, `Parallel`, `Resolve`, `Compete`, `Choose`, a nested mix and a user-defined node; asserts the abstract membership (the one_of family under `AbstractOneOf`, the named-child composers as sibling multivariate distributions, plain leaves and `Shared` standalone); checks the introspection names agree; and round-trips the leaf-wrapper contract.
-Run it after adding a type to a family, and extend it with the new member.
+The reusable `ComposedDistributions.TestUtils` suite is the machine-checkable statement of these contracts, and the package runs it in `test/interfaces.jl`.
+`test_interface` runs the public checklist over the fixture set (`example_fixtures`); `test_node_interface` runs the node-extension checklist; `test_composed_interface` wraps both and asserts the `AbstractComposedDistribution` membership; and `test_abstract_membership` asserts the whole hierarchy (every composer under `AbstractComposedDistribution`, `Sequential` / `Parallel` under `AbstractMultiChild`, the one_of family under `AbstractOneOf`, `Choose` a sibling, and plain leaves and `Shared` standalone).
+Drop the same suite into your own tests to verify a custom leaf or composer conforms, and run it after adding a type to a family:
+
+```julia
+using ComposedDistributions.TestUtils: test_composed_interface, test_abstract_membership
+
+test_abstract_membership()
+```
+
+## Conformance suite reference
+
+The reusable suite lives in the `ComposedDistributions.TestUtils` submodule.
+
+```@docs
+ComposedDistributions.TestUtils
+ComposedDistributions.TestUtils.test_interface
+ComposedDistributions.TestUtils.test_composed_interface
+ComposedDistributions.TestUtils.test_node_interface
+ComposedDistributions.TestUtils.test_abstract_membership
+ComposedDistributions.TestUtils.test_rejects_invalid
+ComposedDistributions.TestUtils.test_ad_safety
+ComposedDistributions.TestUtils.test_registry_coverage
+ComposedDistributions.TestUtils.registry_types
+ComposedDistributions.TestUtils.example_fixtures
+```

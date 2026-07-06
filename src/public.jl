@@ -6,5 +6,13 @@
 public child_nleaves, child_logpdf, child_rand!
 public free_leaf, rewrap_leaf, component_names
 
-# The shared one_of-outcome supertype (`Resolve` / `Compete`).
-public AbstractOneOf
+# The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
+# root the composer nodes subtype; `AbstractMultiChild` groups the positional
+# multi-child composers (`Sequential` / `Parallel`); `AbstractOneOf` is the
+# univariate one_of arm (`Resolve` / `Compete`). Downstream extension packages
+# dispatch on these.
+public AbstractComposedDistribution, AbstractMultiChild, AbstractOneOf
+
+# The reusable interface-conformance harness (`TestUtils.test_interface` and
+# the per-family `test_*` checks).
+public TestUtils
