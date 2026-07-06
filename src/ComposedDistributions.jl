@@ -89,9 +89,8 @@ export params_table, event_names, event_tree, event, update, build_priors,
 
 # Structural edits on a composed tree. `update` (the `path => new_node` method)
 # replaces a named node keeping the shape; `prune` drops a branch and `splice`
-# inserts a step (topology edits). `intervene` / `swap_child` / `cut_branch` are
-# deprecated aliases.
-export prune, splice, intervene, swap_child, cut_branch
+# inserts a step (topology edits).
+export prune, splice
 
 export observed_distribution
 
@@ -117,10 +116,11 @@ include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
-# introspection so it reuses `_rebuild`, `component_names`, `_split_edge`.
+# introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
+# the `update` value method.
 include("composers/intervene.jl")
-# Shared (name-tagged tied leaf): after introspection (extends `free_leaf` /
-# `rewrap_leaf`) and intervene (reuses `_edit_at`).
+# Shared (name-tagged tied leaf): after introspection so it can extend
+# `free_leaf`/`rewrap_leaf`, and after the structural edits (reuses `_edit_at`).
 include("composers/Shared.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
