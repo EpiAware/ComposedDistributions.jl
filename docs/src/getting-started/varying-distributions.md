@@ -5,8 +5,8 @@ A composed tree is *stationary* by default: every leaf is a fixed
 onset→admission delay shortens over a wave, a case-fatality ratio drifts, a delay
 differs by region. `ComposedDistributions` models this by generalising the
 **leaf**, not by adding a new composer verb: a leaf becomes a map from a *context*
-to a distribution, and one seam — [`instantiate`](@ref) — resolves a whole tree
-against a context.
+to a distribution, and [`instantiate`](@ref) resolves a whole tree against a
+context.
 
 The design rationale (why non-stationarity lives here and not in the convolution
 layer, and how it relates to the uncertain-distributions work) is written up in
@@ -83,10 +83,10 @@ node = varying(t -> resolve(:death => (Gamma(1.5, 1.0), cfr(t)),
 instantiate(node, Context(time = 10.0))    # a concrete Resolve, CFR = 0.4
 ```
 
-## `Choose` on the same seam
+## `Choose` resolves the same way
 
 A [`Choose`](@ref) already selects an alternative by an observed data field. That
-is the categorical case of covariate indexing, so it rides the same seam: give
+is the categorical case of covariate indexing, so it resolves the same way: give
 the selector in the context and `instantiate` collapses to the chosen branch.
 
 ```@example varying
@@ -114,7 +114,7 @@ instantiate(uncertain, ctx)
 
 A recurrent (renewal) operator sweeps a delay **kernel** across a time series,
 one step per index — its "time" is the length of that vector. That operator is a
-*consumer* of the composed stack, not a composer itself; the seam gives it
+*consumer* of the composed stack, not a composer itself; `instantiate` gives it
 exactly what it needs, a **kernel per time step**:
 
 ```@example varying

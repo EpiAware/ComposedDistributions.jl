@@ -74,7 +74,8 @@ racing = compete(:death => Gamma(1.5, 1.0), :recover => Gamma(2.0, 1.5))
 # is the product of the per-cause survivals.
 
 t = 3.0
-ccdf(racing, t) ≈ ccdf(Gamma(1.5, 1.0), t) * ccdf(Gamma(2.0, 1.5), t)
+(racing_ccdf = ccdf(racing, t),
+    product_ccdf = ccdf(Gamma(1.5, 1.0), t) * ccdf(Gamma(2.0, 1.5), t))
 
 # Because the split follows from the delays, the death frequency is a consequence
 # of the hazards rather than a set parameter.
