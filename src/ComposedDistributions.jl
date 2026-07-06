@@ -45,6 +45,9 @@ using Distributions: Distributions, UnivariateDistribution, Distribution,
 
 using LogExpFunctions: log1mexp
 
+using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
+                           TYPEDFIELDS, TYPEDSIGNATURES
+
 import Tables
 
 # The convolution + quadrature substrate. Re-exported below so downstream

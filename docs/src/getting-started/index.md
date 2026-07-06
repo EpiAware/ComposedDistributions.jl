@@ -120,7 +120,5 @@ build_priors(params_table(utree)).onset_admit.shape
 ## Learning more
 
 - Want the full interface? See the [Public API](@ref public-api).
-- See [Customising your docs](@ref customising) for how to make the
-  seeded pages (this one included) your own.
 - Want to report a problem or ask a question? Open an issue or start a
   discussion on the [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
