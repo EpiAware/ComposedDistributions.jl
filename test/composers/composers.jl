@@ -138,6 +138,40 @@ end
         :none => NoEvent())
 end
 
+@testitem "Composers reject duplicate child/branch names" begin
+    using Distributions
+
+    # Mirrors Choose's existing "alternative names must be unique" guard:
+    # every composer must reject a repeated name, since the whole
+    # name-keyed API (event, update, prune, splice, params_table, shared)
+    # can only ever reach the first branch with a duplicate name.
+    @test_throws ArgumentError sequential(
+        :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
+    @test_throws ArgumentError Sequential(
+        (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
+    @test_throws ArgumentError parallel(
+        :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
+    @test_throws ArgumentError Parallel(
+        (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
+    @test_throws ArgumentError resolve(
+        :a => (Gamma(1.0, 1.0), 0.5), :a => Gamma(2.0, 1.0))
+    @test_throws ArgumentError Resolve(
+        (:a, :a), (Gamma(1.0, 1.0), Gamma(2.0, 1.0)), (0.5, 0.5))
+    @test_throws ArgumentError compete(
+        :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
+    @test_throws ArgumentError Compete(
+        (:a, :a), (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)))
+end
+
+@testitem "Zero-arg Sequential()/Parallel() give a friendly ArgumentError" begin
+    using Distributions
+
+    # sequential()/parallel() already guard the zero-child case; the bare
+    # struct constructors should too, rather than a bare MethodError.
+    @test_throws ArgumentError Sequential()
+    @test_throws ArgumentError Parallel()
+end
+
 @testitem "compose: NamedTuple, table and matrix build equal stacks" begin
     using Distributions
 

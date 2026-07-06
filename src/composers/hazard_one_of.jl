@@ -46,6 +46,8 @@ struct Compete{C <: Tuple, D <: Tuple} <: AbstractOneOf
             "$(length(names)) and $(length(delays))"))
         all(n -> n isa Symbol, names) ||
             throw(ArgumentError("each one_of outcome name must be a Symbol"))
+        allunique(names) ||
+            throw(ArgumentError("Compete outcome names must be unique"))
         any(_is_no_event, delays) && throw(ArgumentError(
             "a racing-hazard one_of node has no no-event branch: the " *
             "no-event probability is DERIVED as the survival ∏ S_k(horizon). " *
