@@ -38,6 +38,15 @@ The building blocks are five composers.
 [`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.
 The [`compose`](@ref) front-end lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same stack.
 
+The package has four layers, each building on the one before.
+
+- **Leaves** are any Distributions.jl `UnivariateDistribution`, used directly as the per-event delays.
+- **Composers** wire named leaves into an event tree.
+- **Combination and lowering** join or collapse whole delays with [`convolve_distributions`](@ref), [`difference`](@ref) and [`observed_distribution`](@ref).
+- **Parameters and edits** read and reshape an assembled tree with [`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref) and [`splice`](@ref).
+
+The [Concepts](@ref concepts) page maps each modelling concept to the verb that builds it.
+
 ## A first example
 
 Compose two delays off a shared onset, then simulate and score a record.
@@ -63,8 +72,17 @@ Read its free parameters as a flat table, keyed by edge and parameter name.
 params_table(tree)
 ```
 
+## Key features
+
+- **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.
+- **One structure, many front-ends.** [`compose`](@ref) lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same composer stack.
+- **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree.
+- **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolve_distributions`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
+- **Automatic differentiation.** Scoring is differentiable through ForwardDiff, ReverseDiff, Mooncake and Enzyme, so a composed distribution drops into a probabilistic-programming fit.
+
 ## Learning more
 
+- Find the right verb by intent on the [Concepts](@ref concepts) page.
 - Work through the composers end to end in [Composing distributions](@ref composing-distributions).
 - Want the full interface? See the [Public API](@ref public-api).
 - Want to report a problem or ask a question? Open an issue or start a
