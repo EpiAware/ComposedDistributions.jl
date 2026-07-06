@@ -93,9 +93,7 @@ export params_table, event_names, event_tree, event, update, build_priors,
 # deprecated aliases.
 export prune, splice, intervene, swap_child, cut_branch
 
-# `endpoint` collapses a chain to its terminal scalar (an alias for
-# `observed_distribution`).
-export endpoint, observed_distribution
+export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
 # convolution + quadrature through ComposedDistributions alone.
@@ -127,8 +125,7 @@ include("composers/Shared.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
-# Per-edge delay moments: after the composers it walks and observed.jl (used by
-# `endpoint`).
+# Per-edge delay moments: after the composers it walks and observed.jl.
 include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.

@@ -324,14 +324,12 @@ end
     @test unique(params_table(tied).edge) == [:g]
 end
 
-@testitem "observed_distribution / endpoint / convolve re-export" begin
+@testitem "observed_distribution / convolve re-export" begin
     using Distributions
 
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     od = observed_distribution(s)
     @test od isa Convolved
-    @test endpoint(s) === observed_distribution(s) ||
-          mean(endpoint(s)) ≈ mean(s)
     # The chain collapses to the convolution of its steps.
     cv = convolve_distributions(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     @test cdf(od, 5.0) ≈ cdf(cv, 5.0)
