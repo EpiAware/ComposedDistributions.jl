@@ -103,6 +103,34 @@ end
     @test var(c) >= 0
 end
 
+@testitem "Compete: support floor is the earliest cause (staggered floors)" begin
+    using Distributions, Random
+
+    # `:early` can win from t=0; `:late` only starts racing from t=1. The
+    # marginal floor (soonest ANY cause can fire) is the EARLIEST cause floor
+    # (0.0), not the latest (1.0).
+    c = compete(:early => Gamma(2.0, 1.0),
+        :late => truncated(Gamma(2.0, 1.0); lower = 1.0))
+    @test minimum(c) == 0.0
+    t = 0.5
+    @test insupport(c, t)
+    @test pdf(c, t) > 0
+    # The derived winning split must match the Monte-Carlo winning
+    # frequencies from `rand_outcome` (an inverted floor biases the
+    # quadrature lower bound used by `probs`, dropping the mass where
+    # `:early` wins before `:late`'s clock even starts).
+    rng = MersenneTwister(1)
+    wins = zeros(Int, 2)
+    n = 20000
+    for _ in 1:n
+        name, _ = ComposedDistributions.rand_outcome(rng, c)
+        wins[name == :early ? 1 : 2] += 1
+    end
+    wp = probs(c)
+    @test wins[1] / n ≈ wp.early atol = 0.02
+    @test wins[2] / n ≈ wp.late atol = 0.02
+end
+
 @testitem "Compete rejects a NoEvent branch" begin
     using Distributions
 
