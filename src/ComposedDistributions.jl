@@ -158,6 +158,10 @@ include("composers/varying.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
+# ConvolvedDistributions interop (vector convolution, difference, composite
+# leaves): after observed.jl (the collapse) and introspection.jl (the walks it
+# extends for the fixed composite leaves).
+include("composers/convolved_interop.jl")
 # Per-edge delay moments: after the composers it walks and observed.jl.
 include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
