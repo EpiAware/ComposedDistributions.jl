@@ -60,4 +60,4 @@ const INDEX_STRIP_SECTIONS = String[]
 # history (the timeline published to the repo's `benchmarks` branch). Defaults
 # to the `benchmarks` flag the package was scaffolded with; `false` drops the
 # page and `make.jl` also omits its `pages.jl` nav entry.
-const BENCHMARK_PAGE = false
+const BENCHMARK_PAGE = true
