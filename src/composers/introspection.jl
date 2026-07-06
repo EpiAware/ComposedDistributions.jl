@@ -663,7 +663,7 @@ end
 # `_rebuild` for the composers (mirrors the extension's helper, kept core-side so
 # `update` is Turing-free). Rebuilds a node of the same type and metadata around
 # a new children tuple (steps/branches, one_of outcome delays, Choose
-# alternatives); shared by the `update` / `intervene` structural edits.
+# alternatives); shared by the `update` / `prune` / `splice` structural edits.
 _rebuild(d::Sequential, components::Tuple) = Sequential(components, d.names)
 _rebuild(d::Parallel, components::Tuple) = Parallel(components, d.names)
 _rebuild(c::Resolve, delays::Tuple) = Resolve(c.names, delays, c.branch_probs)
