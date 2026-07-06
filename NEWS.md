@@ -1,4 +1,15 @@
-## Unreleased
+## 0.2.0
+
+- Added `Varying` / `Context` / `instantiate`: leaves whose distribution
+  depends on an observed covariate (time, stratum), resolved by
+  `instantiate(tree, ctx)`; `has_varying(tree)` guards fitting loops.
+- Breaking: `winning_probabilities` is now the `Resolve`/`Compete` method of
+  `Distributions.probs`; the `endpoint` alias for `observed_distribution` and
+  the deprecated `intervene`/`swap_child`/`cut_branch` aliases are removed.
+- Fixed structural edits through nested `Compete` nodes.
+- New docs site (overview, concepts, three tutorials, FAQ, interface
+  contracts), benchmarks (core + AD) with a docs page, and a Mooncake AD
+  extension.
 
 - Added `uncertain` / `Uncertain`: leaf distributions whose parameters are
   themselves distributions, nestable to any depth. `rand` draws the marginal so
