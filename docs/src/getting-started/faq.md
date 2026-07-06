@@ -37,6 +37,21 @@ total = observed_distribution(chain)
 mean(total)
 ```
 
+For two standalone delays that are not part of a tree, [`convolve_distributions`](@ref) gives their sum `X + Y` directly.
+
+## How do I fix a parameter across branches?
+
+Use [`shared`](@ref) or [`tie`](@ref) to make several leaves one free parameter.
+[`shared`](@ref) tags a leaf where it is built; [`tie`](@ref) walks an assembled tree to named leaves and ties them.
+Either way [`params_table`](@ref) then inventories the tied occurrences once under the shared tag rather than as separate parameters.
+
+```@example faq
+d = compose((incubation = Gamma(2.0, 1.0),
+    onset_report = Gamma(2.0, 1.0)))
+tied = tie(d, :incubation, :onset_report; name = :delay)
+unique(params_table(tied).edge)
+```
+
 ## Why is my `logpdf` `-Inf`?
 
 A composed `logpdf` is `-Inf` when a value falls outside a leaf's support.
