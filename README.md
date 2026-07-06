@@ -3,7 +3,7 @@
 <!-- badges:start -->
 | **Documentation** | **Build Status** | **Code Quality** | **License & DOI** | **Downloads** |
 |:-----------------:|:----------------:|:----------------:|:-----------------:|:-------------:|
-| [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://epiaware.org/ComposedDistributions.jl/stable/) [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://epiaware.org/ComposedDistributions.jl/dev/) | [![Test](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/test.yaml) [![codecov](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg)](https://codecov.io/gh/EpiAware/ComposedDistributions.jl) [![AD](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/ad.yaml/badge.svg?branch=main)](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/ad.yaml) | [![SciML Code Style](https://img.shields.io/static/v1?label=code%20style&message=SciML&color=9558b2&labelColor=389826)](https://github.com/SciML/SciMLStyle) [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl) [![JET](https://img.shields.io/badge/%E2%9C%88%EF%B8%8F%20tested%20with%20-%20JET.jl%20-%20red)](https://github.com/aviatesk/JET.jl) | [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) | [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FComposedDistributions&query=total_requests&label=Downloads)](https://juliapkgstats.com/pkg/ComposedDistributions) [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FComposedDistributions&query=total_requests&suffix=%2Fmonth&label=Downloads)](https://juliapkgstats.com/pkg/ComposedDistributions) |
+| [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://composeddistributions.epiaware.org/stable/) [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://composeddistributions.epiaware.org/dev/) | [![Test](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/test.yaml) [![codecov](https://codecov.io/gh/EpiAware/ComposedDistributions.jl/graph/badge.svg)](https://codecov.io/gh/EpiAware/ComposedDistributions.jl) [![AD](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/ad.yaml/badge.svg?branch=main)](https://github.com/EpiAware/ComposedDistributions.jl/actions/workflows/ad.yaml) | [![SciML Code Style](https://img.shields.io/static/v1?label=code%20style&message=SciML&color=9558b2&labelColor=389826)](https://github.com/SciML/SciMLStyle) [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl) [![JET](https://img.shields.io/badge/%E2%9C%88%EF%B8%8F%20tested%20with%20-%20JET.jl%20-%20red)](https://github.com/aviatesk/JET.jl) | [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) | [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FComposedDistributions&query=total_requests&label=Downloads)](https://juliapkgstats.com/pkg/ComposedDistributions) [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FComposedDistributions&query=total_requests&suffix=%2Fmonth&label=Downloads)](https://juliapkgstats.com/pkg/ComposedDistributions) |
 
 | ForwardDiff | ReverseDiff (tape) | Enzyme forward | Enzyme reverse | Mooncake reverse | Mooncake forward |
 |:---:|:---:|:---:|:---:|:---:|:---:|
@@ -34,7 +34,7 @@ A verb grammar for n-ary composition over any `Distributions.jl` distribution.
 
 ## Getting started
 
-See [documentation](https://epiaware.org/ComposedDistributions.jl/stable/) for a full walkthrough.
+See [documentation](https://composeddistributions.epiaware.org/stable/) for a full walkthrough.
 
 ```julia
 using ComposedDistributions, Distributions
@@ -71,9 +71,9 @@ Because a composed object is a `Distribution`, it also works with `truncated()` 
 
 ## Where to learn more
 
-- Want to get started running code? See the [getting started guide](https://epiaware.org/ComposedDistributions.jl/stable/getting-started/).
-- Want the right verb by intent? See the [Concepts](https://epiaware.org/ComposedDistributions.jl/stable/getting-started/concepts) page.
-- Want to understand the API? See the [API reference](https://epiaware.org/ComposedDistributions.jl/stable/lib/public).
+- Want to get started running code? See the [getting started guide](https://composeddistributions.epiaware.org/stable/getting-started/).
+- Want the right verb by intent? See the [Concepts](https://composeddistributions.epiaware.org/stable/getting-started/concepts) page.
+- Want to understand the API? See the [API reference](https://composeddistributions.epiaware.org/stable/lib/public).
 - Want to chat about `ComposedDistributions`? Post on our [GitHub Discussions](https://github.com/EpiAware/ComposedDistributions.jl/discussions).
 - Want to see the code? Check out our [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
 
