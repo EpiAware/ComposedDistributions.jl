@@ -49,7 +49,7 @@ function observed_distribution(d::Sequential)
     # An uncertain leaf's template density/cdf is not the marginal, so the lazy
     # convolved total it would feed is not the observed quantity; fail here with
     # guidance rather than silently convolving the template values.
-    _has_uncertain(d) && throw(ArgumentError(
+    has_uncertain(d) && throw(ArgumentError(
         "cannot collapse a chain with uncertain leaves to its observed " *
         "convolved total; pin the parameters with `update(tree, params)` to " *
         "collapse each uncertain leaf to its concrete template first"))

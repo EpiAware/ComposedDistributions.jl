@@ -2,12 +2,12 @@
 
 - Added `uncertain` / `Uncertain`: leaf distributions whose parameters are
   themselves distributions, nestable to any depth. `rand` draws the marginal so
-  uncertain leaves compose everywhere, and the scalar `logpdf`/`cdf`/...
-  surface delegates to the template's central values; `mean`/`var`/`std`
-  (including a composed tree's overall moment) instead error, since the
-  template's own moment is not the marginal and a bare summary number has no
-  visible "at these central values" qualifier. Collapse an uncertain leaf to
-  its concrete template by pinning the parameters with `update(tree, params)`.
+  uncertain leaves compose everywhere, and the rest of the univariate surface
+  (scalar `logpdf`/`cdf`/..., the moments, including a composed tree's overall
+  moment) delegates to the template's central values. `has_uncertain(tree)`
+  flags a tree that still holds an uncertain leaf, for a scoring/fitting loop
+  to guard against a forgotten collapse. Collapse an uncertain leaf to its
+  concrete template by pinning the parameters with `update(tree, params)`.
   Build one with a concrete template
   (`uncertain(Gamma(2.0, 1.0); shape = LogNormal(...))`), a positional family
   form (`uncertain(Gamma, LogNormal(...), 1.0)`), or the keyword family form.

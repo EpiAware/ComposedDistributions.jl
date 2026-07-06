@@ -84,13 +84,14 @@ end
     @test logccdf(u, 1.5) == logccdf(tmpl, 1.5)
     @test quantile(u, 0.5) == quantile(tmpl, 0.5)
 
-    # Unlike the scalar surface above, the moments have no closed form and
-    # error rather than silently return the template's (non-marginal) moment.
-    @test_throws ArgumentError mean(u)
-    @test_throws ArgumentError var(u)
-    @test_throws ArgumentError std(u)
-    @test_throws "rand" mean(u)
-    @test_throws "update(tree, params)" var(u)
+    # Template-value moments (uncertainty not propagated; documented).
+    @test mean(u) == mean(tmpl)
+    @test var(u) == var(tmpl)
+    @test std(u) == std(tmpl)
+
+    # has_uncertain is the loud guard for the silent delegation above.
+    @test has_uncertain(u)
+    @test !has_uncertain(tmpl)
 end
 
 @testitem "rand: marginal draw matches a hand-written two-stage draw" begin
@@ -162,7 +163,7 @@ end
     tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tree2, :onset_admit) == Gamma(3.0, 1.5)
-    @test !ComposedDistributions._has_uncertain(tree2)
+    @test !has_uncertain(tree2)
     # The collapsed tree scores with the ordinary surface.
     @test isfinite(logpdf(tree2, [1.5, 0.8]))
 
@@ -186,7 +187,7 @@ end
 
     utree = update(tree, :onset_admit => u)
     @test event(utree, :onset_admit) === u
-    @test ComposedDistributions._has_uncertain(utree)
+    @test has_uncertain(utree)
     # The tree still samples (the uncertain leaf draws its marginal).
     draw = rand(Xoshiro(1), utree)
     @test draw isa NamedTuple
@@ -204,7 +205,7 @@ end
 
     # The specs stay visible through the tag (routing + the prior column).
     @test ComposedDistributions._uncertain_specs(su) == u.specs
-    @test ComposedDistributions._has_uncertain(su)
+    @test has_uncertain(su)
 
     # It composes and samples as a leaf, and is inventoried once under its tag.
     p = parallel(:a => su, :b => LogNormal(0.5, 0.4))
@@ -269,12 +270,10 @@ end
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
 
-    # Sequential: samples, but its tree moment has no closed form (an
-    # uncertain step) and errors the same way the bare leaf's moment does.
+    # Sequential: samples, and its tree moment reads the template's free delay.
     s = sequential(:onset_admit => u, :admit_death => LogNormal(0.5, 0.4))
     @test isfinite(sum(values(rand(Xoshiro(1), s))))
-    @test_throws ArgumentError mean(s)
-    @test_throws ArgumentError var(s)
+    @test mean(s) ≈ mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4))
 
     # Parallel and Compete sample the uncertain leaf's marginal directly.
     p = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
@@ -292,7 +291,7 @@ end
     @test isfinite(rand(Xoshiro(1), r))
     rc = update(r, (death = (shape = 2.0, scale = 1.0),
         disch = (shape = 2.0, scale = 1.5)))
-    @test !ComposedDistributions._has_uncertain(rc)
+    @test !has_uncertain(rc)
     @test isfinite(rand(Xoshiro(1), rc))
 
     # Choose: it composes, and its prior column carries the spec.
@@ -308,34 +307,38 @@ end
     @test occursin("uncertain(", sprint(show, MIME("text/plain"), s))
 end
 
-@testitem "composed tree moments propagate the uncertain-leaf error" begin
+@testitem "has_uncertain: flags a tree across composer shapes" begin
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
 
-    # Parallel: the per-endpoint moment Vector hits the uncertain branch.
+    @test has_uncertain(u)
+    @test !has_uncertain(Gamma(2.0, 1.0))
+
+    s = sequential(:onset_admit => u, :admit_death => LogNormal(0.5, 0.4))
+    @test has_uncertain(s)
+    @test !has_uncertain(sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4)))
+
     p = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
-    @test_throws ArgumentError mean(p)
-    @test_throws ArgumentError var(p)
+    @test has_uncertain(p)
 
-    # Resolve: `mean`/`var` lower through `as_mixture`'s `MixtureModel`, whose
-    # component moments hit the uncertain branch the same way.
     r = resolve(:death => (u, 0.3), :disch => Gamma(2.0, 1.5))
-    @test_throws ArgumentError mean(r)
-    @test_throws ArgumentError var(r)
+    @test has_uncertain(r)
 
-    # Compete: the racing-hazard quadrature would otherwise silently integrate
-    # the template's survival for the uncertain branch.
     c = compete(:death => u, :recover => Gamma(3.0, 2.0))
-    @test_throws ArgumentError mean(c)
-    @test_throws ArgumentError var(c)
+    @test has_uncertain(c)
 
-    # Collapsing with `update` first removes the uncertainty, so the moment
-    # is available again (the error is specifically about the uncertain leaf,
-    # not the composer type).
+    ch = choose(:index => u, :sourced => Gamma(2.0, 1.0))
+    @test has_uncertain(ch)
+
+    # A shared-tagged uncertain leaf is still visible through the tag.
+    @test has_uncertain(shared(:inc, u))
+
+    # Collapsing with `update` removes the uncertainty from the tree.
     rc = update(r, (death = (shape = 2.0, scale = 1.0),
         disch = (shape = 2.0, scale = 1.5)))
-    @test isfinite(mean(rc))
+    @test !has_uncertain(rc)
 end
 
 @testitem "rand/logpdf round trip through a nested uncertain leaf" begin

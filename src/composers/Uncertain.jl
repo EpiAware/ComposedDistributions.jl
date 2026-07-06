@@ -18,10 +18,11 @@
 #     ModifiedDistributions extension).
 #   - The ONE special behaviour is `rand`, which draws the marginal by drawing
 #     each spec and rebuilding the concrete leaf through `_uncertain_leaf`. The
-#     scalar `logpdf`/`cdf`/`quantile`/... surface delegates to the template
-#     (documented as reporting the leaf at its central values); the moments
-#     (`mean`/`var`/`std`) instead error, since a single summary number has no
-#     "at these central values" qualifier visible at the call site.
+#     rest of the univariate surface (scalar `logpdf`/`cdf`/`quantile`/..., the
+#     moments) delegates to the template, reporting the leaf at its central
+#     values, NOT the marginal — silently, by design, matching `Varying`'s
+#     reference-delegation. `has_uncertain` (below) is the loud guard: check it
+#     in a fitting loop before scoring, mirroring `Varying`'s `has_varying`.
 #   - `Uncertain` is parameterised on the template's `ValueSupport` (`VS`), not
 #     the abstract `ValueSupport` itself: `Distributions.MixtureModel` (built by
 #     `Resolve`'s `as_mixture`, so `rand`/`mean`/`var`/`logpdf` on a `Resolve`
@@ -50,15 +51,19 @@ The generative model is hierarchical:
 ```
 
 with fixed parameters taken from the template. `rand` draws the marginal
-(parameters drawn internally). The scalar `logpdf`/`pdf`/`cdf`/`quantile`
-surface delegates to the template, so it reports the leaf AT the template's
-central parameter values, NOT the marginal. `mean`/`var`/`std` instead throw:
-the template's own moment is not the marginal moment and, unlike a density
-evaluated at an explicit `x`, a bare summary number carries no visible
-at-the-template-values qualifier, so returning it silently is a sharper
-footgun. Monte Carlo the marginal moment from `rand(d)` draws, or collapse an
-uncertain leaf to a concrete distribution by pinning its parameters with
-[`update`](@ref)`(tree, params)` first.
+(parameters drawn internally). The rest of the univariate surface (scalar
+`logpdf`/`pdf`/`cdf`/`quantile`, the moments) delegates to the template, so it
+reports the leaf AT the template's central parameter values, NOT the marginal.
+Collapse an uncertain leaf to a concrete distribution by pinning its parameters
+with [`update`](@ref)`(tree, params)`.
+
+!!! warning \"Only `rand` is marginal\"
+    Every other method — `logpdf`/`cdf`/`quantile`/... AND the moments
+    `mean`/`var`/`std` — silently reports the template's central values, not
+    the marginal. Scoring or summarising a raw `Uncertain` leaf therefore
+    answers \"as if\" its parameters were fixed at the template. Guard a
+    scoring/fitting loop with [`has_uncertain`](@ref), and collapse to
+    concrete values first with [`update`](@ref)`(tree, params)`.
 
 # Fields
 - `template`: the concrete (possibly wrapped) leaf supplying the family, the
@@ -134,6 +139,12 @@ marginal, and [`update`](@ref)`(tree, params)` collapses an uncertain leaf to
 its concrete template. In [`params_table`](@ref) an uncertain parameter's spec
 rides the row's `prior` column, so [`build_priors`](@ref) picks it up without an
 explicit override.
+
+!!! warning \"Only `rand` is marginal\"
+    Every other query on the result — `logpdf`/`cdf`/`quantile`/... and the
+    moments `mean`/`var`/`std` — silently reports the template's central
+    values, not the marginal. Guard a scoring/fitting loop with
+    [`has_uncertain`](@ref) before assuming a tree is fully concrete.
 
 # Arguments
 - `template`: the concrete (possibly wrapped) leaf distribution, or a
@@ -282,25 +293,9 @@ ccdf(d::Uncertain, x::Real) = ccdf(d.template, x)
 logccdf(d::Uncertain, x::Real) = logccdf(d.template, x)
 quantile(d::Uncertain, q::Real) = quantile(d.template, q)
 
-mean(d::Uncertain) = _uncertain_moment_error("mean")
-var(d::Uncertain) = _uncertain_moment_error("var")
-std(d::Uncertain) = _uncertain_moment_error("std")
-
-# Unlike the scalar `logpdf`/`cdf`/`quantile`/... above (which are documented
-# and tested to report the template's central values, NOT the marginal), the
-# moments error rather than silently return that same template-only value: a
-# moment is a single summary number with no accompanying "at these central
-# values" qualifier visible at the call site, so a silently-wrong mean/var/std
-# is a sharper footgun than a density evaluated at an explicit `x`. Point at
-# `rand` (Monte Carlo the marginal moment) or `update` (pin concrete values).
-function _uncertain_moment_error(what::AbstractString)
-    throw(ArgumentError(
-        "an Uncertain leaf's marginal `$(what)` has no closed form (the " *
-        "template's own $(what) is not the marginal and is not returned " *
-        "silently); Monte Carlo it from `rand(d)`/`rand(d, n)` draws, or " *
-        "pin concrete parameters with `update(tree, params)` and take the " *
-        "$(what) of the collapsed leaf"))
-end
+mean(d::Uncertain) = mean(d.template)
+var(d::Uncertain) = var(d.template)
+std(d::Uncertain) = std(d.template)
 
 sampler(d::Uncertain) = d
 
@@ -376,11 +371,50 @@ Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # --- has-uncertainty predicate ----------------------------------------------
 
-# Whether a node or (possibly wrapped) leaf carries any uncertain parameters.
-# `observed_distribution` uses it to reject collapsing a chain with uncertain
-# leaves to its convolved total (the template values are not the marginal).
-_has_uncertain(d::Union{Sequential, Parallel}) = any(_has_uncertain,
+@doc "
+
+Whether a composed distribution still contains an [`Uncertain`](@ref) leaf.
+
+An `Uncertain` leaf delegates every `Distributions` method except `rand` to its
+template until it is collapsed with [`update`](@ref)`(tree, params)`, so scoring
+or summarising a raw tree that still holds an `Uncertain` leaf SILENTLY uses the
+template's central values instead of the marginal — a silent wrong answer, not
+an error. Guard a scoring/fitting loop with this predicate:
+
+```julia
+collapsed = update(tree, fitted_params)
+@assert !has_uncertain(collapsed)   # catch a forgotten update before scoring
+logpdf(collapsed, x)
+```
+
+`has_uncertain` walks the tree (through `Sequential`/`Parallel`/`Choose`/the
+one_of composers, and through wrapper leaves via the `_uncertain_specs` routing
+hook so a `shared`/modifier-wrapped uncertain leaf is still seen) and returns
+`true` as soon as any leaf carries a spec; a fully collapsed tree returns
+`false`.
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to check.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
+has_uncertain(tree)   # an uncertain leaf remains
+
+collapsed = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+    admit_death = (mu = 0.7, sigma = 0.5)))
+has_uncertain(collapsed)   # resolved: false
+```
+
+# See also
+- [`Uncertain`](@ref), [`uncertain`](@ref): the leaf and its constructor.
+- [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
+"
+has_uncertain(d::Union{Sequential, Parallel}) = any(has_uncertain,
     d.components)
-_has_uncertain(c::AbstractOneOf) = any(_has_uncertain, c.delays)
-_has_uncertain(d::Choose) = any(_has_uncertain, d.alternatives)
-_has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing
+has_uncertain(c::AbstractOneOf) = any(has_uncertain, c.delays)
+has_uncertain(d::Choose) = any(has_uncertain, d.alternatives)
+has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing

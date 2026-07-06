@@ -91,8 +91,10 @@ export Shared, shared, tie
 
 # Parameter uncertainty: a leaf whose parameters are themselves distributions
 # (nestable). `rand` draws the marginal; `update(tree, params)` collapses an
-# uncertain leaf to its concrete template.
-export Uncertain, uncertain
+# uncertain leaf to its concrete template. `has_uncertain` flags a tree that
+# still holds one, for a scoring/fitting loop to guard against a forgotten
+# `update` (the rest of the surface silently reports the template's values).
+export Uncertain, uncertain, has_uncertain
 
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;

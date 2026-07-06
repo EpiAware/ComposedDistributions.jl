@@ -54,7 +54,7 @@ end
     # The spec protocol sees through the modifier, so the uncertainty is
     # visible to the routing predicate and the prior column.
     @test ComposedDistributions._uncertain_specs(au) == u.specs
-    @test ComposedDistributions._has_uncertain(au)
+    @test has_uncertain(au)
 
     # The marginal `rand` draws through the modifier (a fresh parameter each
     # call), and `update` collapses the wrapped uncertainty, keeping the
@@ -63,6 +63,6 @@ end
     @test all(isfinite, values(rand(Xoshiro(1), tree)))
     collapsed = update(tree, (onset_admit = (shape = 3.0, scale = 1.0),))
     leaf = event(collapsed, :onset_admit)
-    @test !ComposedDistributions._has_uncertain(leaf)
+    @test !has_uncertain(leaf)
     @test ComposedDistributions.free_leaf(leaf) == Gamma(3.0, 1.0)
 end
