@@ -61,7 +61,7 @@ with_survivors = resolve(:death => (Gamma(1.5, 1.0), 0.2),
 
 # A no-event draw returns a `missing` time.
 
-rand_outcome(Xoshiro(7), with_survivors)
+rand_outcome(Xoshiro(4), with_survivors)
 
 # ## Racing hazards
 #
