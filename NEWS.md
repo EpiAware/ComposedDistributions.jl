@@ -1,13 +1,17 @@
-## 0.2.0
+## 0.1.0 — initial release
 
+- The generic composition algebra ported from CensoredDistributions.jl:
+  `compose` and the five composers (`Sequential`, `Parallel`, `Resolve`,
+  `Compete`, `Choose`), `shared`/`tie`, structural edits
+  (`update`/`prune`/`splice`), introspection (`params_table`,
+  `build_priors`, `event`/`event_names`/`event_tree`), moments, and the
+  convolution bridge (`observed_distribution`, `convolve_distributions`).
 - Added `Varying` / `Context` / `instantiate`: leaves whose distribution
   depends on an observed covariate (time, stratum), resolved by
   `instantiate(tree, ctx)`; `has_varying(tree)` guards fitting loops.
-- Breaking: `winning_probabilities` is now the `Resolve`/`Compete` method of
-  `Distributions.probs`; the `endpoint` alias for `observed_distribution` and
-  the deprecated `intervene`/`swap_child`/`cut_branch` aliases are removed.
-- Fixed structural edits through nested `Compete` nodes.
-- New docs site (overview, concepts, three tutorials, FAQ, interface
+- `Resolve`/`Compete` outcome probabilities read via `Distributions.probs`
+  (following the CensoredDistributions rename).
+- Docs site (overview, concepts, three tutorials, FAQ, interface
   contracts), benchmarks (core + AD) with a docs page, and a Mooncake AD
   extension.
 
