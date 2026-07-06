@@ -361,6 +361,7 @@ end
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     rng = MersenneTwister(11)
     n = 40000
-    totals = [(d = rand(rng, s); d.step_1 + d.step_2) for _ in 1:n]
+    totals = [(d = rand(rng, s); d.step_1 + d.step_2)
+              for _ in 1:n]
     @test mean(totals) ≈ mean(s) atol = 0.05
 end

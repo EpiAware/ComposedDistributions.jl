@@ -25,7 +25,7 @@ LogExpFunctions = "0.3, 1"
 ModifiedDistributions = "0.1"
 Random = "1"
 Tables = "1"
-julia = "1.10, 1.11, 1.12"
+julia = "1.11, 1.12"
 
 [sources]
 ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
