@@ -65,23 +65,31 @@ jobs:
 
       # Last 5 tags (newest first) plus the pushed commit. On a tag push
       # GITHUB_SHA already points at the tagged commit, so HEAD is the
-      # newest point on the timeline either way.
+      # newest point on the timeline either way. Before the first tag the
+      # timeline is HEAD alone (no leading comma, which benchpkg rejects).
       - name: Collect revs (last 5 tags + HEAD)
         id: revs
         run: |
           TAGS=$(git tag --sort=-v:refname | head -5 | paste -sd, -)
-          echo "revs=${TAGS},${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          if [ -n "$TAGS" ]; then
+            echo "revs=${TAGS},${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "revs=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
 
       # benchpkg benchmarks each rev against benchmark/benchmarks.jl
       # (the default script benchpkg discovers in benchmark/). --bench-on
       # pins the benchmark *script* to HEAD so older revs are measured
       # with the current suite definition. --tune re-tunes parameters per
-      # run to quieten run-to-run noise on shared runners.
+      # run to quieten run-to-run noise on shared runners. --url points
+      # benchpkg at this repo: the package is unregistered, so resolving
+      # the name against General fails without it.
       - name: Run benchmarks
         run: |
           mkdir -p results
           benchpkg ComposedDistributions \
             --rev="${{ steps.revs.outputs.revs }}" \
+            --url="https://github.com/${{ github.repository }}" \
             --bench-on="${{ github.sha }}" \
             --output-dir=results \
             --tune
