@@ -32,9 +32,18 @@
 
 # Mean / variance of a (possibly censored) leaf: that of its inner free delay.
 # A plain leaf is its own free leaf; a `Convolved` free-leafs to itself and so
-# reuses its additive `mean`/`var`.
-_leaf_mean(leaf) = mean(free_leaf(leaf))
-_leaf_var(leaf) = var(free_leaf(leaf))
+# reuses its additive `mean`/`var`. An uncertain leaf errors here too (rather
+# than free-leafing past `Uncertain` straight to the template, which would
+# silently reintroduce the template-only moment `mean`/`var(::Uncertain)`
+# itself rejects), so a tree-level moment fails the same way at every leaf.
+function _leaf_mean(leaf)
+    _has_uncertain(leaf) && _uncertain_moment_error("mean")
+    return mean(free_leaf(leaf))
+end
+function _leaf_var(leaf)
+    _has_uncertain(leaf) && _uncertain_moment_error("var")
+    return var(free_leaf(leaf))
+end
 
 # ============================================================================
 # 1. Overall observed-level moments on the composer itself
@@ -52,10 +61,10 @@ convolved total for a chain, the marginal time-to-resolution for a `Resolve`).
 For a genuinely multivariate [`Parallel`](@ref) (several independent observed
 endpoints) it returns the per-ENDPOINT `Vector`, one overall mean per branch
 endpoint, NOT the latent origin / intermediate events. Censoring is seen through
-to the free delay. An [`uncertain`](@ref) leaf contributes its TEMPLATE moment
-(parameter uncertainty is NOT propagated); draw the marginal with `rand`, or
-collapse the leaf to its concrete template with [`update`](@ref)`(tree, params)`
-to work with fixed parameters.
+to the free delay. A tree containing an [`uncertain`](@ref) leaf has no closed-
+form moment and errors; Monte Carlo it from `rand` draws, or collapse the leaf
+to its concrete template with [`update`](@ref)`(tree, params)` to work with
+fixed parameters.
 
 For the FULL per-event breakdown (the origin and every event), take the moment of
 the [`latent`](@ref) form: `mean(latent(d))` returns the per-event `Vector`

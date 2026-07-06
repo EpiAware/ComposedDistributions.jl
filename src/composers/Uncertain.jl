@@ -18,7 +18,19 @@
 #     ModifiedDistributions extension).
 #   - The ONE special behaviour is `rand`, which draws the marginal by drawing
 #     each spec and rebuilding the concrete leaf through `_uncertain_leaf`. The
-#     rest of the univariate surface delegates to the template.
+#     scalar `logpdf`/`cdf`/`quantile`/... surface delegates to the template
+#     (documented as reporting the leaf at its central values); the moments
+#     (`mean`/`var`/`std`) instead error, since a single summary number has no
+#     "at these central values" qualifier visible at the call site.
+#   - `Uncertain` is parameterised on the template's `ValueSupport` (`VS`), not
+#     the abstract `ValueSupport` itself: `Distributions.MixtureModel` (built by
+#     `Resolve`'s `as_mixture`, so `rand`/`mean`/`var`/`logpdf` on a `Resolve`
+#     branch) dispatches on `value_support(eltype(components))`, which has no
+#     method for the abstract type. An `Uncertain` branch sitting alongside a
+#     differently-typed sibling (the ordinary case) would otherwise widen
+#     `collect(c.delays)` to that abstract eltype and crash every `Resolve`
+#     verb with a confusing `MethodError`, not just the moments this file
+#     otherwise guards.
 
 @doc raw"
 
@@ -38,11 +50,15 @@ The generative model is hierarchical:
 ```
 
 with fixed parameters taken from the template. `rand` draws the marginal
-(parameters drawn internally). The rest of the univariate surface (scalar
-`logpdf`/`pdf`/`cdf`/`quantile`, the moments) delegates to the template, so it
-reports the leaf AT the template's central parameter values, NOT the marginal.
-Collapse an uncertain leaf to a concrete distribution by pinning its parameters
-with [`update`](@ref)`(tree, params)`.
+(parameters drawn internally). The scalar `logpdf`/`pdf`/`cdf`/`quantile`
+surface delegates to the template, so it reports the leaf AT the template's
+central parameter values, NOT the marginal. `mean`/`var`/`std` instead throw:
+the template's own moment is not the marginal moment and, unlike a density
+evaluated at an explicit `x`, a bare summary number carries no visible
+at-the-template-values qualifier, so returning it silently is a sharper
+footgun. Monte Carlo the marginal moment from `rand(d)` draws, or collapse an
+uncertain leaf to a concrete distribution by pinning its parameters with
+[`update`](@ref)`(tree, params)` first.
 
 # Fields
 - `template`: the concrete (possibly wrapped) leaf supplying the family, the
@@ -54,8 +70,8 @@ with [`update`](@ref)`(tree, params)`.
 - [`uncertain`](@ref): the public constructor.
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 "
-struct Uncertain{L <: UnivariateDistribution, S <: NamedTuple} <:
-       UnivariateDistribution{ValueSupport}
+struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
+    S <: NamedTuple} <: UnivariateDistribution{VS}
     "The concrete (possibly wrapped) template leaf: family, fixed parameter
     values, and fixed wrapper structure (truncation / censoring)."
     template::L
@@ -63,8 +79,9 @@ struct Uncertain{L <: UnivariateDistribution, S <: NamedTuple} <:
     template's free delay, each value a distribution (possibly `Uncertain`)."
     specs::S
 
-    function Uncertain(template::L, specs::S) where {
-            L <: UnivariateDistribution, S <: NamedTuple}
+    function Uncertain(template::L,
+            specs::S) where {
+            VS <: ValueSupport, L <: UnivariateDistribution{VS}, S <: NamedTuple}
         template isa Uncertain && throw(ArgumentError(
             "the template of an Uncertain must be a concrete distribution; " *
             "nest uncertainty in the parameter specs instead"))
@@ -80,7 +97,7 @@ struct Uncertain{L <: UnivariateDistribution, S <: NamedTuple} <:
                 "the spec for $(repr(k)) must be a UnivariateDistribution " *
                 "(a distribution over the parameter); got $(typeof(v))"))
         end
-        return new{L, S}(template, specs)
+        return new{VS, L, S}(template, specs)
     end
 end
 
@@ -250,7 +267,7 @@ _uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
 # marginal, and `update` collapses to a concrete leaf.
 
 # The uncertainty does not change the draw's element type.
-Base.eltype(::Type{<:Uncertain{L}}) where {L} = eltype(L)
+Base.eltype(::Type{<:Uncertain{VS, L}}) where {VS, L} = eltype(L)
 
 params(d::Uncertain) = params(d.template)
 minimum(d::Uncertain) = minimum(d.template)
@@ -265,9 +282,25 @@ ccdf(d::Uncertain, x::Real) = ccdf(d.template, x)
 logccdf(d::Uncertain, x::Real) = logccdf(d.template, x)
 quantile(d::Uncertain, q::Real) = quantile(d.template, q)
 
-mean(d::Uncertain) = mean(d.template)
-var(d::Uncertain) = var(d.template)
-std(d::Uncertain) = std(d.template)
+mean(d::Uncertain) = _uncertain_moment_error("mean")
+var(d::Uncertain) = _uncertain_moment_error("var")
+std(d::Uncertain) = _uncertain_moment_error("std")
+
+# Unlike the scalar `logpdf`/`cdf`/`quantile`/... above (which are documented
+# and tested to report the template's central values, NOT the marginal), the
+# moments error rather than silently return that same template-only value: a
+# moment is a single summary number with no accompanying "at these central
+# values" qualifier visible at the call site, so a silently-wrong mean/var/std
+# is a sharper footgun than a density evaluated at an explicit `x`. Point at
+# `rand` (Monte Carlo the marginal moment) or `update` (pin concrete values).
+function _uncertain_moment_error(what::AbstractString)
+    throw(ArgumentError(
+        "an Uncertain leaf's marginal `$(what)` has no closed form (the " *
+        "template's own $(what) is not the marginal and is not returned " *
+        "silently); Monte Carlo it from `rand(d)`/`rand(d, n)` draws, or " *
+        "pin concrete parameters with `update(tree, params)` and take the " *
+        "$(what) of the collapsed leaf"))
+end
 
 sampler(d::Uncertain) = d
 

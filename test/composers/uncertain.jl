@@ -84,10 +84,13 @@ end
     @test logccdf(u, 1.5) == logccdf(tmpl, 1.5)
     @test quantile(u, 0.5) == quantile(tmpl, 0.5)
 
-    # Template-value moments (uncertainty not propagated; documented).
-    @test mean(u) == mean(tmpl)
-    @test var(u) == var(tmpl)
-    @test std(u) == std(tmpl)
+    # Unlike the scalar surface above, the moments have no closed form and
+    # error rather than silently return the template's (non-marginal) moment.
+    @test_throws ArgumentError mean(u)
+    @test_throws ArgumentError var(u)
+    @test_throws ArgumentError std(u)
+    @test_throws "rand" mean(u)
+    @test_throws "update(tree, params)" var(u)
 end
 
 @testitem "rand: marginal draw matches a hand-written two-stage draw" begin
@@ -266,10 +269,12 @@ end
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
 
-    # Sequential: samples, and its tree moment reads the template's free delay.
+    # Sequential: samples, but its tree moment has no closed form (an
+    # uncertain step) and errors the same way the bare leaf's moment does.
     s = sequential(:onset_admit => u, :admit_death => LogNormal(0.5, 0.4))
     @test isfinite(sum(values(rand(Xoshiro(1), s))))
-    @test mean(s) ≈ mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4))
+    @test_throws ArgumentError mean(s)
+    @test_throws ArgumentError var(s)
 
     # Parallel and Compete sample the uncertain leaf's marginal directly.
     p = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
@@ -279,7 +284,12 @@ end
     @test isfinite(rand(Xoshiro(1), c))
 
     # Resolve: it composes and collapses via `update` to a concrete node.
+    # `rand` on the UNCOLLAPSED node lowers through `as_mixture`'s
+    # `MixtureModel`, which needs `Uncertain` to report a concrete
+    # `ValueSupport` (not the abstract type) to dispatch correctly when a
+    # branch sits alongside a differently-typed sibling.
     r = resolve(:death => (u, 0.3), :disch => Gamma(2.0, 1.5))
+    @test isfinite(rand(Xoshiro(1), r))
     rc = update(r, (death = (shape = 2.0, scale = 1.0),
         disch = (shape = 2.0, scale = 1.5)))
     @test !ComposedDistributions._has_uncertain(rc)
@@ -296,4 +306,61 @@ end
     @test event(s, :onset_admit) === u
     @test event_names(s) == (:onset, :admit, :death)
     @test occursin("uncertain(", sprint(show, MIME("text/plain"), s))
+end
+
+@testitem "composed tree moments propagate the uncertain-leaf error" begin
+    using Distributions
+
+    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+
+    # Parallel: the per-endpoint moment Vector hits the uncertain branch.
+    p = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
+    @test_throws ArgumentError mean(p)
+    @test_throws ArgumentError var(p)
+
+    # Resolve: `mean`/`var` lower through `as_mixture`'s `MixtureModel`, whose
+    # component moments hit the uncertain branch the same way.
+    r = resolve(:death => (u, 0.3), :disch => Gamma(2.0, 1.5))
+    @test_throws ArgumentError mean(r)
+    @test_throws ArgumentError var(r)
+
+    # Compete: the racing-hazard quadrature would otherwise silently integrate
+    # the template's survival for the uncertain branch.
+    c = compete(:death => u, :recover => Gamma(3.0, 2.0))
+    @test_throws ArgumentError mean(c)
+    @test_throws ArgumentError var(c)
+
+    # Collapsing with `update` first removes the uncertainty, so the moment
+    # is available again (the error is specifically about the uncertain leaf,
+    # not the composer type).
+    rc = update(r, (death = (shape = 2.0, scale = 1.0),
+        disch = (shape = 2.0, scale = 1.5)))
+    @test isfinite(mean(rc))
+end
+
+@testitem "rand/logpdf round trip through a nested uncertain leaf" begin
+    using Distributions, Random
+
+    # A Sequential containing a Parallel branch, one of whose endpoints is an
+    # uncertain leaf: exercises the composed `rand`/`logpdf` surfaces (the
+    # package's stack of per-leaf draws / densities) on a genuinely nested
+    # tree shape, not just a flat sibling list.
+    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    inner = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
+    tree = sequential(:onset => Gamma(1.5, 1.0), :branch => inner)
+
+    draw = rand(Xoshiro(7), tree)
+    @test draw isa NamedTuple
+    @test all(isfinite, values(draw))
+
+    # Scoring the draw is finite and, since `logpdf` on an uncertain leaf
+    # reports the template's density (not the marginal, by design), matches a
+    # hand-built tree with the SAME template values substituted for `u`.
+    flat = collect(values(draw))
+    @test isfinite(logpdf(tree, flat))
+
+    tmpl_tree = sequential(:onset => Gamma(1.5, 1.0),
+        :branch => parallel(:admit => Gamma(2.0, 1.0),
+            :notif => LogNormal(1.0, 0.5)))
+    @test logpdf(tree, flat) == logpdf(tmpl_tree, flat)
 end

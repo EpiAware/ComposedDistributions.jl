@@ -183,6 +183,7 @@ end
 
 function mean(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("mean")
+    _has_uncertain(c) && _uncertain_moment_error("mean")
     hi = _hazard_marginal_window(c)
     return gl_integrate(zero(hi), hi) do t
         exp(_hazard_logsurvival(c, t))
@@ -191,6 +192,7 @@ end
 
 function var(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("var")
+    _has_uncertain(c) && _uncertain_moment_error("var")
     hi = _hazard_marginal_window(c)
     m = mean(c)
     e2 = gl_integrate(zero(hi), hi) do t
