@@ -75,6 +75,85 @@ function _show_children(io::IO, node, prefix::String)
     return nothing
 end
 
+# --- opt-in detailed inspection ---------------------------------------------
+#
+# `show` is deliberately compact (structure plus short leaf labels); `inspect`
+# is the explicit opt-in for the full detail, recursing the SAME tree but
+# printing each leaf's full `text/plain` representation (every field) under an
+# indented prefix.
+
+@doc "
+
+Print a composed distribution's full nested detail.
+
+`inspect(io, d)` walks the same tree as `show` but prints each leaf's full
+`text/plain` representation (every field), so it is the opt-in companion to
+the compact structural `show`. A composer node prints its header and
+recurses; a leaf prints its detailed representation indented under its name.
+Writes to `io` (default `stdout`) and returns nothing.
+
+# Arguments
+- `io`: the IO stream to print to (default `stdout`).
+- `d`: the composed distribution (or bare leaf) to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+inspect(tree)
+```
+
+# See also
+- [`event_tree`](@ref): the nested tree of event names
+- [`params_table`](@ref): the flat parameter inventory
+"
+function inspect(io::IO, d)
+    if _is_composer_dist(d)
+        println(io, _node_header(d))
+        _inspect_children(io, d, "")
+    else
+        _inspect_leaf(io, d, "")
+    end
+    return nothing
+end
+
+inspect(d) = inspect(stdout, d)
+
+# Recurse the composer tree like `_show_children`, but print each leaf's full
+# `text/plain` detail (rather than its compact one-line label) indented under
+# its name.
+function _inspect_children(io::IO, node, prefix::String)
+    children = _named_children(node)
+    n = length(children)
+    for i in 1:n
+        last = i == n
+        connector = last ? "└─ " : "├─ "
+        name, child, note = children[i]
+        label = isempty(note) ? "$(name): " : "$(name) ($(note)): "
+        child_prefix = prefix * (last ? "   " : "│  ")
+        if _is_composer_dist(child)
+            println(io, prefix, connector, label, _node_header(child))
+            _inspect_children(io, child, child_prefix)
+        else
+            println(io, prefix, connector, label)
+            _inspect_leaf(io, child, child_prefix)
+        end
+    end
+    return nothing
+end
+
+# A leaf's full `text/plain` detail, indented under `prefix`, one line at a
+# time (so a multi-line show, e.g. a struct dump, stays aligned).
+function _inspect_leaf(io::IO, leaf, prefix::String)
+    text = sprint(show, MIME"text/plain"(), leaf)
+    for line in split(text, '\n')
+        println(io, prefix, line)
+    end
+    return nothing
+end
+
 # --- nested name-keyed params (hand-rolled, type-stable) --------------------
 
 @doc "
@@ -509,10 +588,11 @@ column), and a [`Resolve`](@ref) by its outcome names plus an optional
 `branch_probs` entry. A censored leaf is transparent: supply only the inner
 delay's parameters and the censoring is carried through.
 
-Pair with `chain_to_params` (from a downstream Turing-fitting extension) to
-read posterior means or a single draw from a fitted chain into the right
-NamedTuple, so `update(template, means)` returns a ready-to-`rand`/inspect
-distribution.
+Pair with [`chain_to_params`](@ref) to read posterior means or a single draw
+from a fitted chain into the right NamedTuple, so `update(template, means)`
+returns a ready-to-`rand`/inspect distribution — or call
+`update(template, chain)` directly once `DynamicPPL` and `FlexiChains` are
+loaded.
 
 # Arguments
 - `d`: the composed distribution (or bare leaf) to update.
@@ -531,7 +611,7 @@ event(tree2, :onset_admit)
 
 # See also
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
-- `chain_to_params`: build the NamedTuple from a fitted chain (downstream)
+- [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
 - [`update`](@ref)`(d, path => new_node)`: replace whole nodes (same shape)
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
@@ -896,6 +976,44 @@ end
 function _prior_override(priors, edge::Symbol, param::Symbol)
     key = (edge, param)
     return haskey(priors, key) ? priors[key] : nothing
+end
+
+@doc "
+
+Build the nested prior `NamedTuple` straight from a composed distribution.
+
+`param_priors(tree; priors, default)` is a thin convenience over
+[`build_priors`](@ref)`(`[`params_table`](@ref)`(tree))`: it reads the
+parameter inventory of the composed distribution `tree` and assembles the
+nested prior `NamedTuple` in one call, forwarding the same keyword surface.
+It adds no prior logic of its own.
+
+# Arguments
+- `tree`: a composed distribution from [`compose`](@ref).
+
+# Keyword Arguments
+- `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
+  or a nested `NamedTuple` keyed like the tree; only the listed parameters are
+  overridden (default: empty).
+- `default`: a function `row -> prior` for rows not overridden (default:
+  [`default_prior`](@ref)).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+priors = param_priors(tree)
+priors.onset_admit.shape
+```
+
+# See also
+- [`build_priors`](@ref): the underlying table-based assembly.
+- [`params_table`](@ref): the parameter inventory read internally.
+"
+function param_priors(tree; kwargs...)
+    return build_priors(params_table(tree); kwargs...)
 end
 
 # --- name introspection ----------------------------------------------------
