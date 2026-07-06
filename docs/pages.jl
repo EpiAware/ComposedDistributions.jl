@@ -16,7 +16,9 @@ pages = [
         "Overview" => "getting-started/index.md",
         "Concepts" => "getting-started/concepts.md",
         "Tutorials" => [
-            "Composing distributions" => "getting-started/tutorials/composing-distributions.md"
+            "Composing distributions" => "getting-started/tutorials/composing-distributions.md",
+            "Competing outcomes" => "getting-started/tutorials/competing-outcomes.md",
+            "Delay chains and the linear chain trick" => "getting-started/tutorials/linear-chain.md"
         ],
         "Infrastructure and template sync" => "getting-started/infrastructure.md"
     ],

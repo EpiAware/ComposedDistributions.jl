@@ -84,6 +84,7 @@ params_table(tree)
 
 - Find the right verb by intent on the [Concepts](@ref concepts) page.
 - Work through the composers end to end in [Composing distributions](@ref composing-distributions).
+- See mutually exclusive outcomes in [Competing outcomes](@ref competing-outcomes) and multi-step delays in [Delay chains and the linear chain trick](@ref linear-chain).
 - Want the full interface? See the [Public API](@ref public-api).
 - Want to report a problem or ask a question? Open an issue or start a
   discussion on the [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
