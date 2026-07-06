@@ -8,6 +8,7 @@ This page maps the modelling concepts to the verbs that build them, so you can f
 The package has four layers, each building on the one before.
 
 - **Leaves** are any `Distributions.jl` `UnivariateDistribution`, used directly as the per-event delays.
+  A leaf can also resolve later: a [`Varying`](@ref) leaf maps an observed covariate to a distribution, and an [`Uncertain`](@ref) leaf carries distribution-valued parameters.
 - **Composers** wire named leaves into an event tree ([`compose`](@ref) and the five composers).
 - **Combination and lowering** join or collapse whole delays ([`convolve_distributions`](@ref), [`difference`](@ref), [`observed_distribution`](@ref)).
 - **Parameters and edits** read and reshape an assembled tree ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref), [`splice`](@ref)).
@@ -43,6 +44,12 @@ Reading and editing (inspect or reshape an assembled tree)
 ├─ mean / var                        the composed marginal moments
 ├─ update                            replace values or whole nodes
 └─ prune / splice                    drop or insert a branch (topology)
+
+Deferred leaves (a leaf whose distribution resolves later)
+├─ varying / Context / instantiate   observed covariate picks the leaf
+├─ has_varying                       guard: un-instantiated leaves remain
+├─ uncertain                         distribution-valued parameters (priors)
+└─ has_uncertain                     guard: uncertain leaves remain
 ```
 
 ## Concept to primitive
@@ -65,6 +72,9 @@ Reading and editing (inspect or reshape an assembled tree)
 | Flat / nested event names | `event_names` / `event_tree` | the record key names |
 | Replace values or whole nodes | `update` | a same-shape tree |
 | Drop or insert a branch | `prune` / `splice` | an edited tree |
+| A leaf that varies with a covariate | `varying`, resolved by `instantiate` | [`Varying`](@ref) |
+| A leaf with parameter uncertainty | `uncertain`, collapsed by `update` | [`Uncertain`](@ref) |
+| Guard a fitting loop against unresolved leaves | `has_varying` / `has_uncertain` | a `Bool` |
 
 ## One object, both directions
 
