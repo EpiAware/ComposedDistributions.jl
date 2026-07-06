@@ -27,13 +27,64 @@ Load the package:
 using ComposedDistributions
 ```
 
+## What ComposedDistributions does
+
+ComposedDistributions composes per-event delay distributions into one object that describes a whole record.
+A composed object is a multi-state event process: named events linked by delays, which the composers wire into a tree.
+The same object scores observed records with `logpdf` and simulates new ones with `rand`, so a model is built once and used in both directions.
+It composes any [Distributions.jl](https://juliastats.org/Distributions.jl) `UnivariateDistribution`, with no censoring, so it is the generic composition layer.
+
+The building blocks are five composers.
+[`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.
+The [`compose`](@ref) front-end lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same stack.
+
+The package has four layers, each building on the one before.
+
+- **Leaves** are any Distributions.jl `UnivariateDistribution`, used directly as the per-event delays.
+- **Composers** wire named leaves into an event tree.
+- **Combination and lowering** join or collapse whole delays with [`convolve_distributions`](@ref), [`difference`](@ref) and [`observed_distribution`](@ref).
+- **Parameters and edits** read and reshape an assembled tree with [`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref) and [`splice`](@ref).
+
+The [Concepts](@ref concepts) page maps each modelling concept to the verb that builds it.
+
 ## A first example
 
-_Replace this with a short, runnable example that shows the package's main
-entry point._
+Compose two delays off a shared onset, then simulate and score a record.
+
+```@example overview
+using ComposedDistributions, Distributions, Random
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+
+record = rand(Xoshiro(1), tree)
+```
+
+The composed object scores that record straight back.
+
+```@example overview
+logpdf(tree, record)
+```
+
+Read its free parameters as a flat table, keyed by edge and parameter name.
+
+```@example overview
+params_table(tree)
+```
+
+## Key features
+
+- **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.
+- **One structure, many front-ends.** [`compose`](@ref) lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same composer stack.
+- **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree.
+- **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolve_distributions`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
+- **Automatic differentiation.** Scoring is differentiable through ForwardDiff, ReverseDiff, Mooncake and Enzyme, so a composed distribution drops into a probabilistic-programming fit.
 
 ## Learning more
 
+- Find the right verb by intent on the [Concepts](@ref concepts) page.
+- Work through the composers end to end in [Composing distributions](@ref composing-distributions).
+- See mutually exclusive outcomes in [Competing outcomes](@ref competing-outcomes) and multi-step delays in [Delay chains and the linear chain trick](@ref linear-chain).
 - Want the full interface? See the [Public API](@ref public-api).
 - Want to report a problem or ask a question? Open an issue or start a
   discussion on the [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
