@@ -10,6 +10,11 @@ winning probability derived from the hazards, timing coupled) — subtype
 (one event slot per outcome, the shared origin, the per-outcome `rand`) and on
 the concrete type only where the scoring arithmetic differs.
 
+`AbstractOneOf` is the univariate arm of the composer hierarchy: it subtypes
+[`AbstractComposedDistribution`](@ref)`{Univariate, Continuous}`, so it stays a
+`UnivariateDistribution` while sharing the composed supertype the multivariate
+`Sequential` / `Parallel` / `Choose` also sit under.
+
 # Examples
 ```@example
 using ComposedDistributions, Distributions
@@ -21,7 +26,8 @@ r isa ComposedDistributions.AbstractOneOf
 # See also
 - [`Resolve`](@ref), [`Compete`](@ref): the concrete one_of nodes.
 "
-abstract type AbstractOneOf <: UnivariateDistribution{Continuous} end
+abstract type AbstractOneOf <:
+              AbstractComposedDistribution{Univariate, Continuous} end
 
 # Outcome names, one per one_of outcome. Both concrete types store `names`.
 component_names(c::AbstractOneOf) = c.names

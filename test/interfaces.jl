@@ -1,41 +1,22 @@
 # Interface-conformance suite: the contract a type must satisfy to take part in
 # composition, checked uniformly over every built-in node shape and a
-# user-defined node. Ported from the CensoredDistributions interface suite
-# (EpiAware/CensoredDistributions.jl#795), keeping the generic composer-node,
-# one_of-outcome, leaf-wrapper and abstract-membership contracts, dropping the
-# censoring families this package does not carry.
+# user-defined node. Drives the reusable `ComposedDistributions.TestUtils`
+# harness (shipped in `src`, ported from the CensoredDistributions interface
+# suite, EpiAware/CensoredDistributions.jl#795) over the package's own fixtures,
+# and adds the extra assertions the harness does not carry (the user-defined
+# `Both` node, the underscored-alias identities, the introspection and
+# leaf-wrapper contracts). Censoring-free: this package composes any
+# `UnivariateDistribution`.
 
 @testitem "node interface conformance over every composer shape" begin
-    using ComposedDistributions, Distributions, Random
-    import ComposedDistributions: child_nleaves, child_logpdf, child_rand!
+    using ComposedDistributions, Distributions
+    using ComposedDistributions.TestUtils: test_node_interface
 
-    # Assert a node satisfies the public node-extension contract, the same way
-    # the composers walk an event vector. `child_nleaves(node)` is a positive
-    # `Int`; `child_rand!` fills exactly the node's `offset + 1 : offset + n`
-    # slot and leaves the padding either side untouched; `child_logpdf` is a
-    # finite scalar over that slot and does not depend on the surrounding
-    # padding (scoring the same draw at offset 0 gives the same value).
-    function check_node_interface(node; offset = 1, pad = 1, rng = Xoshiro(1))
-        n = child_nleaves(node)
-        @test n isa Int
-        @test n >= 1
-
-        len = offset + n + pad
-        out = fill(NaN, len)
-        ret = child_rand!(out, offset, rng, node)
-        @test ret === nothing
-        slot = (offset + 1):(offset + n)
-        @test all(isfinite, @view out[slot])
-        @test all(isnan, @view out[1:offset])
-        @test all(isnan, @view out[(offset + n + 1):len])
-
-        lp = child_logpdf(node, out, offset, n)
-        @test lp isa Real
-        @test isfinite(lp)
-        tight = out[slot]
-        @test child_logpdf(node, tight, 0, n) ≈ lp
-    end
-
+    # The reusable node-extension checklist walks each node's flat event vector
+    # the same way the composers do: `child_nleaves` is a positive `Int`,
+    # `child_rand!` fills exactly the node's slot and leaves the padding either
+    # side untouched, and `child_logpdf` is a finite scalar over that slot,
+    # independent of the surrounding padding.
     leaf = Gamma(2.0, 1.0)
     seq = sequential(:onset_admit => Gamma(2.0, 1.0),
         :admit_death => LogNormal(0.5, 0.4))
@@ -51,14 +32,60 @@
         ("Resolve", res), ("Compete", com), ("Choose", cho),
         ("nested", nested))
     for (name, node) in cases
-        @testset "$name" begin
-            check_node_interface(node)
-        end
+        test_node_interface(node; name = name)
     end
+end
+
+@testitem "public interface conformance over every composer shape" begin
+    using ComposedDistributions
+    using ComposedDistributions.TestUtils: test_interface, example_fixtures
+    import ForwardDiff
+
+    # The reusable public checklist over the package's own fixture registry: a
+    # bare leaf, Sequential, Parallel, Resolve, Compete, choose, a nested mix and
+    # the deep-nesting matrix (a Sequential of Parallel, a Choose of
+    # Sequentials). ForwardDiff is injected so the AD-safety contract (a finite
+    # logpdf gradient) runs on every fixture carrying an `ad` probe.
+    for fix in example_fixtures()
+        test_interface(fix; ad_gradient = ForwardDiff.gradient)
+    end
+end
+
+@testitem "fixture registry covers every public composer type" begin
+    using ComposedDistributions
+    using ComposedDistributions.TestUtils: test_registry_coverage
+
+    # A new public composer type added without a `test_interface` fixture fails
+    # here (the registry-completeness meta-test).
+    test_registry_coverage()
+end
+
+@testitem "composers reject invalid construction" begin
+    using ComposedDistributions
+    using ComposedDistributions.TestUtils: test_rejects_invalid
+
+    test_rejects_invalid()
+end
+
+@testitem "composed-interface conformance and the keyword entry point" begin
+    using ComposedDistributions, Distributions
+    using ComposedDistributions.TestUtils: test_composed_interface, test_interface
+
+    # `test_composed_interface` wraps the node-extension checklist and the public
+    # checklist, and asserts the node subtypes `AbstractComposedDistribution`.
+    node = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    test_composed_interface(node; draw = [1.5, 0.8], path = (:onset_admit,),
+        overall = :vector, has_endpoint = false)
+    # The keyword entry, as a downstream author would call it on a bare
+    # Distributions.jl leaf (a valid univariate member).
+    test_interface(Gamma(2.0, 1.0); draw = 3.0, univariate = true,
+        has_endpoint = false)
 end
 
 @testitem "a user-defined composer node satisfies the node contract" begin
     using ComposedDistributions, Distributions, Random
+    using ComposedDistributions.TestUtils: test_node_interface
     import ComposedDistributions: child_nleaves, child_logpdf, child_rand!
 
     # A minimal user node combining two branches side by side (the worked
@@ -85,6 +112,10 @@ end
     node = Both(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     @test child_nleaves(node) == 2
 
+    # The reusable harness accepts the user node directly, the same way it checks
+    # the built-ins.
+    test_node_interface(node; name = "Both")
+
     # The node fills only its own slice and scores it position-independently.
     out = fill(NaN, 4)
     @test child_rand!(out, 1, Xoshiro(1), node) === nothing
@@ -103,31 +134,22 @@ end
 
 @testitem "abstract membership: composers sit under the right supertype" begin
     using ComposedDistributions, Distributions
-    import ComposedDistributions: AbstractOneOf
+    using ComposedDistributions.TestUtils: test_abstract_membership
+    import ComposedDistributions: AbstractOneOf, AbstractComposedDistribution
 
-    # The one_of-outcome family shares `AbstractOneOf`.
-    res = resolve(:death => (Gamma(1.5, 1.0), 0.3),
-        :disch => (Gamma(2.0, 1.5), 0.7))
-    com = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
-    @test res isa AbstractOneOf
-    @test com isa AbstractOneOf
+    # The meta-test pins the whole hierarchy: every composer subtypes
+    # `AbstractComposedDistribution`; `Sequential` / `Parallel` subtype
+    # `AbstractMultiChild`; `Resolve` / `Compete` subtype `AbstractOneOf`;
+    # `Choose` is a sibling, not a multi-child node.
+    test_abstract_membership()
 
-    # The named-child composers are sibling multivariate distributions, not
-    # members of the one_of family.
-    seq = sequential(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
-    par = parallel(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
-    cho = choose(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
-    for c in (seq, par, cho)
-        @test c isa Distribution{Multivariate, Continuous}
-        @test !(c isa AbstractOneOf)
-    end
-
-    # A plain leaf and a `Shared` tie are standalone univariate, under no
+    # A plain leaf and a `Shared` tie are standalone univariate leaves, under no
     # composer supertype.
     @test Gamma(2.0, 1.0) isa UnivariateDistribution
-    @test !(Gamma(2.0, 1.0) isa AbstractOneOf)
+    @test !(Gamma(2.0, 1.0) isa AbstractComposedDistribution)
     sh = shared(:inc, Gamma(2.0, 1.0))
     @test sh isa UnivariateDistribution
+    @test !(sh isa AbstractComposedDistribution)
     @test !(sh isa AbstractOneOf)
 end
 

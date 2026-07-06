@@ -40,13 +40,10 @@ import Base: minimum, maximum
 
 # Types, constructors, and helpers used without method extension.
 using Distributions: Distributions, UnivariateDistribution, Distribution,
-                     Continuous, Multivariate, ValueSupport, MixtureModel,
-                     Truncated, truncated
+                     Continuous, Multivariate, Univariate, VariateForm,
+                     ValueSupport, MixtureModel, Truncated, truncated
 
 using LogExpFunctions: log1mexp
-
-using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
-                           TYPEDFIELDS, TYPEDSIGNATURES
 
 import Tables
 
@@ -70,6 +67,10 @@ using DocStringExtensions: @template, DOCSTRING, EXPORTS, IMPORTS, TYPEDEF,
 # Register the standard EpiAware docstring conventions before any
 # docstrings are defined (see src/docstrings.jl).
 include("docstrings.jl")
+
+# The composer abstract-type hierarchy (`AbstractComposedDistribution` /
+# `AbstractMultiChild`). Before the composers, which subtype it.
+include("interface.jl")
 
 # --- exports ---------------------------------------------------------------
 
@@ -162,6 +163,10 @@ include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.
 include("composers/named_outputs.jl")
+
+# The reusable interface-conformance harness (`TestUtils.test_interface` and
+# friends). Last: it uses the whole public surface defined above.
+include("TestUtils.jl")
 
 # Public API - functions that are part of the public interface but not exported
 # (Julia 1.11+).

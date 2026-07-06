@@ -14,6 +14,13 @@
 - Docs site (overview, concepts, three tutorials, FAQ, interface
   contracts), benchmarks (core + AD) with a docs page, and a Mooncake AD
   extension.
+- Typed composer hierarchy: `AbstractComposedDistribution{F, S}` roots the
+  composers, with `AbstractMultiChild{S}` grouping `Sequential`/`Parallel` and
+  `AbstractOneOf` the univariate one_of family; downstream extension packages
+  dispatch on these supertypes. The reusable
+  `ComposedDistributions.TestUtils` harness (`test_interface`,
+  `test_composed_interface`, `test_node_interface`, `test_abstract_membership`,
+  ...) verifies a custom leaf or composer conforms to the interface.
 
 - Added `uncertain` / `Uncertain`: leaf distributions whose parameters are
   themselves distributions, nestable to any depth. `rand` draws the marginal so
