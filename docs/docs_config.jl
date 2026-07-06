@@ -37,7 +37,7 @@ const TUTORIAL_STUBS = [
 # - The stable docs URL 404s until the first tagged release deploys it.
 # - The Discussions URL 404s until Discussions is enabled on the repo.
 const LINKCHECK_IGNORE = [
-    r"epiaware\.org/ComposedDistributions\.jl/stable",
+    r"composeddistributions\.epiaware\.org/stable",
     r"github\.com/EpiAware/ComposedDistributions\.jl/discussions"
 ]
 
