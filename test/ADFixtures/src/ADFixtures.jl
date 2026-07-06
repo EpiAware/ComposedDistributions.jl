@@ -92,7 +92,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # two-value vector `[obs_i, 1.0]` (the second step held constant) so the
     # differentiated parameters land on the first (Gamma) step.
     _push!("Sequential Gamma+LogNormal logpdf",
-        (θ, obs) -> sum(
+        (θ,
+            obs) -> sum(
             x -> logpdf(
                 sequential(:a => Gamma(θ[1], θ[2]),
                     :b => LogNormal(0.5, 0.4)), [x, 1.0]), obs),
@@ -103,7 +104,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # reduction (not `float.(branch_probs)`). The two delays' shapes and the
     # branch probability are all differentiated.
     _push!("Resolve mixture marginal logpdf",
-        (θ, obs) -> sum(
+        (θ,
+            obs) -> sum(
             x -> logpdf(
                 resolve(:death => (Gamma(θ[1], 1.0), θ[3]),
                     :disch => (Gamma(θ[2], 1.5), 1 - θ[3])), x), obs),
@@ -113,7 +115,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # the AD-safe `_logccdf_ad_safe`, so a Gamma survival differentiates w.r.t.
     # its shape/scale.
     _push!("Compete racing-hazard marginal logpdf",
-        (θ, obs) -> sum(
+        (θ,
+            obs) -> sum(
             x -> logpdf(
                 compete(:death => Gamma(θ[1], θ[2]),
                     :recover => Gamma(3.0, 2.0)), x), obs),

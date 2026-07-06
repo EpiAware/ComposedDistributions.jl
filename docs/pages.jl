@@ -17,8 +17,7 @@ pages = [
         "Tutorials" => [
             "Composing distributions" => "getting-started/tutorials/composing-distributions.md"
         ],
-        "Infrastructure and template sync" => "getting-started/infrastructure.md",
-        "Customising your docs" => "getting-started/customising.md"
+        "Infrastructure and template sync" => "getting-started/infrastructure.md"
     ],
     "API reference" => [
         "Public API" => "lib/public.md",

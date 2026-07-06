@@ -67,7 +67,5 @@ params_table(tree)
 
 - Work through the composers end to end in [Composing distributions](@ref composing-distributions).
 - Want the full interface? See the [Public API](@ref public-api).
-- See [Customising your docs](@ref customising) for how to make the
-  seeded pages (this one included) your own.
 - Want to report a problem or ask a question? Open an issue or start a
   discussion on the [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
