@@ -1,0 +1,32 @@
+# PACKAGE-OWNED — scaffold writes this once and never overwrites it.
+# The benchmark environment, so `julia --project=benchmark benchmark/run.jl`
+# resolves. Seeded with BenchmarkTools, the package, and the shared
+# EpiAwarePackageTools benchmark harness; the AD-backend deps below back the
+# "AD gradients" group, sourced from the `ADFixtures` path package (the same
+# scenarios/backends `test/ad/runtests.jl` and the AD docs tutorial use).
+# EpiAwarePackageTools is pinned by git via `[sources]` until it is registered
+# (mirror the test env's pin if you switch to a path).
+[deps]
+ADFixtures = "ec1ee8ad-3b9d-4294-a190-df7eed043993"
+ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+DifferentiationInterfaceTest = "a82114a7-5aa3-49a8-9643-716bb13727a3"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+EpiAwarePackageTools = "7aaea248-0d11-4a0d-a7dc-86da30abb951"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
+ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+
+[sources]
+ADFixtures = {path = "../test/ADFixtures"}
+ComposedDistributions = {path = ".."}
+# Until EpiAwarePackageTools is registered, it is pinned by git so
+# the env resolves out of the box. Switch to a local path to
+# develop the kit alongside this package.
+EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}
+
+[compat]
+BenchmarkTools = "1"
