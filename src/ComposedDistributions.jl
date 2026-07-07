@@ -178,8 +178,9 @@ include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
 # ConvolvedDistributions interop (vector convolution, difference, composite
-# leaves): after observed.jl (the collapse) and introspection.jl (the walks it
-# extends for the fixed composite leaves).
+# leaves): after observed.jl (the collapse), introspection.jl (the params_table
+# / update walks it extends to see through a composite leaf) and Uncertain.jl
+# (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")
 # Per-edge delay moments: after the composers it walks and observed.jl.
 include("composers/composed_moments.jl")

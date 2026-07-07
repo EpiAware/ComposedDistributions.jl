@@ -219,38 +219,132 @@ end
     @test rewrap_leaf(conv, Gamma(3.0, 1.5)) == Gamma(3.0, 1.5)
 end
 
-@testitem "Convolved leaf is fixed structure for params_table / build_priors" begin
+@testitem "Convolved leaf: params_table sees through to component params" begin
     using Distributions
     using ComposedDistributions: Tables
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
     tbl = params_table(seq)
     rows = collect(Tables.rows(tbl))
-    # No rows for the composite leaf; only the LogNormal's two scalar params.
-    @test length(rows) == 2
+    # One row per scalar component parameter (two Gammas) plus the LogNormal's.
+    @test length(rows) == 6
     @test all(r -> r.value isa Real, rows)
-    @test Set(r.param for r in rows) == Set((:mu, :sigma))
-    @test all(r -> r.edge == :report, rows)
+    # The composite's components are namespaced `total.component_i`, each with
+    # the leaf's own scalar params and value.
+    comp_rows = filter(r -> r.edge != :report, rows)
+    @test Set(r.edge for r in comp_rows) ==
+          Set((Symbol("total.component_1"), Symbol("total.component_2")))
+    c1 = filter(r -> r.edge == Symbol("total.component_1"), comp_rows)
+    @test [(r.param, r.value) for r in c1] == [(:shape, 2.0), (:scale, 1.0)]
+    c2 = filter(r -> r.edge == Symbol("total.component_2"), comp_rows)
+    @test [(r.param, r.value) for r in c2] == [(:shape, 1.0), (:scale, 1.5)]
 
-    # build_priors consumes the well-formed table (no composite prior).
+    # build_priors assembles the nested prior tree down to the components.
     pr = build_priors(tbl)
     @test pr isa NamedTuple
     @test haskey(pr, :report)
-    @test !haskey(pr, :total)
+    @test haskey(pr.total.component_1, :shape)
+    @test haskey(pr.total.component_2, :scale)
 end
 
-@testitem "update leaves a Convolved leaf unchanged (fixed structure)" begin
+@testitem "Difference leaf: params_table sees through to (x, y) params" begin
+    using Distributions
+    using ComposedDistributions: Tables
+
+    diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
+    par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
+
+    tbl = params_table(par)
+    rows = collect(Tables.rows(tbl))
+    comp_rows = filter(r -> r.edge != :other, rows)
+    @test Set(r.edge for r in comp_rows) ==
+          Set((Symbol("gap.component_1"), Symbol("gap.component_2")))
+    # component_1 is the minuend (Gamma), component_2 the subtrahend (Normal).
+    @test Set((r.edge, r.param) for r in comp_rows) == Set([
+        (Symbol("gap.component_1"), :shape), (Symbol("gap.component_1"), :scale),
+        (Symbol("gap.component_2"), :mu), (Symbol("gap.component_2"), :sigma)])
+end
+
+@testitem "update round-trips a Convolved leaf's component params" begin
     using Distributions
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
-    seq2 = update(seq, (report = (mu = 0.8, sigma = 0.6),))
-    # The composite leaf is untouched; the fittable leaf is updated.
-    @test mean(event(seq2, :total)) ≈ mean(conv)
+    # A concrete update replaces every component parameter, rebuilding the
+    # composite from the pinned components (the solver method is preserved).
+    seq2 = update(seq,
+        (
+            total = (component_1 = (shape = 3.0, scale = 2.0),
+                component_2 = (shape = 1.2, scale = 0.8)),
+            report = (mu = 0.8, sigma = 0.6)))
+    total2 = event(seq2, :total)
+    @test total2 isa Convolved
+    @test total2.components[1] == Gamma(3.0, 2.0)
+    @test total2.components[2] == Gamma(1.2, 0.8)
     @test event(seq2, :report) == LogNormal(0.8, 0.6)
+    # The composite is still one flat scored slot.
+    @test length(seq2) == 2
+end
+
+@testitem "update makes a Convolved component uncertain (partial merge)" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
+
+    # A distribution in one component slot makes just that parameter uncertain;
+    # untouched components and siblings keep their values.
+    est = update(seq,
+        (total = (component_1 = (shape = LogNormal(log(2.0), 0.2),),),))
+    @test has_uncertain(est)
+    @test has_uncertain(event(est, :total))
+    total_est = event(est, :total)
+    @test total_est.components[2] == Gamma(1.0, 1.5)
+    @test event(est, :report) == LogNormal(0.5, 0.4)
+end
+
+@testitem "update round-trips a Difference leaf's (x, y) params" begin
+    using Distributions
+
+    diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
+    par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
+
+    par2 = update(par,
+        (
+            gap = (component_1 = (shape = 3.0, scale = 2.0),
+                component_2 = (mu = 0.5, sigma = 1.0)),
+            other = (mu = 0.8, sigma = 0.6)))
+    g2 = event(par2, :gap)
+    @test g2 isa Difference
+    @test g2.x == Gamma(3.0, 2.0)
+    @test g2.y == Normal(0.5, 1.0)
+    @test g2.method === diff.method
+end
+
+@testitem "codec: a spec'd Convolved component counts one estimated dim" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension, unflatten, flatten
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
+    est = update(seq,
+        (total = (component_1 = (shape = LogNormal(log(2.0), 0.2),),),))
+
+    # Exactly one estimated parameter: total.component_1.shape.
+    @test flat_dimension(est) == 1
+    # unflatten places the draw at the spec'd component parameter and holds the
+    # rest at the template; update then collapses the composite to concrete.
+    nt = unflatten(est, [3.0])
+    @test nt.total.component_1.shape == 3.0
+    @test nt.total.component_2.shape == 1.0
+    collapsed = update(est, nt)
+    @test !has_uncertain(collapsed)
+    @test event(collapsed, :total).components[1] == Gamma(3.0, 1.0)
+    # flatten is the inverse on the spec'd rows.
+    @test flatten(est, nt) == [3.0]
 end
 
 @testitem "structural edits around a Convolved leaf: prune / splice" begin

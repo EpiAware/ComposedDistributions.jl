@@ -10,6 +10,17 @@
   event name errors listing the valid events. The discrete-event and
   thinning/branch-probability variants stay in CensoredDistributions.
 
+- See-through fitting of `Convolved` / `Difference` leaf component parameters,
+  replacing the previous fixed-composite treatment. `params_table` now
+  inventories each component's scalar parameters under a `component_i` path
+  segment (e.g. `total.component_1.shape`), and `update` rebuilds the composite
+  from the updated components (preserving the solver method). A component may be
+  made `uncertain` in place, so the uncertain-first codec
+  (`flatten` / `unflatten` / `flat_dimension` / `as_logdensity`) estimates a
+  spec'd component parameter like any other leaf parameter; `has_uncertain` sees
+  through a composite carrying an uncertain component. The composite stays a
+  single flat scored slot and an atomic node to the structural edits.
+
 ## 0.1.0 — initial release
 
 - The generic composition algebra ported from CensoredDistributions.jl:

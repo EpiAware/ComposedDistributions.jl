@@ -7,8 +7,8 @@
 #   - `convolve_distributions(chain, series)`: the timeseries (renewal / latent)
 #     convolution driven by a composed chain's observed total delay;
 #   - `difference(chain, other)`: the difference of two observed totals;
-#   - a `Convolved` / `Difference` node as a fixed composite leaf inside a tree
-#     (fixed structure for the flat params_table / update machinery).
+#   - a `Convolved` / `Difference` node as a see-through composite leaf inside a
+#     tree (its component parameters inventoried and fitted in place).
 # Each collapses the composed operand to its observed univariate quantity
 # (`observed_distribution`) and then reuses the univariate ConvolvedDistributions
 # method, so the composed and univariate results are identical by construction.
@@ -210,22 +210,69 @@ function ConvolvedDistributions.difference(
     return difference(_observed_operand(a), _observed_operand(b); kwargs...)
 end
 
-# --- Convolved / Difference as a fixed composite leaf ------------------------
+# --- Convolved / Difference as a see-through composite leaf ------------------
 #
 # A `Convolved` / `Difference` node used as a leaf is a pre-formed composite
-# delay: its parameters are its components' parameters (a nested tuple), not a
-# flat scalar list. The flat params_table / update machinery keys leaves by a
-# scalar parameter list, so it treats such a node as fixed structure — no
-# free-parameter rows, and `update` leaves it unchanged (as with a `NoEvent`
-# marker). To fit the components, compose them as explicit chain steps instead,
-# so each component is its own inventoried leaf.
+# delay whose parameters ARE its components' parameters. The prior/params
+# interface sees THROUGH it to the component leaves: `params_table` inventories
+# each component's scalar parameters under a `component_i` path segment (so a
+# two-Gamma `Convolved` at edge `:total` lists `total.component_1.shape`,
+# `total.component_1.scale`, `total.component_2.shape`, ...), and `update`
+# rebuilds the composite from the updated components. A component may itself be
+# an [`uncertain`](@ref) leaf (its spec rides the row's `prior` column) or a
+# nested composite (the walk recurses), so the uncertain-first codec estimates a
+# spec'd component parameter like any other leaf parameter. The composite stays a
+# single flat scored slot (`length` 1) and an atomic node to the structural
+# edits; only the parameter inventory and reconstruction see inside it.
 
-# No params_table rows: the composite leaf's parameters are fixed structure.
+# The `component_i` path segment names for an `n`-component composite leaf,
+# mirroring the edge/param naming the composers use for their named children.
+_composite_component_names(n::Int) = ntuple(i -> Symbol(:component_, i), n)
+
+# The ordered component leaves of a composite: a `Convolved`'s summands, a
+# `Difference`'s (minuend, subtrahend).
+_composite_components(d::Convolved) = d.components
+_composite_components(d::Difference) = (d.x, d.y)
+
+# Rebuild a composite from a new component tuple, preserving the solver method.
+_rebuild_composite(d::Convolved, comps::Tuple) = Convolved(comps; method = d.method)
+function _rebuild_composite(d::Difference, comps::Tuple)
+    return Difference(comps[1], comps[2]; method = d.method)
+end
+
+# params_table rows: recurse into each component under a `component_i` segment,
+# reusing the generic leaf walk for each component (so a plain, censored,
+# uncertain, or nested-composite component is inventoried exactly as it would be
+# as a standalone leaf, one row-group per component).
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        ::Union{Convolved, Difference}, path)
+        d::Union{Convolved, Difference}, path)
+    comps = _composite_components(d)
+    names = _composite_component_names(length(comps))
+    for (name, comp) in zip(names, comps)
+        _walk_rows!(edges, params_col, values, supports, priors, seen, comp,
+            (path..., name))
+    end
     return nothing
 end
 
-# `update` leaves a fixed composite leaf unchanged (it emits no params_table rows
-# to key an update against), in both strict and merge modes.
-_update(d::Union{Convolved, Difference}, ::NamedTuple, shared, ::Bool) = d
+# `update` rebuilds a composite from its updated components: the nested
+# NamedTuple is keyed by `component_i`, one entry per component, each recursing
+# through the leaf update (strict replace or merge-mode uncertainty). Mirrors the
+# `Sequential`/`Parallel` recursion but rebuilds a `Convolved`/`Difference`,
+# keeping the composite an atomic (single-slot) leaf everywhere else.
+function _update(d::Union{Convolved, Difference}, params::NamedTuple, shared,
+        merge::Bool)
+    comps = _composite_components(d)
+    names = _composite_component_names(length(comps))
+    _check_child_keys(params, names, nameof(typeof(d)), shared)
+    updated = ntuple(length(names)) do i
+        _update(comps[i], _child_params(params, names[i]), shared, merge)
+    end
+    return _rebuild_composite(d, updated)
+end
+
+# See-through uncertainty: a composite carrying an uncertain component still
+# reports `has_uncertain`, so a fitting-loop guard and `observed_distribution`'s
+# collapse guard catch a component that has not been pinned.
+has_uncertain(d::Convolved) = any(has_uncertain, d.components)
+has_uncertain(d::Difference) = has_uncertain(d.x) || has_uncertain(d.y)
