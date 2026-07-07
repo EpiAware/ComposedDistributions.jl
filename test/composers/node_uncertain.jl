@@ -144,13 +144,15 @@ end
     using ComposedDistributions: as_logdensity, logdensity, flat_dimension
     using ForwardDiff
 
-    tree = compose((resolution = update(
-        resolve(:death => (Gamma(1.5, 1.0), 0.3),
+    # A bare (univariate) Resolve whose branch-probability simplex is uncertain:
+    # the gradient flows through the stick-breaking reconstruction into the
+    # mixture marginal's AD-safe log-sum-exp.
+    r = update(resolve(:death => (Gamma(1.5, 1.0), 0.3),
             :disch => (Gamma(2.0, 1.5), 0.7)),
-        (branch_probs = Dirichlet([2.0, 2.0]),)),))
-    prob = as_logdensity(tree, [1.5, 0.8, 2.1, 3.2])
+        (branch_probs = Dirichlet([2.0, 2.0]),))
+    prob = as_logdensity(r, [1.5, 0.8, 2.1, 3.2])
 
-    @test flat_dimension(tree) == 1
+    @test flat_dimension(r) == 1
     x0 = [0.4]
     g = ForwardDiff.gradient(x -> logdensity(prob, x), x0)
     @test all(isfinite, g)

@@ -12,7 +12,8 @@ Base.:(==)(a::Sequential, b::Sequential) = a.components == b.components
 Base.:(==)(a::Parallel, b::Parallel) = a.components == b.components
 function Base.:(==)(a::Resolve, b::Resolve)
     return a.names == b.names && a.delays == b.delays &&
-           a.branch_probs == b.branch_probs
+           a.branch_probs == b.branch_probs &&
+           a.branch_prob_prior == b.branch_prob_prior
 end
 # A racing-hazard node has no branch probabilities (derived), so its identity is
 # its names and racing delays. A mixture and a racing-hazard node are never equal.
@@ -30,8 +31,8 @@ end
 Base.hash(d::Sequential, h::UInt) = hash(d.components, hash(:Sequential, h))
 Base.hash(d::Parallel, h::UInt) = hash(d.components, hash(:Parallel, h))
 function Base.hash(c::Resolve, h::UInt)
-    return hash(c.branch_probs,
-        hash(c.delays, hash(c.names, hash(:Resolve, h))))
+    return hash(c.branch_prob_prior, hash(c.branch_probs,
+        hash(c.delays, hash(c.names, hash(:Resolve, h)))))
 end
 function Base.hash(c::Compete, h::UInt)
     return hash(c.delays, hash(c.names, hash(:Compete, h)))

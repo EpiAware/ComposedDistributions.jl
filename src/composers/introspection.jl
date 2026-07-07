@@ -188,11 +188,25 @@ function _hazard_one_of_params(c::Compete)
 end
 
 # A `Resolve` node's nested params: each outcome name -> its delay's params,
-# plus a `branch_probs` entry carrying the (free) outcome probabilities.
+# plus a `branch_probs` entry carrying the outcome probabilities (a fixed node)
+# or the K-1 stick coordinates (an uncertain node), so the codec flattens the
+# same estimated representation the table lists.
 function _one_of_params(c::Resolve)
     outcome_vals = map(params, c.delays)
     outcomes = NamedTuple{c.names}(outcome_vals)
-    return merge(outcomes, (; branch_probs = c.branch_probs))
+    return merge(outcomes, (; branch_probs = _branch_prob_params(c)))
+end
+
+# The nested-params entry for the branch probabilities: the raw probability
+# tuple for a fixed node, or the K-1 stick coordinates (keyed `:stick_k`) when
+# the node carries an attached `Dirichlet`, so `flatten`/`unflatten` round-trip
+# the estimated stick subset.
+_branch_prob_params(c::Resolve) = _branch_prob_params(c, c.branch_prob_prior)
+_branch_prob_params(c::Resolve, ::Nothing) = c.branch_probs
+function _branch_prob_params(c::Resolve, ::Distributions.Dirichlet)
+    v = _simplex_to_stick(collect(c.branch_probs))
+    names = _stick_param_names(length(c.names))
+    return NamedTuple{names}(Tuple(v))
 end
 
 # A `Choose` node's nested params: a NamedTuple keyed by the alternative names,
@@ -504,14 +518,42 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen,
         _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
             (path..., name))
     end
-    sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
     edge = _join_path((path..., :branch_probs))
+    _branch_prob_rows!(edges, params_col, values, supports, priors, c, edge,
+        c.branch_prob_prior)
+    return nothing
+end
+
+# The branch-probability rows. A fixed node lists one informational row per
+# outcome probability (no attached prior, so it is not estimated). An uncertain
+# node (an attached `Dirichlet`) lists its K-1 stick coordinates instead: each a
+# scalar estimated parameter `:stick_k` in (0, 1) carrying its stick-breaking
+# `Beta` prior, so the codec flattens the simplex through the existing per-row
+# scoring with no special-casing.
+function _branch_prob_rows!(edges, params_col, values, supports, priors,
+        c::Resolve, edge, ::Nothing)
+    sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
     for (k, p) in enumerate(c.branch_probs)
         push!(edges, edge)
         push!(params_col, Symbol(c.names[k]))
         push!(values, p)
         push!(supports, sup)
         push!(priors, nothing)
+    end
+    return nothing
+end
+
+function _branch_prob_rows!(edges, params_col, values, supports, priors,
+        c::Resolve, edge, prior::Distributions.Dirichlet)
+    v = _simplex_to_stick(collect(c.branch_probs))
+    betas = _dirichlet_stick_betas(prior)
+    names = _stick_param_names(length(c.names))
+    for k in eachindex(names)
+        push!(edges, edge)
+        push!(params_col, names[k])
+        push!(values, v[k])
+        push!(supports, (0.0, 1.0))
+        push!(priors, betas[k])
     end
     return nothing
 end
@@ -650,7 +692,11 @@ end
 # leaf's current spec or fixed value (so a partial NamedTuple targets only the
 # named parameters). Without a distribution anywhere the update is a plain
 # concrete replacement (STRICT mode, exact cover), the original behaviour.
-_has_distribution_value(x::UnivariateDistribution) = true
+# Any distribution counts: a `UnivariateDistribution` spec makes a leaf
+# parameter uncertain, and a multivariate simplex prior (a `Dirichlet` at a
+# `Resolve`'s `branch_probs`) makes the branch probabilities uncertain, so a
+# lone `Dirichlet` update also switches to merge mode.
+_has_distribution_value(x::Distribution) = true
 _has_distribution_value(x::NamedTuple) = any(_has_distribution_value, values(x))
 _has_distribution_value(::Any) = false
 
@@ -684,21 +730,61 @@ function _update(d::Choose, params::NamedTuple, shared, merge::Bool)
 end
 
 function _update(c::Resolve, params::NamedTuple, shared, merge::Bool)
-    _check_child_keys(params, c.names, :Resolve, shared; optional = (:branch_probs,))
+    _check_child_keys(params, c.names, :Resolve, shared;
+        optional = (:branch_probs,))
     delays = ntuple(length(c.names)) do i
         _update(c.delays[i], _child_params(params, c.names[i]), shared, merge)
     end
-    # Branch probabilities are fixed structure under uncertain-first (there is
-    # no uncertain marker for them), so merge mode keeps them fixed; strict mode
-    # replaces them from concrete values as before.
-    probs = if !merge && haskey(params, :branch_probs)
+    return _update_branch_probs(c, delays, params, merge)
+end
+
+# Rebuild the `Resolve` with updated delays, resolving the branch probabilities
+# and their attached prior from the update NamedTuple:
+#
+# - MERGE mode with a `branch_probs = Dirichlet(...)` entry ATTACHES that prior,
+#   making the simplex uncertain (the probabilities stay as the point). Without
+#   a `branch_probs` entry the node's probabilities and prior are kept.
+# - STRICT mode on a node that CARRIES a prior reconstructs the probabilities
+#   from the stick coordinates supplied (a draw from the sampler) and COLLAPSES
+#   the node to concrete structure (drops the prior), mirroring a leaf collapse.
+# - STRICT mode on a fixed node replaces the probabilities from concrete
+#   per-outcome values, as before.
+function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
+        merge::Bool)
+    if merge
+        haskey(params, :branch_probs) || return Resolve(c.names, delays,
+            c.branch_probs, c.branch_prob_prior)
+        bp = params.branch_probs
+        bp isa Distributions.Dirichlet || throw(ArgumentError(
+            "update(Resolve, ...): a `branch_probs` update in merge mode must " *
+            "be a `Dirichlet` over the outcomes (making the simplex " *
+            "uncertain); got a $(typeof(bp))"))
+        return Resolve(c.names, delays, c.branch_probs, bp)
+    end
+    if c.branch_prob_prior !== nothing
+        probs = haskey(params, :branch_probs) ?
+                _reconstruct_branch_probs(c, params.branch_probs) :
+                c.branch_probs
+        return Resolve(c.names, delays, probs, nothing)
+    end
+    probs = if haskey(params, :branch_probs)
         bp = params.branch_probs
         _check_update_keys(bp, c.names, Symbol("Resolve branch_probs"))
         ntuple(i -> bp[c.names[i]], length(c.names))
     else
         c.branch_probs
     end
-    return Resolve(c.names, delays, probs)
+    return Resolve(c.names, delays, probs, nothing)
+end
+
+# Reconstruct the K probabilities from the K-1 stick coordinates supplied (keyed
+# `:stick_k`), read in coordinate order so the mapping is independent of the
+# NamedTuple's key order.
+function _reconstruct_branch_probs(c::Resolve, sticks::NamedTuple)
+    names = _stick_param_names(length(c.names))
+    _check_update_keys(sticks, names, Symbol("Resolve branch_probs"))
+    v = ntuple(k -> sticks[names[k]], length(names))
+    return _stick_to_simplex(v)
 end
 
 # A racing-hazard node updates each outcome delay; there is no `branch_probs`
@@ -807,7 +893,10 @@ end
 # alternatives); shared by the `update` / `prune` / `splice` structural edits.
 _rebuild(d::Sequential, components::Tuple) = Sequential(components, d.names)
 _rebuild(d::Parallel, components::Tuple) = Parallel(components, d.names)
-_rebuild(c::Resolve, delays::Tuple) = Resolve(c.names, delays, c.branch_probs)
+function _rebuild(c::Resolve, delays::Tuple)
+    Resolve(c.names, delays, c.branch_probs,
+        c.branch_prob_prior)
+end
 _rebuild(c::Compete, delays::Tuple) = Compete(c.names, delays)
 _rebuild(d::Choose, alts::Tuple) = Choose(d.names, alts, d.selector)
 
@@ -1081,8 +1170,54 @@ priors.onset_admit.shape
 - [`params_table`](@ref): the parameter inventory read internally.
 "
 function param_priors(tree; kwargs...)
-    return build_priors(params_table(tree); kwargs...)
+    priors = build_priors(params_table(tree); kwargs...)
+    return _attach_branch_prob_priors(priors, tree)
 end
+
+# The nested prior NamedTuple carries no node identity, so the flat `Dirichlet`
+# default for an uncertain branch-probability simplex is injected by walking the
+# tree alongside the built priors: at each `Resolve` the `branch_probs` entry is
+# set to the node's own attached `Dirichlet` if it has one, else a flat
+# `Dirichlet(ones(K))`, so `update(tree, param_priors(tree))` promotes the
+# simplex to uncertain with a sensible default (the branch probabilities are
+# recovered from any draw). `Compete` (winning probability derived) and `Choose`
+# (data-selected) have no node-level probability parameter, so nothing is
+# injected for them.
+function _attach_branch_prob_priors(nt::NamedTuple, d)
+    ks = keys(nt)
+    vals = map(ks) do k
+        if k === :branch_probs && d isa Resolve
+            _promote_branch_prior(d)
+        else
+            child = _prior_child_node(d, k)
+            child === nothing ? nt[k] : _attach_branch_prob_priors(nt[k], child)
+        end
+    end
+    return NamedTuple{ks}(vals)
+end
+_attach_branch_prob_priors(x, d) = x
+
+function _promote_branch_prior(c::Resolve)
+    return c.branch_prob_prior === nothing ?
+           Distributions.Dirichlet(ones(length(c.names))) : c.branch_prob_prior
+end
+
+# The child tree node under name `k` for the prior walk, or `nothing` when `k`
+# is a leaf parameter name (not a child node), so the walk stops descending.
+function _prior_child_node(d::Union{Sequential, Parallel}, k::Symbol)
+    names = component_names(d)
+    i = findfirst(==(k), names)
+    return i === nothing ? nothing : d.components[i]
+end
+function _prior_child_node(c::AbstractOneOf, k::Symbol)
+    i = findfirst(==(k), c.names)
+    return i === nothing ? nothing : c.delays[i]
+end
+function _prior_child_node(d::Choose, k::Symbol)
+    i = findfirst(==(k), d.names)
+    return i === nothing ? nothing : d.alternatives[i]
+end
+_prior_child_node(::Any, ::Symbol) = nothing
 
 # --- name introspection ----------------------------------------------------
 
