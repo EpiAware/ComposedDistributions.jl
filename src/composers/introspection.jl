@@ -774,20 +774,23 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
             "uncertain); got a $(typeof(bp))"))
         return Resolve(c.names, delays, c.branch_probs, bp)
     end
-    if c.branch_prob_prior !== nothing
-        probs = haskey(params, :branch_probs) ?
-                _reconstruct_branch_probs(c, params.branch_probs) :
-                c.branch_probs
-        return Resolve(c.names, delays, probs, nothing)
-    end
-    probs = if haskey(params, :branch_probs)
-        bp = params.branch_probs
-        _check_update_keys(bp, c.names, Symbol("Resolve branch_probs"))
-        ntuple(i -> bp[c.names[i]], length(c.names))
-    else
-        c.branch_probs
-    end
+    haskey(params, :branch_probs) || return Resolve(c.names, delays,
+        c.branch_probs, nothing)
+    bp = params.branch_probs
+    bp isa NamedTuple || throw(ArgumentError(
+        "update(Resolve, ...): a strict `branch_probs` update must be a " *
+        "NamedTuple (stick coordinates for an uncertain node, or per-outcome " *
+        "probabilities for a fixed one); got a $(typeof(bp))"))
+    probs = c.branch_prob_prior !== nothing ?
+            _reconstruct_branch_probs(c, bp) : _replace_branch_probs(c, bp)
     return Resolve(c.names, delays, probs, nothing)
+end
+
+# Replace the K probabilities from concrete per-outcome values (a fixed node,
+# keyed by outcome name).
+function _replace_branch_probs(c::Resolve, bp::NamedTuple)
+    _check_update_keys(bp, c.names, Symbol("Resolve branch_probs"))
+    return ntuple(i -> bp[c.names[i]], length(c.names))
 end
 
 # Reconstruct the K probabilities from the K-1 stick coordinates supplied (keyed
