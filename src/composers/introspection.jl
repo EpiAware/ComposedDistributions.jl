@@ -644,6 +644,19 @@ spelling of \"distribution in the slot = estimate, value = fix\"):
   free parameters with default priors via `update(tree, `
   [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path.
 
+A [`Resolve`](@ref) node's `branch_probs` are a node-level parameter, not a
+leaf: attach a simplex-valued `Distributions.Dirichlet` at the `branch_probs`
+slot to make them uncertain,
+`update(node, (branch_probs = Dirichlet(ones(K)),))`. The `Dirichlet` is the
+prior you WRITE; the codec ESTIMATES the node through the `Dirichlet`'s K-1
+stick-breaking coordinates (labelled `:stick_1 … :stick_{K-1}` in
+[`params_table`](@ref) and a fitted chain), each a `Beta` in (0, 1), so every
+draw lands on the probability simplex and the gradient is well-defined. The
+probabilities are RECOVERED from any draw: a strict `update` from the stick
+coordinates (as read back from a chain) collapses the node to concrete
+probabilities summing to one (read them with `Distributions.probs`). Promote
+attaches a flat `Dirichlet(ones(K))` per `Resolve`.
+
 Pair with [`chain_to_params`](@ref) to read posterior means or a single draw
 from a fitted chain into the right NamedTuple, so `update(template, means)`
 returns a ready-to-`rand`/inspect distribution — or call

@@ -100,13 +100,35 @@ function _node_params(c::Resolve, lookup, prefix, path)
         _node_params(delay, lookup, prefix, (path..., name))
     end
     base = NamedTuple{c.names}(Tuple(delays))
-    # Branch probabilities only appear in the chain when sampled (a prior was
-    # supplied); otherwise omit so `update` keeps the template's fixed values.
-    bp = map(c.names) do name
-        _read_value(lookup, _dotted(prefix, (path..., :branch_probs, name)))
+    bp = _branch_prob_readback(c, lookup, prefix, path)
+    bp === nothing ? base : merge(base, (; branch_probs = bp))
+end
+
+# The branch-probability readback entry. An UNCERTAIN node (attached simplex
+# prior) is estimated through its K-1 stick coordinates, so read them by name
+# (`<prefix>.<path>.branch_probs.stick_k`) and hand them to `update`, which
+# reconstructs the probabilities; a missing coordinate signals a chain that does
+# not match the template, so it errors rather than silently keeping the template.
+# A FIXED node's probabilities are not sampled under uncertain-first, so read the
+# per-outcome values only if a chain carries them (a legacy estimate-everything
+# fit) and otherwise omit, keeping the template's fixed values.
+function _branch_prob_readback(c::Resolve, lookup, prefix, path)
+    if c.branch_prob_prior === nothing
+        bp = map(c.names) do name
+            _read_value(lookup, _dotted(prefix, (path..., :branch_probs, name)))
+        end
+        any(x -> x === nothing, bp) && return nothing
+        return NamedTuple{c.names}(Tuple(bp))
     end
-    any(x -> x === nothing, bp) && return base
-    return merge(base, (; branch_probs = NamedTuple{c.names}(Tuple(bp))))
+    names = ComposedDistributions._stick_param_names(length(c.names))
+    v = map(names) do s
+        _read_value(lookup, _dotted(prefix, (path..., :branch_probs, s)))
+    end
+    any(x -> x === nothing, v) && throw(ArgumentError(
+        "branch-probability stick coordinates not found in chain at " *
+        "$(_dotted(prefix, (path..., :branch_probs))); expected " *
+        "$(collect(names))"))
+    return NamedTuple{names}(Tuple(v))
 end
 
 # A racing-hazard node has only its outcome-delay params in the chain (no

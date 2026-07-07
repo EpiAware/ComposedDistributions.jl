@@ -1,5 +1,19 @@
 ## Unreleased
 
+- Node-level uncertainty: a `Resolve`'s branch probabilities can now be
+  estimated (#89). Attach a simplex-valued `Distributions.Dirichlet` prior with
+  `update(node, (branch_probs = Dirichlet(α),))`. The `Dirichlet` is what you
+  write; the node is estimated through its K-1 stick-breaking coordinates
+  (`:stick_1 … :stick_{K-1}`, each a `Beta` in (0, 1)), so `params_table`, the
+  uncertain-first codec (`flatten` / `unflatten` / `flat_dimension` /
+  `as_logdensity`) and chain readback all carry the sticks, and the
+  probabilities are recovered from any draw (they always sum to one and the
+  gradient is well-defined on every AD backend). Promote
+  (`update(tree, param_priors(tree))`) attaches a flat `Dirichlet(ones(K))` per
+  `Resolve`. `Compete`'s winning probability is derived from the hazards and
+  `Choose`'s alternative is data-selected, so neither has a node-level free
+  parameter (documented, no change).
+
 - `convolve_distributions(chain, series; events)` convolves a timeseries to a
   named INTERIM event of a `Sequential` chain, not just its endpoint. The
   cumulative delay to an event is the observed collapse of the chain prefix up

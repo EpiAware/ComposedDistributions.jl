@@ -4,9 +4,10 @@
 Shared AD gradient scenarios and backend metadata for ComposedDistributions.
 Used by `test/ad/runtests.jl`. Covers the composed `logpdf` of a `Sequential`
 chain, a `Resolve` mixture marginal (differentiating through a covariate branch
-probability), and a `Compete` racing-hazard marginal (differentiating through
-the survival product), across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
-backend matrix.
+probability), a `Compete` racing-hazard marginal (differentiating through the
+survival product), and a `Resolve` whose branch-probability simplex is uncertain
+(differentiating through the stick-breaking reconstruction), across the
+ForwardDiff / ReverseDiff / Enzyme / Mooncake backend matrix.
 
 The composed value `logpdf` is a sum over flat leaf slices, so the gradient
 flows through each leaf's own `logpdf`; the reference is computed with
@@ -121,6 +122,21 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
                 compete(:death => Gamma(θ[1], θ[2]),
                     :recover => Gamma(3.0, 2.0)), x), obs),
         [2.0, 3.0], (Constant(obs),))
+
+    # Resolve with an uncertain branch-probability simplex: the estimated stick
+    # coordinate `θ[3]` reconstructs the branch probabilities through the
+    # stick-breaking map, so the gradient of the mixture marginal flows through
+    # the reconstruction (the AD-critical path for node-level uncertainty, #89)
+    # as well as the two delays' shapes.
+    _push!("Resolve stick-breaking branch-prob logpdf",
+        (θ, obs) -> begin
+            p = ComposedDistributions._stick_to_simplex((θ[3],))
+            sum(
+                x -> logpdf(
+                    resolve(:death => (Gamma(θ[1], 1.0), p[1]),
+                        :disch => (Gamma(θ[2], 1.5), p[2])), x), obs)
+        end,
+        [1.5, 2.0, 0.4], (Constant(obs),))
 
     return out
 end

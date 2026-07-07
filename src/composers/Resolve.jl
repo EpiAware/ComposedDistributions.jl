@@ -107,13 +107,25 @@ Being univariate, a `Resolve` nests as a child of [`Sequential`](@ref) or
 [`Parallel`](@ref). This is the plain generic composition; per-record outcome
 selection and censoring are not part of this type.
 
+The branch probabilities are ordinarily fixed structure. To ESTIMATE them,
+attach a simplex-valued `Distributions.Dirichlet` prior with
+[`update`](@ref)`(node, (branch_probs = Dirichlet(α),))`: the `Dirichlet` is
+what you write, but the codec estimates the node through the `Dirichlet`'s K-1
+stick-breaking coordinates (`:stick_1 … :stick_{K-1}`, each a `Beta`, so every
+draw lands on the simplex and the gradient is well-defined), and the
+probabilities are recovered from any draw (via [`update`](@ref) /
+`Distributions.probs`). See [`update`](@ref) for the full story.
+
 # Fields
 - `names`: tuple of the one_of outcome names (`Symbol`s).
 - `delays`: tuple of the one_of outcome delay distributions.
 - `branch_probs`: tuple of the branch probabilities, summing to one.
+- `branch_prob_prior`: the attached `Dirichlet` prior when the branch
+  probabilities are uncertain, else `nothing` (fixed structure).
 
 # See also
 - [`as_mixture`](@ref): the `MixtureModel` lowering
+- [`update`](@ref): attach a `Dirichlet` to estimate the branch probabilities
 - [`Sequential`](@ref): a chain of additive steps
 - [`Parallel`](@ref): independent branches
 "
