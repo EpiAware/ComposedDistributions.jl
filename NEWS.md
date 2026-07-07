@@ -17,9 +17,23 @@
   from the updated components (preserving the solver method). A component may be
   made `uncertain` in place, so the uncertain-first codec
   (`flatten` / `unflatten` / `flat_dimension` / `as_logdensity`) estimates a
-  spec'd component parameter like any other leaf parameter; `has_uncertain` sees
-  through a composite carrying an uncertain component. The composite stays a
-  single flat scored slot and an atomic node to the structural edits.
+  spec'd component parameter like any other leaf parameter. The composite joins
+  the shared `_node_children`/`_rebuild` deferred-leaf walk, so `has_uncertain`,
+  `has_varying` and `instantiate` all see through a composite carrying an
+  uncertain or varying component; it stays a single flat scored slot and an
+  atomic node to the structural edits.
+
+- Reconciled the `Varying`/`instantiate` seam with the `Uncertain` machinery
+  (#47): `Varying` and `Uncertain` are now presented as the two cases of one
+  *deferred leaf* concept — a leaf that maps to a distribution and resolves
+  later, `Varying` from an observed covariate (via `instantiate`) and
+  `Uncertain` from a latent parameter draw (via `rand`/`update`). `instantiate`
+  now rebuilds through the shared `_node_children`/`_rebuild` reconstruction
+  machinery that `update` and the structural edits already use, and the
+  `has_varying`/`has_uncertain` guards share one node walk, so resolution is no
+  longer a separate hand-rolled tree traversal. No user-facing API change;
+  `instantiate`, `update`, `has_varying`/`has_uncertain`, and the codec's
+  rejection of an un-`instantiate`d `Varying` leaf are unchanged.
 
 ## 0.1.0 — initial release
 

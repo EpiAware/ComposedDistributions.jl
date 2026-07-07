@@ -57,6 +57,13 @@ The verbs fall into five families, listed here as verb, what it does, and what i
 | `prune` / `splice` | drops or inserts a branch | an edited tree |
 
 **Deferred leaves** hold a distribution that resolves later.
+`varying` and `uncertain` are the two cases of one idea: a leaf that is a *map to
+a distribution* rather than a fixed distribution, delegating silently to a
+fallback until it is resolved.
+They differ only in what indexes the map — `varying` an **observed** covariate
+(time, stratum) resolved by `instantiate`, `uncertain` a **latent** parameter
+draw (with a prior) resolved by `rand` or collapsed by `update` — and they share
+one resolution walk, so a leaf can be both at once.
 
 | Verb | What it does | Returns |
 |---|---|---|

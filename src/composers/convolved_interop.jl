@@ -219,26 +219,31 @@ end
 # two-Gamma `Convolved` at edge `:total` lists `total.component_1.shape`,
 # `total.component_1.scale`, `total.component_2.shape`, ...), and `update`
 # rebuilds the composite from the updated components. A component may itself be
-# an [`uncertain`](@ref) leaf (its spec rides the row's `prior` column) or a
-# nested composite (the walk recurses), so the uncertain-first codec estimates a
-# spec'd component parameter like any other leaf parameter. The composite stays a
-# single flat scored slot (`length` 1) and an atomic node to the structural
-# edits; only the parameter inventory and reconstruction see inside it.
+# an [`uncertain`](@ref) / [`Varying`](@ref) leaf or a nested composite (the walk
+# recurses), so the uncertain-first codec estimates a spec'd component parameter
+# like any other leaf parameter.
+#
+# So the composite joins the shared `_node_children` / `_rebuild` walk the
+# composer nodes use: its components ARE its node children, which lets the
+# deferred-leaf guards (`has_uncertain` / `has_varying`) and `instantiate` recurse
+# through it with the same machinery rather than a parallel per-composite path.
+# It nonetheless stays a single flat SCORED slot (`length` 1) and an atomic node
+# to the structural edits (`prune` / `splice` navigate by child name and do not
+# read `_node_children`), so only the parameter inventory, reconstruction, and
+# deferred-leaf resolution see inside it.
+
+# A composite's node children are its component delays; `_rebuild` reassembles it
+# from a new component tuple, preserving the solver method. Pairing these lets the
+# composite ride every `_node_children` / `_rebuild` walk.
+_node_children(d::Convolved) = d.components
+_node_children(d::Difference) = (d.x, d.y)
+_rebuild(d::Convolved, comps::Tuple) = Convolved(comps; method = d.method)
+_rebuild(d::Difference, comps::Tuple) = Difference(comps[1], comps[2];
+    method = d.method)
 
 # The `component_i` path segment names for an `n`-component composite leaf,
 # mirroring the edge/param naming the composers use for their named children.
 _composite_component_names(n::Int) = ntuple(i -> Symbol(:component_, i), n)
-
-# The ordered component leaves of a composite: a `Convolved`'s summands, a
-# `Difference`'s (minuend, subtrahend).
-_composite_components(d::Convolved) = d.components
-_composite_components(d::Difference) = (d.x, d.y)
-
-# Rebuild a composite from a new component tuple, preserving the solver method.
-_rebuild_composite(d::Convolved, comps::Tuple) = Convolved(comps; method = d.method)
-function _rebuild_composite(d::Difference, comps::Tuple)
-    return Difference(comps[1], comps[2]; method = d.method)
-end
 
 # params_table rows: recurse into each component under a `component_i` segment,
 # reusing the generic leaf walk for each component (so a plain, censored,
@@ -246,10 +251,10 @@ end
 # as a standalone leaf, one row-group per component).
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
         d::Union{Convolved, Difference}, path)
-    comps = _composite_components(d)
-    names = _composite_component_names(length(comps))
-    for (name, comp) in zip(names, comps)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, comp,
+    children = _node_children(d)
+    names = _composite_component_names(length(children))
+    for (name, child) in zip(names, children)
+        _walk_rows!(edges, params_col, values, supports, priors, seen, child,
             (path..., name))
     end
     return nothing
@@ -265,17 +270,26 @@ end
 # listing the component keys, rather than vanishing as a silent no-op.
 function _update(d::Union{Convolved, Difference}, params::NamedTuple, shared,
         merge::Bool)
-    comps = _composite_components(d)
-    names = _composite_component_names(length(comps))
+    children = _node_children(d)
+    names = _composite_component_names(length(children))
     _check_child_keys(params, names, nameof(typeof(d)), shared)
     updated = ntuple(length(names)) do i
-        _update(comps[i], _child_params(params, names[i]), shared, merge)
+        _update(children[i], _child_params(params, names[i]), shared, merge)
     end
-    return _rebuild_composite(d, updated)
+    return _rebuild(d, updated)
 end
 
-# See-through uncertainty: a composite carrying an uncertain component still
-# reports `has_uncertain`, so a fitting-loop guard and `observed_distribution`'s
-# collapse guard catch a component that has not been pinned.
-has_uncertain(d::Convolved) = any(has_uncertain, d.components)
-has_uncertain(d::Difference) = has_uncertain(d.x) || has_uncertain(d.y)
+# Deferred-leaf resolution sees through a composite the same way, riding the
+# shared `_node_children` / `_rebuild` walk: a composite reports `has_uncertain`
+# / `has_varying` when any component does (so a fitting-loop guard and
+# `observed_distribution`'s collapse guard catch an un-pinned / un-resolved
+# component), and `instantiate` resolves each component against the context and
+# reassembles the composite. These win over the univariate-leaf base cases
+# (`false` / identity) because the concrete-type union is more specific.
+has_uncertain(d::Union{Convolved, Difference}) = any(has_uncertain,
+    _node_children(d))
+has_varying(d::Union{Convolved, Difference}) = any(has_varying,
+    _node_children(d))
+function instantiate(d::Union{Convolved, Difference}, ctx::AbstractContext)
+    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
+end

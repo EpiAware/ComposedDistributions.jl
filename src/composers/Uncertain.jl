@@ -5,7 +5,17 @@
 # An `Uncertain` leaf pairs a concrete `template` with `specs`, priors attached
 # to the template's FREE parameters. The user-facing story (the hierarchical
 # model, the marginal `rand`, the collapse-by-`update`, the truncation
-# push-inside) lives in the docstrings below. Maintenance notes:
+# push-inside) lives in the docstrings below.
+#
+# `Uncertain` is the LATENT case of a DEFERRED LEAF — a leaf that is not yet a
+# concrete distribution but a map to one, delegating silently to a fallback
+# until resolved, and guarded by a `has_*` predicate. Its sibling is the
+# OBSERVED case, `Varying` (`varying.jl`): `Varying` maps an observed covariate
+# read from a `Context` and is resolved by `instantiate`; `Uncertain` maps a
+# latent parameter draw with a prior and is resolved by `rand` (the marginal)
+# or collapsed by `update`. The two share the `_node_children` guard walk (see
+# `has_uncertain` below) and `Varying`'s `instantiate` shares the `_rebuild`
+# reconstruction machinery. Maintenance notes:
 #
 #   - The specs are priors attached to the template's free parameters, so the
 #     leaf protocol treats the uncertainty like a wrapper: `free_leaf` peels to
@@ -439,6 +449,10 @@ Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # --- has-uncertainty predicate ----------------------------------------------
 
+# The composer nodes recurse through the shared `_node_children` accessor,
+# mirroring `has_varying` (the two deferred-leaf guards share one walk); the
+# leaf base case reports a spec via the `_uncertain_specs` routing hook.
+
 @doc "
 
 Whether a composed distribution still contains an [`Uncertain`](@ref) leaf.
@@ -480,9 +494,9 @@ has_uncertain(collapsed)   # resolved: false
 # See also
 - [`Uncertain`](@ref), [`uncertain`](@ref): the leaf and its constructor.
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
+- [`has_varying`](@ref): the same guard for the observed (varying) case.
 "
-has_uncertain(d::Union{Sequential, Parallel}) = any(has_uncertain,
-    d.components)
-has_uncertain(c::AbstractOneOf) = any(has_uncertain, c.delays)
-has_uncertain(d::Choose) = any(has_uncertain, d.alternatives)
+function has_uncertain(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
+    return any(has_uncertain, _node_children(d))
+end
 has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing

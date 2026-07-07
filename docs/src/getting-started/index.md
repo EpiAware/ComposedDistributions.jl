@@ -88,6 +88,16 @@ utree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
 has_uncertain(utree)
 ```
 
+An [`uncertain`](@ref) leaf is one of two *deferred leaves*: a leaf that is not
+yet a concrete distribution but a map to one, resolved before scoring. It maps a
+**latent** parameter (a value a sampler draws, with the spec as its prior); its
+sibling [`Varying`](@ref) maps an **observed** covariate (time, stratum),
+resolved by [`instantiate`](@ref) against a [`Context`](@ref). Both delegate
+silently to a fallback until resolved, and each has a guard —
+`has_uncertain` / `has_varying` — for a fitting loop to check. See
+[the varying-distributions reference](@ref varying-distributions) for the
+observed case.
+
 ## Key features
 
 - **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.

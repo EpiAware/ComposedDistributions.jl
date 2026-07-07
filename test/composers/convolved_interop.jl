@@ -325,6 +325,34 @@ end
     @test g2.method === diff.method
 end
 
+@testitem "deferred-leaf see-through: a Convolved with a varying component" begin
+    using Distributions
+
+    # A composite rides the shared deferred-leaf walk, so a Varying COMPONENT is
+    # visible to has_varying and resolved in place by instantiate (mirroring the
+    # has_uncertain see-through), while a plain composite stays inert.
+    vc = convolve_distributions(
+        varying(t -> Gamma(2.0, 1.0 + 0.1t);
+            covariate = :time, reference = Gamma(2.0, 1.0)),
+        Gamma(1.0, 1.5))
+    seq = sequential(:total => vc, :report => LogNormal(0.5, 0.4))
+
+    @test has_varying(vc)
+    @test has_varying(seq)
+    resolved = instantiate(seq, Context(time = 10.0))
+    @test !has_varying(resolved)
+    total = event(resolved, :total)
+    @test total isa Convolved
+    @test total.components[1] == Gamma(2.0, 1.0 + 0.1 * 10)
+    @test total.components[2] == Gamma(1.0, 1.5)
+
+    # A plain composite has nothing to resolve: no varying, instantiate is the
+    # identity up to reconstruction (== the same component-identical composite).
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    @test !has_varying(conv)
+    @test instantiate(conv, Context(time = 3.0)) == conv
+end
+
 @testitem "codec: a spec'd Convolved component counts one estimated dim" begin
     using Distributions
     using ComposedDistributions: flat_dimension, unflatten, flatten
