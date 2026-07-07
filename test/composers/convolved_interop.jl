@@ -4,16 +4,16 @@
 # component fitting). Censoring-free: this package composes any
 # `UnivariateDistribution`.
 
-@testitem "convolve_distributions(chain, series): vector convolution" begin
+@testitem "convolve_series(chain, series): vector convolution" begin
     using Distributions
 
     chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    out = convolve_distributions(chain, series)
+    out = convolve_series(chain, series)
     # Identical to collapsing the chain to its observed total by hand.
     obs = observed_distribution(chain)
-    @test out == convolve_distributions(obs, series)
+    @test out == convolve_series(obs, series)
     @test length(out) == length(series)
     # First step ties directly to the observed-total CDF over the first grid
     # bin (the lag-0 interval mass times the first series value).
@@ -22,11 +22,11 @@
     # A nested chain collapses through to the same flat total.
     nested = Sequential(Sequential(Gamma(2.0, 1.0), Gamma(1.0, 1.0)),
         LogNormal(0.5, 0.4))
-    @test convolve_distributions(nested, series) ==
-          convolve_distributions(observed_distribution(nested), series)
+    @test convolve_series(nested, series) ==
+          convolve_series(observed_distribution(nested), series)
 end
 
-@testitem "convolve_distributions(chain, series; events): per-event series" begin
+@testitem "convolve_series(chain, series; events): per-event series" begin
     using Distributions
 
     g1 = Gamma(2.0, 1.0)
@@ -38,22 +38,22 @@ end
 
     # An interim event's series is the series convolved through the cumulative
     # delay of the prefix leading to it (collapse the prefix by hand).
-    admit = convolve_distributions(chain, series; events = :admit)
-    @test admit == convolve_distributions(g1, series)
-    death = convolve_distributions(chain, series; events = :death)
-    @test death == convolve_distributions(convolve_distributions([g1, g2]), series)
+    admit = convolve_series(chain, series; events = :admit)
+    @test admit == convolve_series(g1, series)
+    death = convolve_series(chain, series; events = :death)
+    @test death == convolve_series(convolved([g1, g2]), series)
 
     # A tuple of names returns a NamedTuple keyed by the names; a vector too.
-    nt = convolve_distributions(chain, series; events = (:admit, :report))
+    nt = convolve_series(chain, series; events = (:admit, :report))
     @test nt isa NamedTuple{(:admit, :report)}
     @test nt.admit == admit
     @test nt.report ==
-          convolve_distributions(convolve_distributions([g1, g2, g3]), series)
-    vt = convolve_distributions(chain, series; events = [:admit, :death])
+          convolve_series(convolved([g1, g2, g3]), series)
+    vt = convolve_series(chain, series; events = [:admit, :death])
     @test vt.admit == admit && vt.death == death
 end
 
-@testitem "convolve_distributions(chain, series; events): endpoint == whole" begin
+@testitem "convolve_series(chain, series; events): endpoint == whole" begin
     using Distributions
 
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
@@ -61,15 +61,15 @@ end
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
     # Selecting the terminal event reproduces the plain whole-chain result.
-    @test convolve_distributions(chain, series; events = :death) ==
-          convolve_distributions(chain, series)
+    @test convolve_series(chain, series; events = :death) ==
+          convolve_series(chain, series)
     # A positional-default chain names its events :event_i; the endpoint matches.
     pos = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
-    @test convolve_distributions(pos, series; events = event_names(pos)[end]) ==
-          convolve_distributions(pos, series)
+    @test convolve_series(pos, series; events = event_names(pos)[end]) ==
+          convolve_series(pos, series)
 end
 
-@testitem "convolve_distributions(chain, series; events): errors" begin
+@testitem "convolve_series(chain, series; events): errors" begin
     using Distributions
 
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
@@ -78,7 +78,7 @@ end
 
     # An unknown event name lists the valid events.
     err = try
-        convolve_distributions(chain, series; events = :nope)
+        convolve_series(chain, series; events = :nope)
         nothing
     catch e
         e
@@ -88,18 +88,18 @@ end
     @test occursin("admit", err.msg) && occursin("death", err.msg)
 
     # The origin has no elapsed delay, so it is not a convolvable event.
-    @test_throws ArgumentError convolve_distributions(
+    @test_throws ArgumentError convolve_series(
         chain, series; events = :onset)
 
     # A branching step (a Parallel inside the chain) is rejected: its flat
     # events do not line up one-to-one with delay steps.
     branched = sequential(:onset_admit => Gamma(2.0, 1.0),
         :split => parallel(:a => Gamma(1.0, 1.0), :b => Gamma(2.0, 1.0)))
-    @test_throws ArgumentError convolve_distributions(
+    @test_throws ArgumentError convolve_series(
         branched, series; events = :admit)
 end
 
-@testitem "convolve_distributions: univariate one_of marginal drives a series" begin
+@testitem "convolve_series: univariate one_of marginal drives a series" begin
     using Distributions
 
     # A Resolve / Compete marginal is univariate, so it already hits the base
@@ -108,12 +108,12 @@ end
     r = resolve(:recover => (Gamma(2.0, 1.0), 0.7),
         :die => (Gamma(1.5, 2.0), 0.3))
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
-    @test convolve_distributions(r, series) ==
-          convolve_distributions(observed_distribution(r), series)
-    @test length(convolve_distributions(r, series)) == length(series)
+    @test convolve_series(r, series) ==
+          convolve_series(observed_distribution(r), series)
+    @test length(convolve_series(r, series)) == length(series)
 end
 
-@testitem "convolve_distributions: Compete marginal (any-event time) drives a series" begin
+@testitem "convolve_series: Compete marginal drives a series" begin
     using Distributions
 
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
@@ -122,9 +122,9 @@ end
     # a univariate delay, so it drives the series through the base univariate
     # method with no bridge; `observed_distribution` returns it unchanged.
     c = Compete(:recover => Gamma(2.0, 1.0), :die => Gamma(1.5, 2.0))
-    out = convolve_distributions(c, series)
+    out = convolve_series(c, series)
     @test observed_distribution(c) === c
-    @test out == convolve_distributions(observed_distribution(c), series)
+    @test out == convolve_series(observed_distribution(c), series)
     @test length(out) == length(series)
     @test all(>=(0), out)
     # A finite window recovers only the mass that lands within it: the delayed
@@ -139,23 +139,23 @@ end
     # revises; if that changes these outputs, reconcile at the update-branch.
     cf = Compete(:recover => truncated(Gamma(2.0, 1.0); lower = 1.0),
         :die => truncated(Gamma(1.5, 2.0); lower = 2.0))
-    outf = convolve_distributions(cf, series)
-    @test outf == convolve_distributions(observed_distribution(cf), series)
+    outf = convolve_series(cf, series)
+    @test outf == convolve_series(observed_distribution(cf), series)
     @test length(outf) == length(series)
     @test all(>=(0), outf)
     @test sum(outf) < sum(out)
 end
 
-@testitem "convolve_distributions: Parallel / Choose error informatively" begin
+@testitem "convolve_series: Parallel / Choose error informatively" begin
     using Distributions
 
     p = parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
     series = [0.0, 1.0, 2.0]
-    @test_throws ArgumentError convolve_distributions(p, series)
+    @test_throws ArgumentError convolve_series(p, series)
     @test_throws ArgumentError observed_distribution(p)
 
     ch = choose(:a => Gamma(2.0, 1.0), :b => Gamma(1.0, 2.0))
-    @test_throws ArgumentError convolve_distributions(ch, series)
+    @test_throws ArgumentError convolve_series(ch, series)
     @test_throws ArgumentError observed_distribution(ch)
 end
 
@@ -181,7 +181,7 @@ end
     using Distributions
     using Random
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
     # logpdf flows through the flat-vector machinery: a Convolved is a plain
@@ -213,7 +213,7 @@ end
     using Distributions
     using ComposedDistributions: free_leaf, rewrap_leaf
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     # A Convolved has no outer wrapper to peel: it free-leafs to itself, and
     # rewrapping replaces it wholesale.
     @test free_leaf(conv) === conv
@@ -224,7 +224,7 @@ end
     using Distributions
     using ComposedDistributions: Tables
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
     tbl = params_table(seq)
@@ -271,7 +271,7 @@ end
 @testitem "update round-trips a Convolved leaf's component params" begin
     using Distributions
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
     # A concrete update replaces every component parameter, rebuilding the
@@ -293,7 +293,7 @@ end
 @testitem "update makes a Convolved component uncertain (partial merge)" begin
     using Distributions
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
     # A distribution in one component slot makes just that parameter uncertain;
@@ -331,7 +331,7 @@ end
     # A composite rides the shared deferred-leaf walk, so a Varying COMPONENT is
     # visible to has_varying and resolved in place by instantiate (mirroring the
     # has_uncertain see-through), while a plain composite stays inert.
-    vc = convolve_distributions(
+    vc = convolved(
         varying(t -> Gamma(2.0, 1.0 + 0.1t);
             covariate = :time, reference = Gamma(2.0, 1.0)),
         Gamma(1.0, 1.5))
@@ -348,7 +348,7 @@ end
 
     # A plain composite has nothing to resolve: no varying, instantiate is the
     # identity up to reconstruction (== the same component-identical composite).
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     @test !has_varying(conv)
     @test instantiate(conv, Context(time = 3.0)) == conv
 end
@@ -357,7 +357,7 @@ end
     using Distributions
     using ComposedDistributions: flat_dimension, unflatten, flatten
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
     est = update(seq,
         (total = (component_1 = (shape = LogNormal(log(2.0), 0.2),),),))
@@ -379,7 +379,7 @@ end
 @testitem "structural edits around a Convolved leaf: prune / splice" begin
     using Distributions
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4),
         :tail => Gamma(1.2, 1.0))
 
@@ -403,7 +403,7 @@ end
     using ComposedDistributions: flat_dimension, flatten, unflatten,
                                  as_logdensity, logdensity
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     u = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2))
     seq = sequential(:total => conv, :report => u)
 
@@ -439,7 +439,7 @@ end
 @testitem "uncertain(...) wrapping a Convolved/Difference template errors informatively" begin
     using Distributions
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     # A Convolved's `params` are its components' own parameter tuples (a
     # nested, non-scalar structure), not the flat scalar list `uncertain`
     # attaches priors to. Wrapping one is refused eagerly at construction
@@ -454,8 +454,8 @@ end
 @testitem "Varying leaf mapping to Convolved distributions: instantiate then fixed" begin
     using Distributions
 
-    conv_early = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
-    conv_late = convolve_distributions(Gamma(3.0, 1.0), Gamma(2.0, 1.0))
+    conv_early = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv_late = convolved(Gamma(3.0, 1.0), Gamma(2.0, 1.0))
     v = varying(t -> t < 5 ? conv_early : conv_late;
         covariate = :time, reference = conv_early)
     seq = sequential(:total => v, :report => LogNormal(0.5, 0.4))
@@ -479,7 +479,7 @@ end
 @testitem "update at a composite leaf's own level errors informatively" begin
     using Distributions
 
-    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
     # Under see-through, a value aimed at the composite's OWN level (no

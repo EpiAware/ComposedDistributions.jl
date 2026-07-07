@@ -65,7 +65,7 @@ Because a composed object is a `Distribution`, it also works with `truncated()` 
 ## What packages work well with ComposedDistributions?
 
 - [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) supplies the leaf distributions and the interface a composed object implements.
-- [ConvolvedDistributions.jl](https://github.com/EpiAware/ConvolvedDistributions.jl) is re-exported, so convolution (`convolve_distributions`, `difference`) and quadrature are reachable through ComposedDistributions alone.
+- [ConvolvedDistributions.jl](https://github.com/EpiAware/ConvolvedDistributions.jl) is re-exported, so convolution (`convolved`, `convolve_series`, `difference`) and quadrature are reachable through ComposedDistributions alone.
 - [Tables.jl](https://github.com/JuliaData/Tables.jl) sources build a composer through `compose`, and `params_table` returns a Tables.jl table.
 - [Turing.jl](https://github.com/TuringLang/Turing.jl) and the wider probabilistic-programming ecosystem, where automatic-differentiation-friendly scoring lets a composed distribution drop into a Bayesian fit.
 

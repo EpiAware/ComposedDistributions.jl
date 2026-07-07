@@ -41,7 +41,7 @@ total = observed_distribution(chain)
 mean(total)
 ```
 
-For two standalone delays that are not part of a tree, [`convolve_distributions`](@ref) gives their sum `X + Y` directly.
+For two standalone delays that are not part of a tree, [`convolved`](@ref) gives their sum `X + Y` directly.
 
 ## How do I fix a parameter across branches?
 
