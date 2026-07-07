@@ -25,6 +25,79 @@
           convolve_distributions(observed_distribution(nested), series)
 end
 
+@testitem "convolve_distributions(chain, series; events): per-event series" begin
+    using Distributions
+
+    g1 = Gamma(2.0, 1.0)
+    g2 = LogNormal(0.5, 0.4)
+    g3 = Gamma(1.5, 1.0)
+    chain = sequential(:onset_admit => g1, :admit_death => g2,
+        :death_report => g3)
+    series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
+
+    # An interim event's series is the series convolved through the cumulative
+    # delay of the prefix leading to it (collapse the prefix by hand).
+    admit = convolve_distributions(chain, series; events = :admit)
+    @test admit == convolve_distributions(g1, series)
+    death = convolve_distributions(chain, series; events = :death)
+    @test death == convolve_distributions(convolve_distributions([g1, g2]), series)
+
+    # A tuple of names returns a NamedTuple keyed by the names; a vector too.
+    nt = convolve_distributions(chain, series; events = (:admit, :report))
+    @test nt isa NamedTuple{(:admit, :report)}
+    @test nt.admit == admit
+    @test nt.report ==
+          convolve_distributions(convolve_distributions([g1, g2, g3]), series)
+    vt = convolve_distributions(chain, series; events = [:admit, :death])
+    @test vt.admit == admit && vt.death == death
+end
+
+@testitem "convolve_distributions(chain, series; events): endpoint == whole" begin
+    using Distributions
+
+    chain = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4))
+    series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
+
+    # Selecting the terminal event reproduces the plain whole-chain result.
+    @test convolve_distributions(chain, series; events = :death) ==
+          convolve_distributions(chain, series)
+    # A positional-default chain names its events :event_i; the endpoint matches.
+    pos = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
+    @test convolve_distributions(pos, series; events = event_names(pos)[end]) ==
+          convolve_distributions(pos, series)
+end
+
+@testitem "convolve_distributions(chain, series; events): errors" begin
+    using Distributions
+
+    chain = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4))
+    series = [0.0, 1.0, 2.0]
+
+    # An unknown event name lists the valid events.
+    err = try
+        convolve_distributions(chain, series; events = :nope)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("valid events", err.msg)
+    @test occursin("admit", err.msg) && occursin("death", err.msg)
+
+    # The origin has no elapsed delay, so it is not a convolvable event.
+    @test_throws ArgumentError convolve_distributions(
+        chain, series; events = :onset)
+
+    # A branching step (a Parallel inside the chain) is rejected: its flat
+    # events do not line up one-to-one with delay steps.
+    branched = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :split => parallel(:a => Gamma(1.0, 1.0), :b => Gamma(2.0, 1.0)))
+    @test_throws ArgumentError convolve_distributions(
+        branched, series; events = :admit)
+end
+
 @testitem "convolve_distributions: univariate one_of marginal drives a series" begin
     using Distributions
 

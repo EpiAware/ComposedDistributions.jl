@@ -1,3 +1,15 @@
+## Unreleased
+
+- `convolve_distributions(chain, series; events)` convolves a timeseries to a
+  named INTERIM event of a `Sequential` chain, not just its endpoint. The
+  cumulative delay to an event is the observed collapse of the chain prefix up
+  to it, so a single event name returns that event's count series and a tuple or
+  vector of names returns a `NamedTuple` of series (the endpoint reproduces the
+  whole-chain result). Only a plain continuous chain (every step a delay leaf)
+  has per-event cumulative delays; a branching step is rejected, and an unknown
+  event name errors listing the valid events. The discrete-event and
+  thinning/branch-probability variants stay in CensoredDistributions.
+
 ## 0.1.0 — initial release
 
 - The generic composition algebra ported from CensoredDistributions.jl:
