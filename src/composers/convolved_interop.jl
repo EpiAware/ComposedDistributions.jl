@@ -134,9 +134,10 @@ end
 # delay: its parameters are its components' parameters (a nested tuple), not a
 # flat scalar list. The flat params_table / update machinery keys leaves by a
 # scalar parameter list, so it treats such a node as fixed structure — no
-# free-parameter rows, and `update` leaves it unchanged (as with a `NoEvent`
-# marker). To fit the components, compose them as explicit chain steps instead,
-# so each component is its own inventoried leaf.
+# free-parameter rows, and a concrete (`Real`-valued) `update` leaves it
+# unchanged (as with a `NoEvent` marker). To fit the components, compose them
+# as explicit chain steps instead, so each component is its own inventoried
+# leaf.
 
 # No params_table rows: the composite leaf's parameters are fixed structure.
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
@@ -144,6 +145,22 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen,
     return nothing
 end
 
-# `update` leaves a fixed composite leaf unchanged (it emits no params_table rows
-# to key an update against), in both strict and merge modes.
-_update(d::Union{Convolved, Difference}, ::NamedTuple, shared, ::Bool) = d
+# `update` leaves a fixed composite leaf unchanged when re-pinning it to a
+# concrete value (in both strict and merge mode: there are no params_table
+# rows to key such a write against). A distribution-valued update under merge
+# mode, though, is a bid to make the composite's parameters UNCERTAIN — the
+# same intent `uncertain(...)` on a `Convolved`/`Difference` template refuses
+# eagerly (see `Uncertain`'s constructor) — so it is refused here too, rather
+# than silently doing nothing: a value that would otherwise change behaviour
+# must not vanish quietly.
+function _update(d::Union{Convolved, Difference}, params::NamedTuple, shared,
+        merge::Bool)
+    if merge && _has_distribution_value(params)
+        throw(ArgumentError(
+            "update(...) cannot make $(nameof(typeof(d)))'s parameters " *
+            "uncertain: its parameters are its components' own parameter " *
+            "tuples, not scalars; compose the components as explicit " *
+            "chain steps and attach uncertainty to each instead"))
+    end
+    return d
+end

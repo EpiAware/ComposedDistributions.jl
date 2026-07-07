@@ -273,22 +273,44 @@ end
           logpdf(conv_late, 2.3) + logpdf(LogNormal(0.5, 0.4), 0.9)
 end
 
-@testitem "update with a distribution value aimed at a Convolved leaf: no-op, not an error" begin
+@testitem "update with a Real value aimed at a Convolved leaf: no-op, not an error" begin
     using Distributions
 
     conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
-    # Merge-mode update (a distribution value would ordinarily introduce
-    # uncertainty) aimed at the Convolved leaf's parameters is silently
-    # ignored, exactly like a fixed-value update to that leaf: the composite
-    # leaf has no free-parameter rows to key an update against, so `update`
-    # leaves it untouched regardless of whether it is given a `Real` or a
-    # `UnivariateDistribution`.
+    # A `Real`-valued (re-pinning) update aimed at the Convolved leaf's
+    # parameters is silently ignored, in both strict mode and merge mode
+    # (triggered here by `report`'s distribution-valued update elsewhere in
+    # the tree): the composite leaf has no free-parameter rows to key a
+    # concrete write against.
     seq2 = update(seq,
+        (total = (param_1 = 9.0,), report = (mu = 0.1, sigma = 0.2)))
+    @test event(seq2, :total) === conv
+    @test event(seq2, :report) == LogNormal(0.1, 0.2)
+
+    seq3 = update(seq,
+        (total = (param_1 = 9.0,), report = (mu = Normal(0.5, 0.1),)))
+    @test event(seq3, :total) === conv
+    @test has_uncertain(seq3)
+end
+
+@testitem "update with a distribution value aimed at a Convolved leaf errors informatively" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
+
+    # A distribution-valued update aimed at the Convolved leaf's parameters is
+    # a bid to make it UNCERTAIN — the same intent `uncertain(...)` on a
+    # Convolved template refuses eagerly — so it errors here too instead of
+    # silently discarding the caller's evident intent.
+    @test_throws ArgumentError update(seq,
         (total = (param_1 = Normal(1.0, 2.0),),
             report = (mu = 0.1, sigma = 0.2)))
-    @test event(seq2, :total) === conv
-    @test !has_uncertain(seq2)
-    @test event(seq2, :report) == LogNormal(0.1, 0.2)
+
+    diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
+    par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
+    @test_throws ArgumentError update(par,
+        (gap = (param_1 = Normal(1.0, 2.0),), other = (mu = 0.1, sigma = 0.2)))
 end
