@@ -21,15 +21,19 @@ const QA_CONFIG = (
     # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag` and
     # `_uncertain_specs` are the internal tag/spec protocols the
     # ModifiedDistributions extension extends so a modified leaf peels its
-    # shared tag and uncertain parameter specs inside a composed tree.
-    ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs),
+    # shared tag and uncertain parameter specs inside a composed tree;
+    # `_leaf_param_names` and `_collect_shared` are the internal leaf-naming
+    # and shared-group lookups the FlexiChains extension reuses to read a
+    # fitted chain back onto a composed tree.
+    ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs,
+        :_leaf_param_names, :_collect_shared),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface
     # that stays in CensoredDistributions (referenced from ported prose).
     crossref_ignore = (:pdf, :cdf, :logpdf, :mean, :var, :std, :logcdf, :ccdf,
         :logccdf, :quantile, :latent, :primary_censored, :interval_censored,
-        :double_interval_censored, :truncate_to_horizon, :chain_to_params,
+        :double_interval_censored, :truncate_to_horizon,
         :composed_distribution_model, :composed_parameters_model,
         :record_distributions),
 

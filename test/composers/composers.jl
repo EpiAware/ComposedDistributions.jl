@@ -296,6 +296,45 @@ end
     @test dp == Uniform(0, 1)
 end
 
+@testitem "param_priors is a thin front-door over build_priors(params_table(...))" begin
+    using Distributions
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    @test param_priors(tree) == build_priors(params_table(tree))
+    # The keyword surface is forwarded unchanged.
+    shape_prior = Normal(2, 0.5)
+    @test param_priors(tree; priors = Dict((:onset_admit, :shape) => shape_prior)) ==
+          build_priors(params_table(tree);
+        priors = Dict((:onset_admit, :shape) => shape_prior))
+end
+
+@testitem "Composer show is compact; inspect gives detail" begin
+    using Distributions
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.500001, 0.4)))
+
+    out = sprint(show, MIME"text/plain"(), tree)
+    det = sprint(inspect, tree)
+
+    @test occursin("Parallel (2 branches)", out)
+    @test occursin("Gamma", out)
+
+    # `inspect` walks the SAME tree as `show`, but prints each leaf's full
+    # `text/plain` detail on its own line(s) rather than inline, so it is
+    # strictly longer.
+    @test occursin("Parallel (2 branches)", det)
+    @test occursin("onset_admit", det)
+    @test occursin("admit_death", det)
+    @test occursin("0.500001", det)
+    @test count(==('\n'), det) > count(==('\n'), out)
+
+    # `inspect(d)` (no `io`) writes to stdout and returns nothing.
+    @test inspect(tree) === nothing
+end
+
 @testitem "update: replace parameters from a nested NamedTuple" begin
     using Distributions
 

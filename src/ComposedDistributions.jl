@@ -106,14 +106,23 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
-# `event` fetches a child or descends a path.
+# `event` fetches a child or descends a path. `param_priors` is the tree-level
+# front-door over `build_priors`; `inspect` is the opt-in detailed tree print.
 export params_table, event_names, event_tree, event, update, build_priors,
-       default_prior
+       default_prior, param_priors, inspect
 
 # Structural edits on a composed tree. `update` (the `path => new_node` method)
 # replaces a named node keeping the shape; `prune` drops a branch and `splice`
 # inserts a step (topology edits).
 export prune, splice
+
+# Inference-readback verbs: read a fitted chain's parameters back onto a
+# composed-distribution template. `chain_to_params` reduces a chain to the
+# nested NamedTuple `update` consumes; `param_draws` keeps every draw;
+# `strip_prefix` drops the outer submodel prefix from a chain's parameter
+# names. No method until both `DynamicPPL` and `FlexiChains` are loaded; the
+# methods live in `ext/ComposedDistributionsFlexiChainsExt.jl`.
+export chain_to_params, param_draws, strip_prefix
 
 export observed_distribution
 
@@ -138,6 +147,11 @@ include("composers/nesting.jl")
 include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
+# Inference-readback verb stubs (`chain_to_params` / `param_draws` /
+# `strip_prefix`): declared here with no method (see
+# `ext/ComposedDistributionsFlexiChainsExt.jl`), so this package stays
+# Turing-free until that extension is triggered.
+include("composers/readback.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.
