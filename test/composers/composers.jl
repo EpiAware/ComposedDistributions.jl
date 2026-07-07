@@ -221,6 +221,48 @@ end
     @test event(d, :short) == Gamma(2.0, 1.0)
 end
 
+@testitem "Choose: rand/logpdf round-trip contract" begin
+    using Distributions, Random
+    using ComposedDistributions: Tables
+
+    d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+    rng = MersenneTwister(1)
+    draw = rand(rng, d)
+    @test draw isa NamedTuple
+    @test draw.kind in (:short, :long)
+    @test isfinite(logpdf(d, draw))
+    @test logpdf(d, draw) ≈ logpdf(d, draw.value; kind = draw.kind)
+
+    # An explicit `kind` still returns the alternative's raw, untagged draw
+    # (the in-tree / committed-selection path).
+    x = rand(rng, d; kind = :short)
+    @test x isa Real
+
+    # A nested composer alternative's draw merges its own labelled fields in
+    # directly, rather than wrapping under `:value`.
+    nested = choose(:index => sequential(:a => Gamma(2.0, 1.0),
+            :b => LogNormal(0.5, 0.4)),
+        :sourced => sequential(:a => Gamma(4.0, 1.5),
+            :b => LogNormal(0.2, 0.3)))
+    ndraw = rand(rng, nested)
+    @test ndraw isa NamedTuple
+    @test !haskey(ndraw, :value)
+    @test isfinite(logpdf(nested, ndraw))
+
+    # A vector of tagged records scores per-record via broadcasting.
+    draws = [rand(rng, d) for _ in 1:5]
+    @test sum(logpdf.(Ref(d), draws)) ≈ sum(logpdf(d, r) for r in draws)
+
+    # A column table of tagged records sums over rows.
+    tbl = (kind = [r.kind for r in draws], value = [r.value for r in draws])
+    @test Tables.istable(tbl)
+    @test logpdf(d, tbl) ≈ sum(logpdf(d, r) for r in draws)
+
+    # Missing/incorrect selector field errors clearly.
+    @test_throws ArgumentError logpdf(d, (value = 3.0,))
+    @test_throws ArgumentError logpdf(d, (kind = "short", value = 3.0))
+end
+
 @testitem "Nesting: child contract and flat rand round-trips logpdf" begin
     using Distributions, Random
 
