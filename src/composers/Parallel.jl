@@ -102,13 +102,23 @@ this verb over the bare struct constructor.
 
 # Arguments
 - `branches`: the branch distributions, either as positional distributions or as
-  `name => dist` pairs naming each branch.
+  `name => dist` pairs naming each branch. A single named tuple
+  `(name = dist, …)` is the equivalent positional spelling for hand-written
+  branches; use Pairs for data-driven or computed names.
 
 # Examples
 ```@example
 using ComposedDistributions, Distributions
 
 d = parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
+event_names(d)
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+# The equivalent named tuple spelling.
+d = parallel((admit = Gamma(2.0, 1.0), notif = LogNormal(1.0, 0.5)))
 event_names(d)
 ```
 
@@ -129,6 +139,9 @@ end
 
 parallel(b1, bs...) = Parallel((b1, bs...))
 parallel(branches::AbstractVector) = Parallel(Tuple(branches))
+
+# Positional NamedTuple spelling: `(a = d1, …)` lowers to `:a => d1, …` Pairs.
+parallel(branches::NamedTuple) = parallel(_nt_pairs(branches)...)
 
 # Total number of leaf values in a realisation (sum over nested children).
 Base.length(d::Parallel) = _nleaves(d.components)

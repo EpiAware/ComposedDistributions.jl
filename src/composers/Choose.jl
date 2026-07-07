@@ -91,7 +91,10 @@ alternatives are required and their names must be unique.
 
 # Arguments
 - `alternatives`: the `name => dist` pairs, each an independent sub-distribution
-  (a `UnivariateDistribution` or a nested composer).
+  (a `UnivariateDistribution` or a nested composer). A single named tuple
+  `(name = dist, …)` is the equivalent positional spelling for hand-written
+  alternatives, kept separate from the `selector` keyword; use Pairs for
+  data-driven or computed names.
 
 # Keyword Arguments
 - `selector`: the row field name (`Symbol`) whose value picks an alternative
@@ -110,6 +113,14 @@ d = choose(:index => Gamma(2.0, 1.0),
 logpdf(d, 3.0; kind = :index)
 ```
 
+```@example
+using ComposedDistributions, Distributions
+
+# The equivalent named tuple spelling; `selector` stays a keyword.
+d = choose((index = Gamma(2.0, 1.0), sourced = Gamma(4.0, 1.5)); selector = :kind)
+logpdf(d, 3.0; kind = :index)
+```
+
 # See also
 - [`Choose`](@ref): the disjunction type
 "
@@ -117,11 +128,21 @@ function choose(alternatives::Pair...; selector::Symbol = :kind)
     length(alternatives) >= 2 ||
         throw(ArgumentError(
             "choose needs at least two alternatives"))
-    names = Tuple(a.first for a in alternatives)
+    # `map`, not `Tuple(gen)`, to keep the name/alternative tuples type-stable
+    # and off the `collect_to!` `Array` temporary Enzyme cannot type-analyse
+    # (see the `Resolve` constructor).
+    names = map(a -> a.first, alternatives)
     all(n -> n isa Symbol, names) ||
         throw(ArgumentError("each Choose alternative name must be a Symbol"))
-    dists = Tuple(a.second for a in alternatives)
+    dists = map(a -> a.second, alternatives)
     return Choose(names, dists, selector)
+end
+
+# Positional NamedTuple spelling: `(a = d1, …)` lowers to `:a => d1, …` Pairs,
+# kept separate from the `selector` keyword (the alternatives are positional, so
+# `selector` is not consumed as an alternative).
+function choose(alternatives::NamedTuple; selector::Symbol = :kind)
+    return choose(_nt_pairs(alternatives)...; selector = selector)
 end
 
 _n_alternatives(::Choose{N}) where {N} = N

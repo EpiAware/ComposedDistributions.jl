@@ -53,3 +53,36 @@ end
     g = gradient(f, AutoMooncake(config = nothing), θ0)
     @test g ≈ 2 .* θ0
 end
+
+# Constructing a `Resolve` / `Compete` from a heterogeneous outcome tuple must be
+# differentiable under Enzyme: the verb / struct constructors build their tuples
+# with `map`, not a `Tuple(gen)` comprehension. A generator-collect lowers to
+# `collect_to!` building a non-concrete `Array` temporary Enzyme's type analysis
+# rejects (`IllegalTypeAnalysisException`), so differentiating through the
+# construction proves the `map` form holds (finding C8). The gradient matches
+# ForwardDiff.
+@testitem "Enzyme differentiates Resolve/Compete construction (#96)" tags=[
+    :ad, :enzyme, :enzyme_reverse] begin
+    using ADTypes: AutoEnzyme, AutoForwardDiff
+    using ComposedDistributions
+    using DifferentiationInterface: gradient
+    using Distributions: Gamma, logpdf
+    using Enzyme, ForwardDiff
+
+    enzyme = AutoEnzyme(mode = Enzyme.set_runtime_activity(Enzyme.Reverse))
+    θ0 = [1.5, 1.0, 2.0, 1.5]
+
+    # A Resolve built (map-constructed) from θ-parameterised delays, scored
+    # through its mixture marginal.
+    fresolve(θ) = logpdf(
+        as_mixture(resolve(:a => (Gamma(θ[1], θ[2]), 0.3),
+            :b => (Gamma(θ[3], θ[4]), 0.7))), 2.0)
+    @test gradient(fresolve, enzyme, θ0) ≈
+          gradient(fresolve, AutoForwardDiff(), θ0)
+
+    # A Compete built from θ-parameterised racing delays, scored at a time.
+    fcompete(θ) = logpdf(
+        compete(:a => Gamma(θ[1], θ[2]), :b => Gamma(θ[3], θ[4])), 2.0)
+    @test gradient(fcompete, enzyme, θ0) ≈
+          gradient(fcompete, AutoForwardDiff(), θ0)
+end

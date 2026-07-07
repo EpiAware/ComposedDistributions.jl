@@ -17,16 +17,16 @@ The record names which outcome occurred, so it feeds straight back into `logpdf`
 
 ```@example faq
 using ComposedDistributions, Distributions, Random
-import ComposedDistributions: rand_outcome
 
 node = resolve(:death => (Gamma(1.5, 1.0), 0.3), :recover => Gamma(2.0, 1.5))
 rand(Xoshiro(1), node)
 ```
 
-For the compact `(outcome, time)` pair use [`rand_outcome`](@ref); for the marginal time to resolution alone (discarding which outcome fired) sample [`as_mixture`](@ref)`(node)`.
+For the compact `(outcome, time)` pair use [`rand_outcome`](@ref) (public but not exported, so module-qualified); for the marginal time to resolution alone (discarding which outcome fired) sample [`as_mixture`](@ref)`(node)`.
 
 ```@example faq
-rand_outcome(Xoshiro(1), node), rand(Xoshiro(1), as_mixture(node))
+ComposedDistributions.rand_outcome(Xoshiro(1), node),
+rand(Xoshiro(1), as_mixture(node))
 ```
 
 ## How do I get the total-delay distribution of a chain?

@@ -23,7 +23,8 @@
 using ComposedDistributions
 using Distributions
 using Random
-import ComposedDistributions: rand_outcome
+# `rand_outcome` is public but not exported (the record-returning `rand` is the
+# exported entry point), so it is used module-qualified below.
 
 # ## Fixed-probability resolution
 #
@@ -49,12 +50,12 @@ rand(Xoshiro(1), outcome)
 # [`rand_outcome`](@ref) is the compact `(outcome, time)` pair view of the same
 # draw, so a standalone draw tells you which outcome won.
 
-rand_outcome(Xoshiro(1), outcome)
+ComposedDistributions.rand_outcome(Xoshiro(1), outcome)
 
 # Over many draws the outcome frequencies match the fixed split.
 
 rng = Xoshiro(42)
-draws = [first(rand_outcome(rng, outcome)) for _ in 1:5000]
+draws = [first(ComposedDistributions.rand_outcome(rng, outcome)) for _ in 1:5000]
 count(==(:death), draws) / length(draws)     # ≈ cfr
 
 # ## An outcome that only sometimes occurs
@@ -67,7 +68,7 @@ with_survivors = resolve(:death => (Gamma(1.5, 1.0), 0.2),
 
 # A no-event draw returns a `missing` time.
 
-rand_outcome(Xoshiro(4), with_survivors)
+ComposedDistributions.rand_outcome(Xoshiro(4), with_survivors)
 
 # ## Racing hazards
 #
@@ -87,7 +88,7 @@ t = 3.0
 # of the hazards rather than a set parameter.
 
 race_rng = Xoshiro(2024)
-races = [first(rand_outcome(race_rng, racing))
+races = [first(ComposedDistributions.rand_outcome(race_rng, racing))
          for _ in 1:5000]
 count(==(:death), races) / length(races)
 
