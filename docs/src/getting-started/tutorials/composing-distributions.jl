@@ -42,7 +42,7 @@
 # └─ shared       tag a leaf as a tied parameter group at build time
 #
 # Combination (add or difference whole delays)
-# ├─ convolve_distributions   the sum X + Y (Convolved)
+# ├─ convolved   the sum X + Y (Convolved)
 # └─ difference               the dual X - Y (Difference)
 #
 # Reading and editing (inspect or edit an assembled object)
@@ -244,12 +244,12 @@ ComposedDistributions.rand_outcome(Xoshiro(7), resolution)
 #
 # Where the composers wire named branches into a tree, the combinators join two
 # whole delays algebraically.
-# [`convolve_distributions`](@ref) forms the sum `X + Y` (the total of two
+# [`convolved`](@ref) forms the sum `X + Y` (the total of two
 # independent delays), and [`difference`](@ref) forms the dual `X - Y`.
 # Both are re-exported from ConvolvedDistributions, so they are reachable through
 # ComposedDistributions alone.
 
-total = convolve_distributions(Gamma(2.0, 1.0), LogNormal(0.5, 0.4));
+total = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4));
 
 (convolved_mean = mean(total),
     summed_mean = mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4)))
@@ -372,7 +372,7 @@ unique(params_table(tied).edge)
 # | `resolve(:a => (d1, p1), :b => (d2, p2))` | a [`Resolve`](@ref) node; the last prob may be omitted as the residual | builds |
 # | `compete(:a => d1, :b => d2)` | a [`Compete`](@ref) racing-hazard node (the winning probability derived from the hazards) | builds |
 # | `choose(:a => d1, :b => d2)` | a [`Choose`](@ref) disjunction (data picks the branch) | builds |
-# | `convolve_distributions(d1, d2)` | a [`Convolved`](@ref) sum `X + Y` | builds |
+# | `convolved(d1, d2)` | a [`Convolved`](@ref) sum `X + Y` | builds |
 # | `difference(d1, d2)` | a [`Difference`](@ref) `X - Y` | builds |
 # | `shared(:tag, d)` | tag a leaf as a tied parameter group | leaf wrap |
 # | `tie(d, paths...; name)` | tie leaves at `paths` into one group | yes |
@@ -405,7 +405,7 @@ unique(params_table(tied).edge)
 # - The composers nest, including a composer as a chain step.
 # - One object scores records and simulates them: `logpdf` reads a record,
 #   `rand` generates one.
-# - [`convolve_distributions`](@ref) and [`difference`](@ref) combine two whole
+# - [`convolved`](@ref) and [`difference`](@ref) combine two whole
 #   delays algebraically.
 # - `mean` and `var` read the composed marginal moments, and
 #   [`observed_distribution`](@ref) collapses a chain to its convolved total.

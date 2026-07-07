@@ -762,7 +762,7 @@ name, time = rand_outcome(MersenneTwister(1), node)
 # `rand_outcome(rng, c::Compete)`
 
 This is the generative dual of the [`logpdf`](@ref) (`f_j ∏_{k≠j} S_k`) and of
-the forward `convolve_distributions` stream: the Monte Carlo winning-cause
+the forward `convolved` stream: the Monte Carlo winning-cause
 frequencies match the derived `Distributions.probs` split and the forward
 per-outcome stream masses.
 

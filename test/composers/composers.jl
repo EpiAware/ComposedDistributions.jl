@@ -478,10 +478,10 @@ end
     od = observed_distribution(s)
     @test od isa Convolved
     # The chain collapses to the convolution of its steps.
-    cv = convolve_distributions(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
+    cv = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     @test cdf(od, 5.0) ≈ cdf(cv, 5.0)
-    # convolve_distributions accepts the chain directly (issue #7).
-    @test cdf(convolve_distributions(s), 5.0) ≈ cdf(cv, 5.0)
+    # convolved accepts the chain directly (issue #7).
+    @test cdf(convolved(s), 5.0) ≈ cdf(cv, 5.0)
     # A chain with a Parallel step cannot collapse.
     @test_throws ArgumentError observed_distribution(
         Sequential(Gamma(1.0, 1.0), Parallel(Gamma(1.0, 1.0), Gamma(1.0, 1.0))))
@@ -490,7 +490,7 @@ end
 @testitem "re-exported ConvolvedDistributions surface is reachable" begin
     # These names come through ComposedDistributions' re-export, so downstream
     # packages sit on ComposedDistributions alone.
-    @test isdefined(ComposedDistributions, :convolve_distributions)
+    @test isdefined(ComposedDistributions, :convolved)
     @test isdefined(ComposedDistributions, :integrate)
     @test isdefined(ComposedDistributions, :gl_integrate)
     @test isdefined(ComposedDistributions, :GaussLegendre)

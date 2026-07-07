@@ -58,7 +58,7 @@ vector is the horizon. This is renewal/convolution machinery: take a delay
 `ComposedDistributions` already meets this layer at exactly one point:
 `observed_distribution` (`src/composers/observed.jl`) collapses a `Sequential`
 chain to the single scalar it observes — the convolution of its steps, returned
-as a `Convolved` — and `convolve_distributions(::Sequential)` extends the
+as a `Convolved` — and `convolved(::Sequential)` extends the
 `ConvolvedDistributions` verb to a composed stack. That kernel is then the
 thing a convolution/renewal step applies across the vector. **The vector-as-time
 axis is not, and should not become, a concept inside the composer types.** A
@@ -231,8 +231,8 @@ The renewal/convolution sweep asks the composed stack for `kernel(t)` at each
 `t` and convolves as it does today. Non-stationarity is resolved on the
 `ComposedDistributions` side of the boundary; `ConvolvedDistributions` never sees
 a varying object. This keeps the convolver simple, keeps AD flowing through
-already-concrete kernels, and means the existing `convolve_distributions(::Sequential)`
-path generalises to `convolve_distributions(::Sequential, ctx)` without any change
+already-concrete kernels, and means the existing `convolved(::Sequential)`
+path generalises to `convolved(::Sequential, ctx)` without any change
 to the convolution engine itself.
 
 ## The recurrent operator
