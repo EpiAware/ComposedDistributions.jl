@@ -499,4 +499,10 @@ has_uncertain(collapsed)   # resolved: false
 function has_uncertain(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
     return any(has_uncertain, _node_children(d))
 end
+# A `Resolve` is also uncertain when its branch probabilities carry an attached
+# simplex prior (a node-level uncertain parameter, not a leaf), so a tree with
+# an uncertain branch-probability simplex but fully fixed delays is still seen.
+function has_uncertain(c::Resolve)
+    return c.branch_prob_prior !== nothing || any(has_uncertain, c.delays)
+end
 has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing

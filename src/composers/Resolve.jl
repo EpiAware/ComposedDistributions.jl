@@ -107,23 +107,42 @@ Being univariate, a `Resolve` nests as a child of [`Sequential`](@ref) or
 [`Parallel`](@ref). This is the plain generic composition; per-record outcome
 selection and censoring are not part of this type.
 
+The branch probabilities are ordinarily fixed structure. To ESTIMATE them,
+attach a simplex-valued `Distributions.Dirichlet` prior with
+[`update`](@ref)`(node, (branch_probs = Dirichlet(α),))`: the `Dirichlet` is
+what you write, but the codec estimates the node through the `Dirichlet`'s K-1
+stick-breaking coordinates (`:stick_1 … :stick_{K-1}`, each a `Beta`, so every
+draw lands on the simplex and the gradient is well-defined), and the
+probabilities are recovered from any draw (via [`update`](@ref) /
+`Distributions.probs`). See [`update`](@ref) for the full story.
+
 # Fields
 - `names`: tuple of the one_of outcome names (`Symbol`s).
 - `delays`: tuple of the one_of outcome delay distributions.
 - `branch_probs`: tuple of the branch probabilities, summing to one.
+- `branch_prob_prior`: the attached `Dirichlet` prior when the branch
+  probabilities are uncertain, else `nothing` (fixed structure).
 
 # See also
 - [`as_mixture`](@ref): the `MixtureModel` lowering
+- [`update`](@ref): attach a `Dirichlet` to estimate the branch probabilities
 - [`Sequential`](@ref): a chain of additive steps
 - [`Parallel`](@ref): independent branches
 "
-struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple} <: AbstractOneOf
+struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     "Tuple of the one_of outcome names (`Symbol`s)."
     names::C
     "Tuple of the one_of outcome delay distributions."
     delays::D
     "Tuple of the branch probabilities, summing to one."
     branch_probs::P
+    "The attached simplex-valued prior over the branch probabilities (a
+    `Distributions.Dirichlet`), or `nothing` when the probabilities are fixed
+    structure. When present the branch probabilities are ESTIMATED through the
+    stick-breaking codec: the user writes the `Dirichlet`, K-1 stick
+    coordinates are what the sampler estimates, and the probabilities are
+    recovered from any draw (see [`update`](@ref))."
+    branch_prob_prior::S
 
     # Validate the structural invariants in the inner constructor so every
     # construction path (the `Pair...` outer constructor, equality round-trips,
@@ -139,8 +158,8 @@ struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple} <: AbstractOneOf
     # scorer handles an unnormalised weight set), so the sum-to-one requirement
     # is enforced at the user-facing `Pair...` constructor and at `as_mixture`
     # (which does need a normalised `Categorical`), not here.
-    function Resolve(names::C, delays::D, branch_probs::P) where {
-            C <: Tuple, D <: Tuple, P <: Tuple}
+    function Resolve(names::C, delays::D, branch_probs::P,
+            branch_prob_prior::S) where {C <: Tuple, D <: Tuple, P <: Tuple, S}
         length(names) >= 2 ||
             throw(ArgumentError("Resolve needs at least two outcomes"))
         (length(names) == length(delays) == length(branch_probs)) ||
@@ -151,8 +170,86 @@ struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple} <: AbstractOneOf
         allunique(names) ||
             throw(ArgumentError("Resolve outcome names must be unique"))
         _validate_branch_prob_bounds(branch_probs)
-        return new{C, D, P}(names, delays, branch_probs)
+        _validate_branch_prob_prior(branch_prob_prior, length(names))
+        return new{C, D, P, S}(names, delays, branch_probs, branch_prob_prior)
     end
+end
+
+# A `Resolve` with no attached prior is fixed structure; this three-argument
+# form keeps every existing construction path (the `Pair...` constructor,
+# `_rebuild`, `prune`, equality round-trips) building a fixed node unchanged.
+function Resolve(names::Tuple, delays::Tuple, branch_probs::Tuple)
+    return Resolve(names, delays, branch_probs, nothing)
+end
+
+# A fixed node has no branch-probability prior. An attached prior must be a
+# `Distributions.Dirichlet` over the `k` outcomes (one weight per outcome); it
+# is decomposed into K-1 stick-breaking `Beta`s by the codec.
+_validate_branch_prob_prior(::Nothing, ::Int) = nothing
+function _validate_branch_prob_prior(prior, k::Int)
+    prior isa Distributions.Dirichlet || throw(ArgumentError(
+        "the branch-probability prior must be a `Dirichlet` over the $k " *
+        "outcomes; got a $(typeof(prior))"))
+    length(prior) == k || throw(ArgumentError(
+        "the branch-probability `Dirichlet` prior must have one weight per " *
+        "outcome (length $k); got length $(length(prior))"))
+    return nothing
+end
+
+# --- stick-breaking codec for an uncertain branch-probability simplex --------
+#
+# A `Dirichlet(α)` over the K outcomes is estimated through its stick-breaking
+# reparameterisation: K-1 coordinates `v_k ∈ (0, 1)`, independently
+# `v_k ~ Beta(α_k, Σ_{j>k} α_j)`, mapped to the K-simplex by `p_1 = v_1`,
+# `p_k = v_k ∏_{j<k}(1 - v_j)`, `p_K = ∏_j (1 - v_j)`. The product of those
+# `Beta`s over `v` equals the `Dirichlet` over `p` exactly, so scoring each
+# `v_k` with its `Beta` (the codec's per-row univariate scoring) reproduces the
+# `Dirichlet` with no separate Jacobian. Every `v ∈ (0, 1)^{K-1}` maps to a
+# valid simplex, so the map is smooth and always in-support (AD-safe on every
+# backend) and needs only K-1 free dimensions (the simplex dimension).
+
+# The stick-coordinate parameter name for coordinate `k` (`:stick_k`), the label
+# a fitted chain and `params_table` carry for the estimated branch-prob simplex.
+_stick_name(k::Int) = Symbol(:stick_, k)
+
+# The K-1 stick-coordinate names for a `k`-outcome node.
+_stick_param_names(k::Int) = ntuple(_stick_name, k - 1)
+
+# The K-1 stick-breaking `Beta`s of a `Dirichlet` prior, in outcome order.
+function _dirichlet_stick_betas(prior::Distributions.Dirichlet)
+    a = prior.alpha
+    K = length(a)
+    return ntuple(K - 1) do k
+        Distributions.Beta(a[k], sum(@view a[(k + 1):K]))
+    end
+end
+
+# Stick-breaking map: K-1 coordinates `v` in (0, 1) -> a K-simplex, returned as a
+# tuple. Preserves the element type (an AD `Dual` flows through), so the
+# reconstructed probabilities differentiate w.r.t. the estimated coordinates.
+function _stick_to_simplex(v)
+    M = length(v)                      # K - 1
+    T = eltype(v)
+    rem = Vector{T}(undef, M + 1)      # rem[k] = ∏_{j<k}(1 - v_j)
+    rem[1] = one(T)
+    @inbounds for k in 1:M
+        rem[k + 1] = rem[k] * (one(T) - v[k])
+    end
+    return ntuple(k -> k <= M ? v[k] * rem[k] : rem[M + 1], M + 1)
+end
+
+# Inverse stick-breaking: a K-simplex `p` -> its K-1 coordinates `v`. Used for
+# the current probabilities' `value` column; not on a differentiated path.
+function _simplex_to_stick(p)
+    K = length(p)
+    T = float(eltype(p))
+    v = Vector{T}(undef, K - 1)
+    remaining = one(T)
+    @inbounds for k in 1:(K - 1)
+        v[k] = p[k] / remaining
+        remaining -= p[k]
+    end
+    return v
 end
 
 @doc "

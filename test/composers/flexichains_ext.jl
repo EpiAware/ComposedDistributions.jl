@@ -161,3 +161,52 @@ end
     @test has_varying(v_fitted)
     @test event(v_fitted, :onset_admit) isa Varying
 end
+
+@testitem "chain_to_params reads uncertain branch_probs stick coordinates" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+
+    # A Resolve whose branch-probability simplex is uncertain (K = 2, so one
+    # stick coordinate), inside a tree. The stick is what the sampler estimates;
+    # readback must find it at `d.resolution.branch_probs.stick_1`.
+    template = compose((resolution = update(
+        resolve(:death => (Gamma(1.5, 1.0), 0.3),
+            :disch => (Gamma(2.0, 1.5), 0.7)),
+        (branch_probs = Dirichlet([1.0, 1.0]),)),))
+
+    @model function branch_probs_model()
+        stick_1 ~ Beta(1.0, 1.0)
+        return (stick_1 = stick_1,)
+    end
+    @model function resolution_model()
+        branch_probs ~ to_submodel(branch_probs_model())
+        return (branch_probs = branch_probs,)
+    end
+    @model function tree_model()
+        resolution ~ to_submodel(resolution_model())
+        return (resolution = resolution,)
+    end
+    @model function full_model()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(89)
+    chain = sample(full_model(), Prior(), 30; chain_type = VNChain,
+        progress = false)
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.resolution.branch_probs.stick_1" in vns
+
+    nt = chain_to_params(template, chain)
+    @test keys(nt.resolution.branch_probs) == (:stick_1,)
+
+    # Reading back collapses the uncertain node to concrete probabilities that
+    # sum to one and are the stick-breaking of the read coordinate.
+    fitted = update(template, chain)
+    @test !has_uncertain(fitted)
+    p = collect(values(probs(event(fitted, :resolution))))
+    @test sum(p) ≈ 1.0
+    v1 = nt.resolution.branch_probs.stick_1
+    @test p[1] ≈ v1
+    @test p[2] ≈ 1 - v1
+end
