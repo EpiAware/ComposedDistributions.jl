@@ -244,7 +244,7 @@ end
 # branch-probability override (`branch_probs`) that rides a nested-Resolve tree
 # row and is excluded from by-name event matching.
 const _RESERVED_ROW_FIELDS = (
-    :weight, :count, :obs_time, :obs_window, :branch_probs)
+    :weight, :count, :obs_time, :obs_window, :branch_probs, :branch_prob)
 
 # The event values of a row in field order, dropping the reserved weight/count
 # fields, as a `Vector{Union{Missing, Float64}}` (one entry per event, `missing`

@@ -326,6 +326,14 @@ function child_rand!(out, offset, rng::AbstractRNG, c::UnivariateDistribution)
     out[offset + 1] = rand(rng, c)
     return nothing
 end
+# A nested one_of node (a `Resolve` / `Compete` child) is one scalar value slot
+# on the flat value path: its marginal time-to-resolution, not the standalone
+# named event record its own `rand` returns (#639). This matches the scalar the
+# flat scorer's `child_logpdf(::UnivariateDistribution)` reads from that slot.
+function child_rand!(out, offset, rng::AbstractRNG, c::AbstractOneOf)
+    out[offset + 1] = _one_of_marginal_rand(rng, c)
+    return nothing
+end
 function child_rand!(
         out, offset, rng::AbstractRNG, c::Union{Sequential, Parallel})
     # Use the internal vector-valued realisation (`_composer_rand`), not the

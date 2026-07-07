@@ -40,8 +40,14 @@ outcome = resolve(:death => (Gamma(1.5, 1.0), cfr),
 
 mean(outcome)
 
-# [`rand_outcome`](@ref) draws which outcome occurs and its time as a compact
-# pair, so a standalone draw tells you which outcome won.
+# A bare [`rand`](@ref) draws the full named event record of the outcome that
+# fired (the fired outcome's time present, the rest `missing`), which feeds
+# straight back into `logpdf`.
+
+rand(Xoshiro(1), outcome)
+
+# [`rand_outcome`](@ref) is the compact `(outcome, time)` pair view of the same
+# draw, so a standalone draw tells you which outcome won.
 
 rand_outcome(Xoshiro(1), outcome)
 

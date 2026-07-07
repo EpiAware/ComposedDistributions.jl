@@ -16,8 +16,9 @@ Build it with the [`compete`](@ref) constructor by giving BARE delays
 (no branch probabilities): `compete(:death => D1, :recover => D2)`.
 
 Three views must agree: [`rand`](@ref) draws a latent time per cause and
-returns the argmin; [`logpdf`](@ref) is the one_of-risks likelihood (marginal
-or cause-resolved); and the forward [`convolve_distributions`](@ref) stream is
+returns the winning cause's named event record; [`logpdf`](@ref) is the
+one_of-risks likelihood (marginal or cause-resolved); and the forward
+[`convolve_distributions`](@ref) stream is
 the per-outcome sub-density, sub-stochastic (not renormalised). `Compete`
 ships against plain `Distributions.ccdf`/`logccdf`, so any stock univariate
 leaf races without a package-specific interface.
@@ -163,10 +164,18 @@ function _hazard_marginal_window(c::Compete)
     return _hazard_quad_window(c)
 end
 
+# The shared 64-node Gauss-Legendre rule for the racing-hazard moment / winning-
+# probability / cause-cdf quadratures. The convolution quadrature default
+# (`_CONVOLVED_GL`, 192 nodes) is tuned for the batched-window convolution path;
+# these smooth density-weighted integrals over one window converge at far fewer
+# nodes, so a fixed 64-node rule threads through them for speed with no loss of
+# accuracy (matching CensoredDistributions' `_PRIMARY_GL`).
+const _PRIMARY_GL = GaussLegendre(; n = 64).rule
+
 function mean(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("mean")
     hi = _hazard_marginal_window(c)
-    return gl_integrate(zero(hi), hi) do t
+    return gl_integrate(zero(hi), hi, _PRIMARY_GL) do t
         exp(_hazard_logsurvival(c, t))
     end
 end
@@ -175,7 +184,7 @@ function var(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("var")
     hi = _hazard_marginal_window(c)
     m = mean(c)
-    e2 = gl_integrate(zero(hi), hi) do t
+    e2 = gl_integrate(zero(hi), hi, _PRIMARY_GL) do t
         2 * t * exp(_hazard_logsurvival(c, t))
     end
     # Two independent quadratures can leave `e2 - m^2` a tiny negative for a
@@ -206,14 +215,54 @@ end
 
 @doc "
 
-Sample the racing-hazard marginal any-event time `min_k D_k`.
+Sample a [`Compete`](@ref) node, returning the full named event record of the
+cause that won the race.
 
-See also: [`rand_outcome`](@ref) to retain WHICH cause won.
+A latent time is drawn per cause and the `argmin` cause wins; the result is a
+`NamedTuple` keyed by [`event_names`](@ref) (a positional origin slot then one
+slot per cause) with the winning cause's time present and the others `missing`.
+This is the same self-describing record the in-tree path produces, so a
+standalone draw identifies which cause won and feeds straight back into
+[`logpdf`](@ref). The compact `(name, time)` pair view is
+[`rand_outcome`](@ref); the marginal any-event time `min_k D_k` alone is its
+second element.
+
+See also: [`event_names`](@ref), [`rand_outcome`](@ref).
 "
-function Base.rand(rng::AbstractRNG, c::Compete)
-    return rand_outcome(rng, c)[2]
-end
+Base.rand(rng::AbstractRNG, c::Compete) = _one_of_event_record(rng, c)
 Base.rand(c::Compete) = rand(default_rng(), c)
+
+# The scalar marginal draw of a terminal Compete (its racing any-event time
+# `min_k D_k`, discarding which cause won). Used by the plain flat value path
+# (`child_rand!`), where a Compete child is one value slot, and wherever the
+# marginal time alone is wanted.
+_one_of_marginal_rand(rng::AbstractRNG, c::Compete) = rand_outcome(rng, c)[2]
+
+@doc "
+
+Score a standalone [`Compete`](@ref) cause record (the shape a bare `rand(c)`
+returns): the cause-resolved sub-density `f_j(t) ∏_{k≠j} S_k(t)` of the winning
+cause `j` at time `t` (the winning probability is derived from the hazards, so
+there is no branch-probability term), so `logpdf(c, rand(c))` round-trips. A
+column table (a `NamedTuple` of vectors) is a multi-record source, summed per
+row.
+
+See also: [`rand`](@ref), [`event_names`](@ref)
+"
+function logpdf(c::Compete, x::NamedTuple)
+    Tables.istable(x) && return _one_of_table_logpdf(c, x)
+    _is_nonterminal(c) && _nonterminal_marginal_error("logpdf")
+    events = _row_event_vector_by_name(_flat_event_names(c), x)
+    obs_i = _observed_one_of_outcome(c, events)
+    obs_i == 0 && return 0.0
+    y = events[obs_i + 1]
+    o = events[1]
+    # `obs_i > 0` guarantees the winning slot and the origin are observed; the
+    # guard narrows the `Union{Missing, Float64}` cells to `Float64` for the
+    # scorer (the branch is unreachable for a `rand`-shaped record).
+    (y === missing || o === missing) && return 0.0
+    return _hazard_cause_logpdf(c, obs_i, y - o)
+end
 
 # Racing-hazard form of `rand_outcome`; documented on the umbrella docstring
 # `@doc` on `function rand_outcome end` in `Resolve.jl` (see
@@ -277,7 +326,7 @@ function probs(c::Compete)
     hi = isfinite(hi_raw) ? hi_raw : lo + _hazard_quad_window(c)
     n = _n_branches(c)
     winning = ntuple(n) do j
-        gl_integrate(lo, hi) do t
+        gl_integrate(lo, hi, _PRIMARY_GL) do t
             exp(_hazard_cause_logpdf(c, j, t))
         end
     end
@@ -355,7 +404,7 @@ pdf(d::_HazardCauseDelay, t::Real) = exp(logpdf(d, t))
 function cdf(d::_HazardCauseDelay, t::Real)
     lo = float(minimum(d.node))
     t <= lo && return zero(float(t))
-    return gl_integrate(lo, float(t)) do u
+    return gl_integrate(lo, float(t), _PRIMARY_GL) do u
         exp(_hazard_cause_logpdf(d.node, d.cause, u))
     end
 end

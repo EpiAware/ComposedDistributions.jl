@@ -720,12 +720,29 @@ end
 
 @doc "
 
-Sample the one_of-outcome marginal time-to-resolution.
+Sample a [`Resolve`](@ref) node, returning the full named event record of the
+outcome that fired.
 
-See also: [`as_mixture`](@ref)
+The draw resolves to a single outcome (sampled from the branch probabilities)
+and the result is a `NamedTuple` keyed by [`event_names`](@ref): a positional
+origin slot then one slot per outcome, with the fired outcome's time present and
+the others `missing`. This is the same self-describing record the in-tree path
+produces (a `Resolve` nested in a `compose(...)` tree), so a standalone draw
+identifies which outcome won and feeds straight back into [`logpdf`](@ref).
+
+To recover the marginal time-to-resolution alone (the mixture over outcomes,
+discarding which fired) sample [`as_mixture`](@ref)`(c)` instead.
+
+See also: [`event_names`](@ref), [`as_mixture`](@ref), [`rand_outcome`](@ref)
 "
-Base.rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
+Base.rand(rng::AbstractRNG, c::Resolve) = _one_of_event_record(rng, c)
 Base.rand(c::Resolve) = rand(default_rng(), c)
+
+# The scalar marginal draw of a terminal Resolve (its branch-prob-weighted
+# mixture time-to-resolution, discarding which outcome fired). Used by the plain
+# flat value path (`child_rand!`), where a Resolve child is one value slot, and
+# wherever the marginal time alone is wanted.
+_one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 
 @doc "
 
@@ -794,6 +811,112 @@ function rand_outcome(rng::AbstractRNG, c::Resolve)
 end
 
 rand_outcome(c::Resolve) = rand_outcome(default_rng(), c)
+
+# ----------------------------------------------------------------------------
+# Standalone one_of event records: the shape a bare `rand(::Resolve)` /
+# `rand(::Compete)` returns, and its round-trip scorer (#639)
+# ----------------------------------------------------------------------------
+#
+# A standalone one_of node (sampled on its own, not nested in a `compose(...)`
+# tree) draws the full named event record of the outcome that fired: a
+# `NamedTuple` keyed by `_flat_event_names(c) = (:event_1, c.names...)`, a
+# positional origin slot (anchored at zero) then one slot per outcome, with the
+# fired outcome's time present and the others `missing`. This is the same
+# self-describing record the in-tree path produces, so a standalone draw
+# identifies which outcome won and round-trips through `logpdf(c, rand(c))`. A
+# non-terminal node (a composer-valued outcome) has no standalone record layout
+# (its subtree spans several event slots, addressable only once nested), so it
+# errors with the same guidance the scalar marginal methods give.
+function _one_of_event_record(rng::AbstractRNG, c::AbstractOneOf)
+    _is_nonterminal(c) && _nonterminal_marginal_error("rand")
+    name, time = rand_outcome(rng, c)
+    T = float(_one_of_record_eltype(c))
+    out = Vector{Union{Missing, T}}(missing, _event_child_nleaves(c) + 1)
+    out[1] = zero(T)
+    # A no-event win records no time (every outcome slot stays `missing`); a
+    # real outcome fills its slot (outcome `i` at slot `i + 1`; origin at 1).
+    if time !== missing
+        i = something(findfirst(==(name), c.names))
+        out[i + 1] = convert(T, time)
+    end
+    return NamedTuple{_flat_event_names(c)}(Tuple(out))
+end
+
+# Independent count draw of a standalone one_of node: a vector of records (the
+# univariate count form Distributions cannot build, since a record is a
+# `NamedTuple`, not the scalar `eltype`).
+function Base.rand(rng::AbstractRNG, c::AbstractOneOf, n::Int)
+    return [rand(rng, c) for _ in 1:n]
+end
+
+# The promoted float element type of a terminal one_of node's sampled event
+# times: each outcome delay's own `eltype` promoted together (a no-event marker
+# carries none and is skipped). head/tail recursion, not `mapreduce`, to keep
+# the promotion inferable over the heterogeneous outcome tuple (the same reason
+# `_one_of_outcome_nleaves` recurses).
+_one_of_record_eltype(c::AbstractOneOf) = _promote_outcome_eltype(c.delays)
+_promote_outcome_eltype(::Tuple{}) = Float64
+function _promote_outcome_eltype(delays::Tuple)
+    rest = _promote_outcome_eltype(Base.tail(delays))
+    d = first(delays)
+    return _is_no_event(d) ? rest : promote_type(eltype(d), rest)
+end
+
+# The observed outcome index of a standalone (terminal) one_of record: the
+# single outcome slot carrying a time (slots `2 … k + 1`, one per outcome). `0`
+# when none is observed (a no-event / latent non-occurrence record). At most one
+# outcome may be observed. The standalone record is always terminal (a
+# non-terminal node is rejected upstream), so every outcome is one slot at
+# `i + 1`.
+function _observed_one_of_outcome(c::AbstractOneOf, events)
+    obs_i = 0
+    @inbounds for i in 1:_n_branches(c)
+        events[i + 1] === missing && continue
+        obs_i == 0 || throw(ArgumentError(
+            "a standalone one_of record may observe at most one outcome; got " *
+            "outcomes $(c.names[obs_i]) and $(c.names[i])"))
+        obs_i = i
+    end
+    return obs_i
+end
+
+# Score a table / vector of standalone one_of records: the sum of each record's
+# single-record log density. A standalone one_of node carries no per-record
+# routing, so the table is scored by summing the per-row scorer directly.
+function logpdf(c::AbstractOneOf, rows::AbstractVector{<:NamedTuple})
+    return sum(logpdf(c, r) for r in rows)
+end
+
+function _one_of_table_logpdf(c::AbstractOneOf, table)
+    return sum(logpdf(c, r) for r in Tables.namedtupleiterator(table))
+end
+
+@doc "
+
+Score a standalone [`Resolve`](@ref) outcome record (the shape a bare `rand(c)`
+returns): `log p_i + logpdf(delay_i, t)` for the fired outcome `i` at time `t`,
+so `logpdf(c, rand(c))` round-trips. A column table (a `NamedTuple` of vectors)
+is a multi-record source, summed per row.
+
+See also: [`rand`](@ref), [`event_names`](@ref)
+"
+function logpdf(c::Resolve, x::NamedTuple)
+    Tables.istable(x) && return _one_of_table_logpdf(c, x)
+    _is_nonterminal(c) && _nonterminal_marginal_error("logpdf")
+    events = _row_event_vector_by_name(_flat_event_names(c), x)
+    obs_i = _observed_one_of_outcome(c, events)
+    obs_i == 0 && return 0.0
+    # An observed non-occurrence scores the no-event mass `log q` alone.
+    _is_no_event(c.delays[obs_i]) && return log(c.branch_probs[obs_i])
+    y = events[obs_i + 1]
+    o = events[1]
+    # `obs_i > 0` guarantees the outcome slot and the origin are observed; the
+    # guard narrows the `Union{Missing, Float64}` cells to `Float64` for the
+    # scorer (the branch is unreachable for a `rand`-shaped record).
+    (y === missing || o === missing) && return 0.0
+    gap = y - o
+    return _one_of_condition_logpdf(c.branch_probs, c.delays[obs_i], gap, obs_i)
+end
 
 @doc "
 

@@ -445,6 +445,78 @@ end
     @test seen == Set([:event, :none])
 end
 
+@testitem "one_of rand returns a named event record (#639)" begin
+    using Distributions, Random
+    import ComposedDistributions: _one_of_marginal_rand, event_names, as_mixture
+
+    # Resolve: a bare rand draws the fired outcome's event record, keyed by the
+    # flat event names, origin at slot 1, the fired outcome present, the rest
+    # missing; it round-trips as `log p_i + logpdf(delay_i, t)`.
+    r = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.7))
+    rng = MersenneTwister(1)
+    rec = rand(rng, r)
+    @test rec isa NamedTuple
+    @test keys(rec) == event_names(r) == (:event_1, :death, :disch)
+    @test rec.event_1 == 0.0
+    present = filter(n -> rec[n] !== missing, (:death, :disch))
+    @test length(present) == 1
+    i = present[1] == :death ? 1 : 2
+    gap = rec[present[1]]
+    @test logpdf(r, rec) ≈ log(probs(r)[present[1]]) +
+                           logpdf(r.delays[i], gap)
+    # The scalar marginal accessor and `as_mixture` still give a bare time.
+    @test _one_of_marginal_rand(MersenneTwister(2), r) isa Real
+    @test rand(MersenneTwister(2), as_mixture(r)) isa Real
+    # The count form draws a vector of records that scores as the row sum.
+    recs = rand(MersenneTwister(4), r, 6)
+    @test recs isa Vector && length(recs) == 6
+    @test logpdf(r, recs) ≈ sum(logpdf(r, x) for x in recs)
+
+    # Compete: the record names the winning cause; it round-trips as the
+    # cause-resolved sub-density (no branch-prob term).
+    c = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
+    crec = rand(MersenneTwister(5), c)
+    @test keys(crec) == (:event_1, :death, :recover)
+    @test crec.event_1 == 0.0
+    win = filter(n -> crec[n] !== missing, (:death, :recover))[1]
+    j = win == :death ? 1 : 2
+    t = crec[win]
+    @test logpdf(c, crec) ≈
+          logpdf(c.delays[j], t) +
+          sum(logccdf(c.delays[k], t) for k in 1:2 if k != j)
+    @test _one_of_marginal_rand(MersenneTwister(6), c) isa Real
+end
+
+@testitem "one_of nested in a chain stays a scalar value slot" begin
+    using Distributions, Random
+
+    # A nested one_of child occupies one scalar value slot (its marginal), not
+    # the standalone event record, so the flat value path round-trips.
+    seq = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_out => resolve(:death => (Gamma(1.5, 1.0), 0.4),
+            :disch => Gamma(2.0, 1.5)))
+    draw = rand(MersenneTwister(1), seq)
+    @test draw isa NamedTuple
+    @test draw.admit_out isa Real
+    @test isfinite(logpdf(seq, draw))
+end
+
+@testitem "params_table is a 5-column superset with a thin hook (#96)" begin
+    using Distributions
+    import ComposedDistributions: _thin_factor, _leaf_param_names
+
+    d = compose((onset = Gamma(2.0, 1.0), report = LogNormal(0.5, 0.4)))
+    tbl = params_table(d)
+    @test Tuple(propertynames(tbl)) == (:edge, :param, :value, :support, :prior)
+    # No thinning modifier exists here, so the thin hook is a no-op and no
+    # `:thin` row appears (the table matches the plain per-param inventory).
+    leaf = Gamma(2.0, 1.0)
+    @test _thin_factor(leaf) === nothing
+    @test :thin ∉ _leaf_param_names(leaf)
+    @test :thin ∉ tbl.param
+end
+
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
     using Distributions
 

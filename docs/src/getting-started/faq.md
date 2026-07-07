@@ -10,20 +10,24 @@ It composes any `Distributions.jl` `UnivariateDistribution` and adds no censorin
 If you need primary-event censoring, interval censoring, or truncation of the observation process, use CensoredDistributions.jl, which builds its censored leaves on top of this composition algebra.
 Right-truncation of a plain leaf is still available through `truncated()` from Distributions.jl, since any leaf is an ordinary distribution.
 
-## Why does `rand` of a `Resolve` or `Compete` return a single number?
+## What does `rand` of a `Resolve` or `Compete` node return?
 
-A one_of node is a univariate marginal: its `rand` is the time to resolution, whichever outcome occurs, and its `logpdf` scores that time.
-To also learn which outcome occurred, use [`rand_outcome`](@ref), which returns an `(outcome, time)` pair.
+A one_of node draws the named event record of the outcome that fired: a `NamedTuple` keyed by [`event_names`](@ref), a positional origin slot then one slot per outcome, with the fired outcome's time present and the others `missing`.
+The record names which outcome occurred, so it feeds straight back into `logpdf`.
 
 ```@example faq
 using ComposedDistributions, Distributions, Random
 import ComposedDistributions: rand_outcome
 
 node = resolve(:death => (Gamma(1.5, 1.0), 0.3), :recover => Gamma(2.0, 1.5))
-rand(Xoshiro(1), node), rand_outcome(Xoshiro(1), node)
+rand(Xoshiro(1), node)
 ```
 
-The two share the same drawn time; `rand_outcome` just also names the outcome.
+For the compact `(outcome, time)` pair use [`rand_outcome`](@ref); for the marginal time to resolution alone (discarding which outcome fired) sample [`as_mixture`](@ref)`(node)`.
+
+```@example faq
+rand_outcome(Xoshiro(1), node), rand(Xoshiro(1), as_mixture(node))
+```
 
 ## How do I get the total-delay distribution of a chain?
 

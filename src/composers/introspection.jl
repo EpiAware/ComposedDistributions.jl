@@ -144,15 +144,23 @@ function _inspect_children(io::IO, node, prefix::String)
     return nothing
 end
 
-# A leaf's full `text/plain` detail, indented under `prefix`, one line at a
-# time (so a multi-line show, e.g. a struct dump, stays aligned).
+# A leaf's detail lines, indented under `prefix`, one line at a time (so a
+# multi-line detail stays aligned). The lines come from the `_leaf_detail_lines`
+# hook so a leaf-wrapper layer can supply richer per-leaf detail.
 function _inspect_leaf(io::IO, leaf, prefix::String)
-    text = sprint(show, MIME"text/plain"(), leaf)
-    for line in split(text, '\n')
+    for line in _leaf_detail_lines(leaf)
         println(io, prefix, line)
     end
     return nothing
 end
+
+# The per-leaf inspect detail lines. The generic detail is the leaf's full
+# `text/plain` show, split so a multi-line struct dump stays aligned. This is
+# the extension point a leaf-wrapper layer overrides: CensoredDistributions
+# defines `_leaf_detail_lines` for its censored leaves (`PrimaryCensored` /
+# `IntervalCensored` / `Truncated`), which slot in here by dispatch (they stay
+# CD-side; only the generic hook lives upstream).
+_leaf_detail_lines(leaf) = split(sprint(show, MIME"text/plain"(), leaf), '\n')
 
 # --- nested name-keyed params (hand-rolled, type-stable) --------------------
 
@@ -302,6 +310,23 @@ end
 _uncertain_specs(leaf) = nothing
 _uncertain_specs(d::Truncated) = _uncertain_specs(d.untruncated)
 
+# The thinning-factor protocol: a leaf's downsampling (thin) factor when a
+# thinning modifier is attached, else `nothing` (no thinning). The default is
+# `nothing` and the generic `Truncated` peel forwards, so a plain leaf reports
+# no thin factor and `params_table` emits no `:thin` row. A thinning modifier
+# layer (CensoredDistributions' `ThinOp`/`Transformed`) plugs in by defining
+# these on its own wrapper types, at which point the walker below surfaces the
+# factor as a `:thin` row and `_update_leaf` reads it back. `_set_thin_factor`
+# is the setter dual, re-attaching an updated factor. Both keep leaves fixed by
+# default.
+_thin_factor(leaf) = nothing
+_thin_factor(d::Truncated) = _thin_factor(d.untruncated)
+_set_thin_factor(leaf, p) = leaf
+function _set_thin_factor(d::Truncated, p)
+    return truncated(_set_thin_factor(d.untruncated, p);
+        lower = d.lower, upper = d.upper)
+end
+
 # Whether a leaf distribution constructor `ctor` accepts a `check_args` keyword for
 # the sampled value tuple `vals`. Used by the DynamicPPL extension's leaf
 # reconstruction to skip the argument check (so a sampler probing an out-of-support
@@ -336,9 +361,12 @@ function _leaf_param_names(leaf)
     vals = params(inner)
     base = _param_names(inner)
     n = length(vals)
-    return ntuple(n) do i
+    names = ntuple(n) do i
         i <= length(base) ? base[i] : Symbol(:param_, i)
     end
+    # A thinned leaf carries a trailing `:thin` factor row after the delay
+    # params.
+    return _thin_factor(leaf) === nothing ? names : (names..., :thin)
 end
 
 # --- params_table (hand-rolled pre-order walk) -----------------------------
@@ -583,16 +611,23 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
     tag !== nothing && tag in seen && return nothing
     inner = free_leaf(leaf)
     pnames = _leaf_param_names(leaf)
-    vals = params(inner)
     specs = _uncertain_specs(leaf)
     sup = (minimum(inner), maximum(inner))
+    # A thinned leaf appends its thin factor as a trailing value with a `(0, 1)`
+    # support; the delay params keep the inner leaf's own support. With no
+    # thinning modifier attached `_thin_factor` is `nothing` and this is exactly
+    # the plain per-param walk.
+    factor = _thin_factor(leaf)
+    vals = factor === nothing ? params(inner) : (params(inner)..., factor)
+    sups = factor === nothing ? ntuple(_ -> sup, length(vals)) :
+           (ntuple(_ -> sup, length(vals) - 1)..., (zero(factor), one(factor)))
     edge = tag === nothing ? _join_path(path) : tag
     tag === nothing || push!(seen, tag)
-    for (pname, v) in zip(pnames, vals)
+    for (pname, v, s) in zip(pnames, vals, sups)
         push!(edges, edge)
         push!(params_col, pname)
         push!(values, v)
-        push!(supports, sup)
+        push!(supports, s)
         push!(priors,
             specs === nothing ? nothing : get(specs, pname, nothing))
     end
@@ -615,7 +650,14 @@ _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 function _update_leaf(leaf, vals::Tuple)
     inner = free_leaf(leaf)
     ctor = Base.typename(typeof(inner)).wrapper
-    return rewrap_leaf(leaf, ctor(vals...))
+    # A thinned leaf's last value is the `:thin` factor (the trailing row the
+    # walker emits): rebuild the inner delay from the leading params, then
+    # re-attach the updated factor. Inert with no thinning modifier attached.
+    if _thin_factor(leaf) === nothing
+        return rewrap_leaf(leaf, ctor(vals...))
+    end
+    rebuilt = rewrap_leaf(leaf, ctor(vals[1:(end - 1)]...))
+    return _set_thin_factor(rebuilt, vals[end])
 end
 
 @doc "
@@ -1044,7 +1086,7 @@ end
 function _is_positive_param(p::Symbol)
     p === :sigma || p === :scale || p === :rate || p === :shape ||
         p === :alpha || p === :beta || p === :theta || p === :nu ||
-        p === :k || p === :df
+        p === :k || p === :df || p === :mean || p === :sd
 end
 
 @doc "

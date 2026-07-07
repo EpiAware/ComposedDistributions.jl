@@ -275,24 +275,26 @@ end
     @test isfinite(sum(values(rand(Xoshiro(1), s))))
     @test mean(s) ≈ mean(Gamma(2.0, 1.0)) + mean(LogNormal(0.5, 0.4))
 
-    # Parallel and Compete sample the uncertain leaf's marginal directly.
+    # Parallel and Compete sample the uncertain leaf directly; a one_of node's
+    # `rand` is its named event record, which scores finitely through `logpdf`.
     p = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
     @test rand(Xoshiro(1), p) isa NamedTuple
 
     c = compete(:death => u, :recover => Gamma(3.0, 2.0))
-    @test isfinite(rand(Xoshiro(1), c))
+    @test isfinite(logpdf(c, rand(Xoshiro(1), c)))
 
-    # Resolve: it composes and collapses via `update` to a concrete node.
-    # `rand` on the UNCOLLAPSED node lowers through `as_mixture`'s
-    # `MixtureModel`, which needs `Uncertain` to report a concrete
-    # `ValueSupport` (not the abstract type) to dispatch correctly when a
-    # branch sits alongside a differently-typed sibling.
+    # Resolve: it composes and collapses via `update` to a concrete node. The
+    # uncollapsed node draws the resolved outcome's uncertain delay directly and
+    # its marginal (`as_mixture`) needs `Uncertain` to report a concrete
+    # `ValueSupport` (not the abstract type) to dispatch correctly when a branch
+    # sits alongside a differently-typed sibling.
     r = resolve(:death => (u, 0.3), :disch => Gamma(2.0, 1.5))
-    @test isfinite(rand(Xoshiro(1), r))
+    @test isfinite(logpdf(r, rand(Xoshiro(1), r)))
+    @test isfinite(rand(Xoshiro(1), as_mixture(r)))
     rc = update(r, (death = (shape = 2.0, scale = 1.0),
         disch = (shape = 2.0, scale = 1.5)))
     @test !has_uncertain(rc)
-    @test isfinite(rand(Xoshiro(1), rc))
+    @test isfinite(logpdf(rc, rand(Xoshiro(1), rc)))
 
     # Choose: it composes, and its prior column carries the spec.
     ch = choose(:index => u, :sourced => Gamma(2.0, 1.0))
