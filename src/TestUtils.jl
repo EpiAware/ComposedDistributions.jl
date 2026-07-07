@@ -66,8 +66,9 @@ Base.@kwdef struct InterfaceFixture{D}
     path::Union{Nothing, Tuple} = nothing
     "The `kind` keyword for a `Choose` fixture, or `nothing`."
     kind::Union{Nothing, Symbol} = nothing
-    "Whether the node's `rand` is a univariate scalar (a leaf / `Resolve` /
-    `Compete`)."
+    "Whether the node is a univariate-collapsible leaf whose `rand` is a bare
+    scalar. A standalone one_of node (`Resolve` / `Compete`) is univariate for
+    its moments but draws a named event record, so it is detected separately."
     univariate::Bool = false
     "The shape of the overall `mean(d)`/`var(d)`/`std(d)` moment: `:scalar` for a
     univariate-collapsible node (a leaf, `Sequential`, `Resolve`, `Compete`),
@@ -183,8 +184,13 @@ function _check_moments_and_rand(d, fix)
     @testset "moments and rand" begin
         r = rand(d)
         # A multivariate composer realisation is a labelled NamedTuple; a
-        # univariate node is a bare scalar.
-        if fix.univariate
+        # univariate leaf is a bare scalar; a standalone one_of node draws its
+        # named event record (#639), naming the outcome that fired, which
+        # round-trips through `logpdf`.
+        if d isa AbstractOneOf
+            @test r isa NamedTuple
+            @test isfinite(logpdf(d, r))
+        elseif fix.univariate
             @test r isa Real
         else
             @test r isa NamedTuple

@@ -1,5 +1,25 @@
 ## Unreleased
 
+- **Breaking:** `rand` of a standalone `Resolve` or `Compete` node now returns
+  the named event record of the outcome that fired — a `NamedTuple` keyed by
+  `event_names(node)` (a positional origin slot then one slot per outcome, the
+  fired outcome's time present and the others `missing`) — instead of the scalar
+  marginal time-to-resolution (#96, syncing to CensoredDistributions' #639). The
+  record names which outcome occurred, so `logpdf(node, rand(node))` round-trips
+  and identifies the outcome. To recover the old scalar draw, sample the
+  marginal `rand(as_mixture(node))`; the `(outcome, time)` pair view stays
+  `rand_outcome`. A one_of node nested inside a `Sequential` / `Parallel` is
+  unchanged (it stays one scalar value slot, its marginal); a new
+  `logpdf(node, ::NamedTuple)` scores a standalone record.
+
+- `params_table` is now a superset schema carrying both the uncertain-first
+  `prior` column and CensoredDistributions' `:thin` rows via the `_thin_factor`
+  / `_set_thin_factor` hooks (no-op here, so no `:thin` row appears; the hooks
+  let a thinning modifier layer plug in). `_leaf_detail_lines` becomes the
+  per-leaf `inspect` detail extension point, and the racing-hazard moment /
+  winning-probability / cause-cdf quadratures thread a shared 64-node
+  Gauss-Legendre rule (#96).
+
 - Node-level uncertainty: a `Resolve`'s branch probabilities can now be
   estimated (#89). Attach a simplex-valued `Distributions.Dirichlet` prior with
   `update(node, (branch_probs = Dirichlet(α),))`. The `Dirichlet` is what you
