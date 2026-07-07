@@ -581,12 +581,26 @@ end
 Update a composed distribution's free parameters from a nested `NamedTuple`.
 
 `update(d, params)` returns a new distribution of the SAME structure as `d` with
-its free parameters replaced by the values in `params`. The `params` NamedTuple
-mirrors the tree: a [`Sequential`](@ref)/[`Parallel`](@ref) is keyed by its edge
-names, a leaf by its parameter names (as in [`params_table`](@ref)'s `param`
-column), and a [`Resolve`](@ref) by its outcome names plus an optional
-`branch_probs` entry. A censored leaf is transparent: supply only the inner
-delay's parameters and the censoring is carried through.
+its parameters set from `params`, a nested NamedTuple mirroring the tree: a
+[`Sequential`](@ref)/[`Parallel`](@ref) is keyed by its edge names, a leaf by
+its parameter names (as in [`params_table`](@ref)'s `param` column), and a
+[`Resolve`](@ref) by its outcome names plus an optional `branch_probs` entry. A
+censored leaf is transparent: supply only the inner delay's parameters and the
+censoring is carried through.
+
+The value type at a leaf parameter decides what happens (the object-level
+spelling of \"distribution in the slot = estimate, value = fix\"):
+
+- a **`Real`** pins the parameter to that fixed value, collapsing any
+  [`uncertain`](@ref) spec on it. A NamedTuple of all-`Real` values replaces
+  every free parameter (each key required), the plain concrete update;
+- a **distribution** makes the parameter [`uncertain`](@ref) with that spec.
+  Passing distributions switches to a partial update: only the named parameters
+  change (an absent parameter keeps its current spec or fixed value), so
+  `update(tree, (onset = (shape = LogNormal(log(2), 0.2),),))` makes just
+  `onset`'s `shape` uncertain. Promote a whole tree to uncertainty over its
+  free parameters with default priors via `update(tree, `
+  [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path.
 
 Pair with [`chain_to_params`](@ref) to read posterior means or a single draw
 from a fitted chain into the right NamedTuple, so `update(template, means)`
@@ -596,7 +610,8 @@ loaded.
 
 # Arguments
 - `d`: the composed distribution (or bare leaf) to update.
-- `params`: a nested NamedTuple of new parameter values keyed like `d`.
+- `params`: a nested NamedTuple keyed like `d`, each leaf value a `Real` (fix)
+  or a `UnivariateDistribution` (make uncertain).
 
 # Examples
 ```@example
@@ -604,57 +619,79 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
+# Concrete values pin the parameters.
 tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)))
 event(tree2, :onset_admit)
+# A distribution makes just that parameter uncertain (a partial update).
+est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+has_uncertain(est)
 ```
 
 # See also
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
+- [`param_priors`](@ref): default priors for the promote path
 - [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
 - [`update`](@ref)`(d, path => new_node)`: replace whole nodes (same shape)
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
 function update(d::Union{Sequential, Parallel, AbstractOneOf, Choose},
         params::NamedTuple)
-    return _update(d, params, params)
+    return _update(d, params, params, _has_distribution_value(params))
 end
 
 function update(leaf, params::NamedTuple)
-    return _update(leaf, params, params)
+    return _update(leaf, params, params, _has_distribution_value(params))
 end
+
+# Whether an `update` NamedTuple carries any distribution-valued parameter,
+# which switches `update` to MERGE mode: a distribution introduces an uncertain
+# spec, a `Real` pins (collapsing any spec), and an absent parameter keeps the
+# leaf's current spec or fixed value (so a partial NamedTuple targets only the
+# named parameters). Without a distribution anywhere the update is a plain
+# concrete replacement (STRICT mode, exact cover), the original behaviour.
+_has_distribution_value(x::UnivariateDistribution) = true
+_has_distribution_value(x::NamedTuple) = any(_has_distribution_value, values(x))
+_has_distribution_value(::Any) = false
 
 # `_update` is the recursive worker. The whole top-level `params` is threaded down
 # as the `shared` source: a shared-tagged leaf is keyed at the top level by its
 # tag (matching `params_table`'s tag edge), so every occurrence reads the one
 # entry; per-node keys are validated against the per-occurrence params with the
-# shared tags excluded.
+# shared tags excluded. `merge` carries the mode (see `_has_distribution_value`);
+# the composer recursion is mode-agnostic (it already tolerates absent children),
+# only the leaf method and the `Resolve` branch-probability block branch on it.
 
-function _update(d::Union{Sequential, Parallel}, params::NamedTuple, shared)
+function _update(d::Union{Sequential, Parallel}, params::NamedTuple, shared,
+        merge::Bool)
     names = component_names(d)
     _check_child_keys(params, names, nameof(typeof(d)), shared)
     parts = ntuple(length(names)) do i
-        _update(d.components[i], _child_params(params, names[i]), shared)
+        _update(d.components[i], _child_params(params, names[i]), shared, merge)
     end
     return _rebuild(d, parts)
 end
 
 # A `Choose` updates each alternative; a tag shared across alternatives reads one
 # entry from `shared` and is placed in every occurrence.
-function _update(d::Choose, params::NamedTuple, shared)
+function _update(d::Choose, params::NamedTuple, shared, merge::Bool)
     _check_child_keys(params, d.names, :Choose, shared)
     alts = ntuple(length(d.names)) do i
-        _update(d.alternatives[i], _child_params(params, d.names[i]), shared)
+        _update(d.alternatives[i], _child_params(params, d.names[i]), shared,
+            merge)
     end
     return _rebuild(d, alts)
 end
 
-function _update(c::Resolve, params::NamedTuple, shared)
+function _update(c::Resolve, params::NamedTuple, shared, merge::Bool)
     _check_child_keys(params, c.names, :Resolve, shared; optional = (:branch_probs,))
     delays = ntuple(length(c.names)) do i
-        _update(c.delays[i], _child_params(params, c.names[i]), shared)
+        _update(c.delays[i], _child_params(params, c.names[i]), shared, merge)
     end
-    probs = if haskey(params, :branch_probs)
+    # Branch probabilities are fixed structure under uncertain-first (there is
+    # no uncertain marker for them), so merge mode keeps them fixed; strict mode
+    # replaces them from concrete values as before.
+    probs = if !merge && haskey(params, :branch_probs)
         bp = params.branch_probs
         _check_update_keys(bp, c.names, Symbol("Resolve branch_probs"))
         ntuple(i -> bp[c.names[i]], length(c.names))
@@ -666,27 +703,51 @@ end
 
 # A racing-hazard node updates each outcome delay; there is no `branch_probs`
 # block to update (the winning probability is derived).
-function _update(c::Compete, params::NamedTuple, shared)
+function _update(c::Compete, params::NamedTuple, shared, merge::Bool)
     _check_child_keys(params, c.names, :Compete, shared)
     delays = ntuple(length(c.names)) do i
-        _update(c.delays[i], _child_params(params, c.names[i]), shared)
+        _update(c.delays[i], _child_params(params, c.names[i]), shared, merge)
     end
     return _rebuild(c, delays)
 end
 
 # A no-event marker carries no parameters, so `update` leaves it unchanged.
-_update(d::NoEvent, ::NamedTuple, shared) = d
+_update(d::NoEvent, ::NamedTuple, shared, ::Bool) = d
 
-# Leaf: take the new parameter values in `_leaf_param_names` order and rebuild. A
-# shared-tagged leaf reads its values from the top-level `shared` entry under its
-# tag, so every occurrence of the tag updates from the one entry.
-function _update(leaf, params::NamedTuple, shared)
+# Leaf: in strict mode take the new concrete values in `_leaf_param_names` order
+# and rebuild (collapsing any uncertain leaf); in merge mode introduce/extend
+# uncertainty via `_merge_leaf`. A shared-tagged leaf reads its entry from the
+# top-level `shared` under its tag; in merge mode an absent tag entry is a no-op
+# (an empty merge keeps the leaf), so a partial merge leaves untouched leaves be.
+function _update(leaf, params::NamedTuple, shared, merge::Bool)
     tag = _shared_tag(leaf)
+    if merge
+        updates = tag === nothing ? params : get(shared, tag, NamedTuple())
+        return _merge_leaf(leaf, updates)
+    end
     leaf_params = tag === nothing ? params : _shared_entry(shared, tag, leaf)
     pnames = _leaf_param_names(leaf)
     _check_update_keys(leaf_params, pnames, nameof(typeof(leaf)))
     vals = ntuple(i -> leaf_params[pnames[i]], length(pnames))
     return _update_leaf(leaf, vals)
+end
+
+# Validate a merge NamedTuple: every key must be a parameter of the leaf, and
+# every value a `Real` (fix) or a `UnivariateDistribution` (make uncertain). A
+# missing key is fine (that parameter is left untouched).
+function _check_merge_keys(updates::NamedTuple, expected::Tuple, what)
+    for k in keys(updates)
+        k in expected || throw(ArgumentError(
+            "update($what, ...) has unexpected parameter $(repr(k)); " *
+            "expected $(collect(expected))"))
+    end
+    for (k, v) in pairs(updates)
+        v isa Union{Real, UnivariateDistribution} || throw(ArgumentError(
+            "update($what, ...): the value for $(repr(k)) must be a Real " *
+            "(a fixed value) or a UnivariateDistribution (an uncertain " *
+            "spec); got $(typeof(v))"))
+    end
+    return nothing
 end
 
 # A child's per-occurrence params: a shared-tagged child carries no per-occurrence
@@ -987,6 +1048,13 @@ Build the nested prior `NamedTuple` straight from a composed distribution.
 parameter inventory of the composed distribution `tree` and assembles the
 nested prior `NamedTuple` in one call, forwarding the same keyword surface.
 It adds no prior logic of its own.
+
+The result is spec-shaped (a nested NamedTuple of distributions keyed like the
+tree), so it feeds [`update`](@ref) directly: `update(tree, param_priors(tree))`
+promotes every free parameter to [`uncertain`](@ref) with its default prior —
+the explicit estimate-everything path under uncertain-first (a bare tree
+estimates nothing). Pass `priors` to swap in your own spec for named
+parameters.
 
 # Arguments
 - `tree`: a composed distribution from [`compose`](@ref).

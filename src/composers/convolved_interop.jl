@@ -145,5 +145,5 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen,
 end
 
 # `update` leaves a fixed composite leaf unchanged (it emits no params_table rows
-# to key an update against).
-_update(d::Union{Convolved, Difference}, ::NamedTuple, shared) = d
+# to key an update against), in both strict and merge modes.
+_update(d::Union{Convolved, Difference}, ::NamedTuple, shared, ::Bool) = d

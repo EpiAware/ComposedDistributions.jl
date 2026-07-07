@@ -341,6 +341,117 @@ end
     @test !has_uncertain(rc)
 end
 
+@testitem "update introduces uncertainty on a plain leaf (targeted)" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    # A distribution in a parameter slot makes just that parameter uncertain;
+    # a partial NamedTuple leaves the rest of the tree fixed.
+    est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+    @test has_uncertain(est)
+    leaf = event(est, :onset_admit)
+    @test leaf isa Uncertain
+    @test leaf.specs == (; shape = LogNormal(log(2.0), 0.2))
+    @test leaf.template == Gamma(2.0, 1.0)   # scale stays fixed at 1.0
+    # admit_death is untouched and stays a fixed leaf.
+    @test event(est, :admit_death) == LogNormal(0.5, 0.4)
+    @test !has_uncertain(event(est, :admit_death))
+    # The estimation boundary follows: exactly one estimated parameter.
+    @test flat_dimension(est) == 1
+end
+
+@testitem "update merges, extends and collapses uncertain specs" begin
+    using Distributions
+
+    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    tree = compose((onset_admit = u,))
+
+    # Extending: add a spec on scale while keeping the shape spec (merge).
+    ext = update(tree, (onset_admit = (scale = Exponential(1.0),),))
+    leaf = event(ext, :onset_admit)
+    @test leaf isa Uncertain
+    @test keys(leaf.specs) == (:shape, :scale)
+    @test leaf.specs.shape == LogNormal(log(2.0), 0.2)
+    @test leaf.specs.scale == Exponential(1.0)
+
+    # A Real on a spec'd parameter drops that spec and pins the value, while a
+    # distribution on another parameter (re)specs it in the same call.
+    col = update(tree, (onset_admit = (shape = 3.0, scale = Exponential(1.0)),))
+    cleaf = event(col, :onset_admit)
+    @test keys(cleaf.specs) == (:scale,)
+    @test cleaf.template == Gamma(3.0, 1.0)
+end
+
+@testitem "promote: update(tree, param_priors(tree)) specs every parameter" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    promoted = update(tree, param_priors(tree))
+
+    @test has_uncertain(promoted)
+    # Every free parameter is now estimated (the escape hatch to estimate-all).
+    @test flat_dimension(promoted) == length(params_table(tree).edge)
+    oa = event(promoted, :onset_admit)
+    @test oa isa Uncertain
+    @test keys(oa.specs) == (:shape, :scale)
+    # The specs are the support-derived defaults.
+    @test oa.specs.scale == param_priors(tree).onset_admit.scale
+end
+
+@testitem "promote keeps an existing spec and defaults the rest" begin
+    using Distributions
+
+    tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
+        shape = LogNormal(log(2.0), 0.2)),))
+    promoted = update(tree, param_priors(tree))
+    oa = event(promoted, :onset_admit)
+    @test keys(oa.specs) == (:shape, :scale)
+    # The user's shape spec is kept; scale gets the support-derived default.
+    @test oa.specs.shape == LogNormal(log(2.0), 0.2)
+    @test oa.specs.scale == param_priors(tree).onset_admit.scale
+end
+
+@testitem "promote through a shared tag ties the estimated parameter" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension, _shared_tag
+
+    d = compose((a = shared(:g, Gamma(2.0, 1.0)),
+        b = shared(:g, Gamma(2.0, 1.0))))
+    promoted = update(d, param_priors(d))
+
+    @test has_uncertain(promoted)
+    # The tied leaf is inventoried once, so shape + scale = two estimated rows.
+    @test flat_dimension(promoted) == 2
+    la = event(promoted, :a)
+    @test _shared_tag(la) == :g
+    @test has_uncertain(la)
+    # Collapsing the promoted tree from a flat draw keeps the tie: both
+    # occurrences are the same shared leaf at the drawn values.
+    collapsed = update(promoted, ComposedDistributions.unflatten(promoted,
+        [2.5, 1.2]))
+    @test !has_uncertain(collapsed)
+    @test event(collapsed, :a) == event(collapsed, :b)
+    @test ComposedDistributions.free_leaf(event(collapsed, :a)) ==
+          Gamma(2.5, 1.2)
+end
+
+@testitem "update merge rejects an unknown or ill-typed parameter" begin
+    using Distributions
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),))
+    # An unknown parameter name in a merge update errors.
+    @test_throws ArgumentError update(tree,
+        (onset_admit = (rate = LogNormal(0.0, 1.0),),))
+    # A non-Real, non-distribution value errors.
+    @test_throws ArgumentError update(tree,
+        (onset_admit = (shape = LogNormal(0.0, 1.0), scale = "no"),))
+end
+
 @testitem "rand/logpdf round trip through a nested uncertain leaf" begin
     using Distributions, Random
 
