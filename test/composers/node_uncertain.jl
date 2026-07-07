@@ -194,3 +194,52 @@ end
     promoted = update(ch, param_priors(ch))
     @test flat_dimension(promoted) == 4
 end
+
+@testitem "branch_probs: promote across a mixed tree with a composite leaf" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension
+
+    # A mixed tree: a Resolve (uncertain branch_probs via promote), a Convolved
+    # composite leaf (see-through component fitting, #81), and a plain leaf.
+    # Promote must make all three estimable together, descending past the
+    # composite without disturbing the branch-probability injection.
+    total = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    tree = compose((
+        resolution = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+            :disch => (Gamma(2.0, 1.5), 0.7)),
+        total = total,
+        report = LogNormal(0.5, 0.4)))
+    promoted = update(tree, param_priors(tree))
+
+    @test has_uncertain(promoted)
+    @test has_uncertain(event(promoted, :resolution))
+    tbl = params_table(promoted)
+    # The Resolve contributes exactly one stick coordinate (K = 2).
+    @test count(==(Symbol("resolution.branch_probs")), tbl.edge) == 1
+    # The composite's components are still inventoried and now estimated.
+    @test Symbol("total.component_1") in tbl.edge
+    # Promote estimates every row (leaves, composite components, and the stick),
+    # so the flat dimension equals the promoted table's row count.
+    @test flat_dimension(promoted) == length(tbl.edge)
+end
+
+@testitem "branch_probs: update rejects ill-typed branch_probs values" begin
+    using Distributions
+
+    r = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.7))
+    # Merge mode (partial): a non-Dirichlet distribution at the branch_probs
+    # slot errors.
+    @test_throws ArgumentError update(r, (branch_probs = Beta(1.0, 1.0),))
+    # A strict update covers every leaf; a non-NamedTuple branch_probs errors.
+    full = (death = (shape = 1.5, scale = 1.0),
+        disch = (shape = 2.0, scale = 1.5))
+    @test_throws ArgumentError update(r, merge(full, (branch_probs = 0.5,)))
+    # A fixed node accepts a concrete per-outcome replacement (strict).
+    r2 = update(r, merge(full, (branch_probs = (death = 0.4, disch = 0.6),)))
+    @test !has_uncertain(r2)
+    @test collect(values(probs(r2))) ≈ [0.4, 0.6]
+    # Direct construction with a non-Dirichlet prior is rejected.
+    @test_throws ArgumentError Resolve((:a, :b),
+        (Gamma(1.0, 1.0), Gamma(1.0, 1.0)), (0.3, 0.7), Normal(0.0, 1.0))
+end
