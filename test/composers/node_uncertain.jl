@@ -203,7 +203,7 @@ end
     # composite leaf (see-through component fitting, #81), and a plain leaf.
     # Promote must make all three estimable together, descending past the
     # composite without disturbing the branch-probability injection.
-    total = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
+    total = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     tree = compose((
         resolution = resolve(:death => (Gamma(1.5, 1.0), 0.3),
             :disch => (Gamma(2.0, 1.5), 0.7)),

@@ -24,7 +24,7 @@ observed_distribution(seq)
 ```
 
 # See also
-- [`convolve_distributions`](@ref): the chain-step convolution
+- [`convolved`](@ref): the chain-step convolution
 "
 observed_distribution(d::UnivariateDistribution) = d
 
@@ -40,7 +40,7 @@ function observed_distribution(d::Sequential)
         "convolved total; pin the parameters with `update(tree, params)` to " *
         "collapse each uncertain leaf to its concrete template first"))
     return length(leaves) == 1 ? only(leaves) :
-           convolve_distributions(leaves)
+           convolved(leaves)
 end
 
 # A `Parallel` has several independent observed endpoints and so no single
@@ -61,11 +61,10 @@ function observed_distribution(::Choose)
         "`observed_distribution(event(d, :index))`"))
 end
 
-# A `Sequential` chain collapses to its observed convolved total, so
-# `convolve_distributions` accepts the chain directly (the same collapse as
-# `observed_distribution`, extending the ConvolvedDistributions verb to a
-# composed stack).
-function ConvolvedDistributions.convolve_distributions(d::Sequential)
+# A `Sequential` chain collapses to its observed convolved total, so `convolved`
+# accepts the chain directly (the same collapse as `observed_distribution`,
+# extending the ConvolvedDistributions verb to a composed stack).
+function ConvolvedDistributions.convolved(d::Sequential)
     return observed_distribution(d)
 end
 

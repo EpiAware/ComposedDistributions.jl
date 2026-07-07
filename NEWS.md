@@ -1,5 +1,14 @@
 ## Unreleased
 
+- **Breaking (upstream-driven):** following ConvolvedDistributions' rename, the
+  re-exported `convolve_distributions` is split into two verbs —
+  `convolved(dists...; method)` for the distribution form (the sum `X + Y`, a
+  chain's observed total) and `convolve_series(delay, series; interval)` for the
+  timeseries form (convolving a numeric series through a delay). The composed-tree
+  methods follow suit: `convolved(::Sequential)` collapses a chain to its total,
+  and `convolve_series(::Sequential, series; events)` drives the renewal / latent
+  series. No alias is kept (the package is unreleased).
+
 - **Breaking:** `rand` of a standalone `Resolve` or `Compete` node now returns
   the named event record of the outcome that fired — a `NamedTuple` keyed by
   `event_names(node)` (a positional origin slot then one slot per outcome, the
@@ -34,7 +43,7 @@
   `Choose`'s alternative is data-selected, so neither has a node-level free
   parameter (documented, no change).
 
-- `convolve_distributions(chain, series; events)` convolves a timeseries to a
+- `convolve_series(chain, series; events)` convolves a timeseries to a
   named INTERIM event of a `Sequential` chain, not just its endpoint. The
   cumulative delay to an event is the observed collapse of the chain prefix up
   to it, so a single event name returns that event's count series and a tuple or
@@ -76,7 +85,7 @@
   `Compete`, `Choose`), `shared`/`tie`, structural edits
   (`update`/`prune`/`splice`), introspection (`params_table`,
   `build_priors`, `event`/`event_names`/`event_tree`), moments, and the
-  convolution bridge (`observed_distribution`, `convolve_distributions`).
+  convolution bridge (`observed_distribution`, `convolved`).
 - Added `Varying` / `Context` / `instantiate`: leaves whose distribution
   depends on an observed covariate (time, stratum), resolved by
   `instantiate(tree, ctx)`; `has_varying(tree)` guards fitting loops.
@@ -110,7 +119,7 @@
   per-row default.
 
 - Extended the ConvolvedDistributions verbs to composed trees:
-  `convolve_distributions(chain, series)` convolves a timeseries (e.g. expected
+  `convolve_series(chain, series)` convolves a timeseries (e.g. expected
   infections) through a `Sequential` chain's observed total delay (the
   renewal / latent observation layer), and `difference(a, b)` forms the
   difference of two chains' observed totals; a `Parallel` / `Choose` (no single

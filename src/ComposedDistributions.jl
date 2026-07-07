@@ -16,7 +16,7 @@ its concrete template.
 
 Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
 convolved total via [`observed_distribution`](@ref)), so its convolution and
-quadrature surface — [`convolve_distributions`](@ref), `integrate`/`gl_integrate`
+quadrature surface — [`convolved`](@ref), `integrate`/`gl_integrate`
 and the solver-method types — is reachable through this package alone. No
 censoring: this is the generic composition layer.
 
@@ -50,10 +50,11 @@ import Tables
 # The convolution + quadrature substrate. Re-exported below so downstream
 # packages sit on ComposedDistributions alone. Every name is imported explicitly
 # (the exported surface plus the public-but-unexported quadrature helpers).
-using ConvolvedDistributions: ConvolvedDistributions, convolve_distributions,
-                              Difference, difference, AnalyticalSolver,
-                              NumericSolver, gl_integrate, GaussLegendre,
-                              integrate, AbstractSolverMethod, Convolved
+using ConvolvedDistributions: ConvolvedDistributions, convolved,
+                              convolve_series, Difference, difference,
+                              AnalyticalSolver, NumericSolver, gl_integrate,
+                              GaussLegendre, integrate, AbstractSolverMethod,
+                              Convolved
 # AD-safe survival helper. Called by the racing-hazard node and extended for it
 # (the `Compete` methods are defined fully-qualified in hazard_one_of.jl). This
 # is an upstream internal, so it is listed in `ei_ignore` in the QA config.
@@ -128,7 +129,7 @@ export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
 # convolution + quadrature through ComposedDistributions alone.
-export convolve_distributions, Difference, difference,
+export convolved, convolve_series, Difference, difference,
        AnalyticalSolver, NumericSolver, Convolved, AbstractSolverMethod,
        GaussLegendre, integrate, gl_integrate
 

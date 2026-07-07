@@ -4,7 +4,7 @@
 #
 # ComposedDistributions re-exports the ConvolvedDistributions verbs so a composed
 # tree feeds the convolution layer without the caller collapsing it by hand:
-#   - `convolve_distributions(chain, series)`: the timeseries (renewal / latent)
+#   - `convolve_series(chain, series)`: the timeseries (renewal / latent)
 #     convolution driven by a composed chain's observed total delay;
 #   - `difference(chain, other)`: the difference of two observed totals;
 #   - a `Convolved` / `Difference` node as a see-through composite leaf inside a
@@ -19,7 +19,7 @@
 
 Convolve a timeseries through a composed chain's observed delay.
 
-`convolve_distributions(chain, series)`, where `series` is a numeric timeseries
+`convolve_series(chain, series)`, where `series` is a numeric timeseries
 vector, collapses the [`Sequential`](@ref) chain to its observed total delay
 ([`observed_distribution`](@ref), the convolution of the chain steps) and returns
 the causal discrete convolution of `series` with that delay's discretised PMF,
@@ -29,7 +29,7 @@ event counts at the same times — the EpiNow2-style latent / renewal observatio
 layer, driven by a composed delay rather than a bare distribution.
 
 The result is identical to
-`convolve_distributions(observed_distribution(chain), series)`: the chain is
+`convolve_series(observed_distribution(chain), series)`: the chain is
 collapsed to its convolved total and then the univariate timeseries method runs.
 
 Pass `events` to convolve the series to a chosen INTERIM event of the chain
@@ -60,12 +60,12 @@ using ComposedDistributions, Distributions
 
 chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
 infections = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
-expected_counts = convolve_distributions(chain, infections)
+expected_counts = convolve_series(chain, infections)
 
 # The count series at named interim events (here the prefix to each event).
 onset_to = sequential(:onset_admit => Gamma(2.0, 1.0),
     :admit_death => LogNormal(0.5, 0.4))
-by_event = convolve_distributions(onset_to, infections;
+by_event = convolve_series(onset_to, infections;
     events = (:admit, :death))
 ```
 
@@ -74,10 +74,10 @@ by_event = convolve_distributions(onset_to, infections;
 - [`event_names`](@ref): the chain's event names, the valid `events` selectors.
 - [`difference`](@ref): the difference of two observed totals.
 "
-function ConvolvedDistributions.convolve_distributions(
+function ConvolvedDistributions.convolve_series(
         d::Sequential, series::AbstractVector{<:Real};
         interval = 1, events = nothing)
-    events === nothing && return convolve_distributions(
+    events === nothing && return convolve_series(
         observed_distribution(d), series; interval = interval)
     return _convolve_chain_events(d, series, events, interval)
 end
@@ -86,28 +86,28 @@ end
 # to convolve a series through; direct the caller to its branches. The `events`
 # kwarg is accepted (and ignored) so passing it still lands on this informative
 # error rather than a bare `MethodError`.
-function ConvolvedDistributions.convolve_distributions(
+function ConvolvedDistributions.convolve_series(
         ::Parallel, ::AbstractVector{<:Real}; interval = 1, events = nothing)
     throw(ArgumentError(
         "cannot convolve a timeseries through a Parallel: it has several " *
         "independent observed endpoints and no single observed delay; " *
         "convolve each branch's chain separately, e.g. " *
-        "`convolve_distributions(event(d, name), series)`"))
+        "`convolve_series(event(d, name), series)`"))
 end
 
 # A `Choose`'s observed delay depends on the data-selected alternative, so there
 # is no single delay to convolve through; select an alternative first.
-function ConvolvedDistributions.convolve_distributions(
+function ConvolvedDistributions.convolve_series(
         ::Choose, ::AbstractVector{<:Real}; interval = 1, events = nothing)
     throw(ArgumentError(
         "cannot convolve a timeseries through a Choose: its active " *
         "alternative is data-selected; convolve the chosen alternative, " *
-        "e.g. `convolve_distributions(event(d, :index), series)`"))
+        "e.g. `convolve_series(event(d, :index), series)`"))
 end
 
 # --- events-selected per-event convolution over a chain ----------------------
 #
-# `convolve_distributions(chain, series; events)` convolves the series to a named
+# `convolve_series(chain, series; events)` convolves the series to a named
 # interim event of the chain: the cumulative delay to that event is the observed
 # collapse of the chain PREFIX up to it (`_event_prefix_delay`), then the reused
 # univariate series-through-a-delay method runs. A single name returns the series;
@@ -120,7 +120,7 @@ end
 function _convolve_chain_events(
         d::Sequential, series::AbstractVector{<:Real}, name::Symbol, interval)
     delay = _event_prefix_delay(d, name)
-    return convolve_distributions(delay, series; interval = interval)
+    return convolve_series(delay, series; interval = interval)
 end
 
 # Several event names: a `NamedTuple` of the per-event series, keyed by the names.
@@ -128,7 +128,7 @@ function _convolve_chain_events(
         d::Sequential, series::AbstractVector{<:Real}, names, interval)
     syms = Tuple(names)
     all(n -> n isa Symbol, syms) || throw(ArgumentError(
-        "convolve_distributions(..., events = ...): `events` must be an event " *
+        "convolve_series(..., events = ...): `events` must be an event " *
         "name or a tuple/vector of event names (Symbols); got $(typeof(names))"))
     series_by_event = map(
         n -> _convolve_chain_events(d, series, n, interval), syms)
@@ -149,18 +149,18 @@ function _event_prefix_delay(d::Sequential, name::Symbol)
     leaves = _observed_leaves(d.components)
     enames = event_names(d)
     length(enames) == length(leaves) + 1 || throw(ArgumentError(
-        "convolve_distributions(..., events = $(repr(name))) needs a plain " *
+        "convolve_series(..., events = $(repr(name))) needs a plain " *
         "continuous chain (every step a delay leaf, no branching); this " *
         "chain's events $(collect(enames)) do not line up one-to-one with " *
         "its delay steps"))
     idx = findfirst(==(name), enames)
     (idx === nothing || idx == 1) && throw(ArgumentError(
-        "convolve_distributions(..., events = $(repr(name))): $(repr(name)) " *
+        "convolve_series(..., events = $(repr(name))): $(repr(name)) " *
         "is not a reachable interim event of this chain; valid events are " *
         "$(collect(enames[2:end])) (the origin $(repr(enames[1])) has no " *
         "elapsed delay to convolve)"))
     prefix = leaves[1:(idx - 1)]
-    return length(prefix) == 1 ? only(prefix) : convolve_distributions(prefix)
+    return length(prefix) == 1 ? only(prefix) : convolved(prefix)
 end
 
 # --- difference of two observed totals ---------------------------------------

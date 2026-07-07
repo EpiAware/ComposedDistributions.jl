@@ -42,7 +42,7 @@ The package has four layers, each building on the one before.
 
 - **Leaves** are any Distributions.jl `UnivariateDistribution`, used directly as the per-event delays.
 - **Composers** wire named leaves into an event tree.
-- **Combination and lowering** join or collapse whole delays with [`convolve_distributions`](@ref), [`difference`](@ref) and [`observed_distribution`](@ref).
+- **Combination and lowering** join or collapse whole delays with [`convolved`](@ref), [`difference`](@ref) and [`observed_distribution`](@ref).
 - **Parameters and edits** read and reshape an assembled tree with [`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref) and [`splice`](@ref).
 
 The [Concepts](@ref concepts) page maps each modelling concept to the verb that builds it.
@@ -103,7 +103,7 @@ observed case.
 - **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.
 - **One structure, many front-ends.** [`compose`](@ref) lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same composer stack.
 - **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree.
-- **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolve_distributions`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
+- **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolved`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
 - **Automatic differentiation.** Scoring is differentiable through ForwardDiff, ReverseDiff, Mooncake and Enzyme, so a composed distribution drops into a probabilistic-programming fit.
 
 ## Learning more
