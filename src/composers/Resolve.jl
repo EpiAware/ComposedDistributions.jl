@@ -148,6 +148,8 @@ struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple} <: AbstractOneOf
                 "Resolve names, delays and branch_probs must have equal " *
                 "length; got $(length(names)), $(length(delays)), " *
                 "$(length(branch_probs))"))
+        allunique(names) ||
+            throw(ArgumentError("Resolve outcome names must be unique"))
         _validate_branch_prob_bounds(branch_probs)
         return new{C, D, P}(names, delays, branch_probs)
     end
