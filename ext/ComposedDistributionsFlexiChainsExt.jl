@@ -10,9 +10,11 @@ module ComposedDistributionsFlexiChainsExt
 
 using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                              Resolve, Compete, Choose, component_names,
-                             _shared_tag, _leaf_param_names, _collect_shared
+                             _shared_tag, _leaf_param_names, _collect_shared,
+                             _uncertain_specs, free_leaf
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
+using Distributions: params
 using DynamicPPL: VarName
 using FlexiChains: FlexiChains
 using Statistics: mean
@@ -130,9 +132,12 @@ function _node_params(d::Choose, lookup, prefix, path)
 end
 
 # Leaf: read each free parameter (in `_leaf_param_names` order) from `lookup`.
-# A leaf parameter is always sampled, so a missing one signals a chain that
-# does not match the template (wrong prefix, or not the chain that produced
-# it); error rather than build a NamedTuple with a `nothing` value.
+# Under uncertain-first the chain contains exactly the ESTIMATED (spec'd)
+# parameters, so a parameter present in the chain is read from it, and an absent
+# FIXED parameter falls back to the template's value (it was never sampled). A
+# spec'd parameter missing from the chain signals a chain that does not match
+# the template (wrong prefix, or not the chain that produced it), so that errors
+# rather than silently substituting the template.
 #
 # A shared-tagged leaf (`shared(:tag, ...)`) is deduped in the chain: it is
 # sampled once under its tag (`<prefix>.<tag>.<param>`), not per occurrence,
@@ -144,12 +149,19 @@ function _node_params(leaf, lookup, prefix, path)
     tag = _shared_tag(leaf)
     keypath = tag === nothing ? path : (tag,)
     pnames = _leaf_param_names(leaf)
-    vals = map(pnames) do p
+    specs = _uncertain_specs(leaf)
+    tvals = params(free_leaf(leaf))
+    vals = ntuple(length(pnames)) do i
+        p = pnames[i]
         key = _dotted(prefix, (keypath..., p))
         v = _read_value(lookup, key)
-        v === nothing && throw(ArgumentError(
-            "leaf parameter $key not found in chain"))
-        v
+        if v !== nothing
+            v
+        elseif specs !== nothing && haskey(specs, p)
+            throw(ArgumentError("leaf parameter $key not found in chain"))
+        else
+            tvals[i]
+        end
     end
     return NamedTuple{pnames}(Tuple(vals))
 end
