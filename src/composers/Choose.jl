@@ -12,13 +12,17 @@ probabilistic mixture) expresses: the alternatives are genuinely independent
 sub-models with different origins, and the data says which one generated the
 record.
 
-Scoring, sampling, and model dispatch all route to the SELECTED alternative.
-`logpdf(d, x; kind)` and `rand(d; kind)` take the chosen name as the `kind`
-keyword; there is no default, so the caller MUST supply one (a `Choose` has no
-single distribution to score or sample without a selection). The selection walk
-is type-stable: the selected alternative is found by a hand-rolled recursion
-over the name tuple that barriers into the chosen alternative's concrete type,
-so inference of the hot-path `logpdf` is preserved.
+Scoring and model dispatch route to the SELECTED alternative: `logpdf(d, x; kind)`
+takes the chosen name as the `kind` keyword (no default — a `Choose` has no
+single distribution to score without a selection). Sampling has two forms:
+`rand(d; kind)` draws the named alternative directly, while a bare `rand(d)` (no
+`kind`, the forward-simulation path) samples an alternative uniformly and
+returns a self-describing record tagging which was drawn (the `selector` field
+set to its name plus the alternative's own draw), so `logpdf(d, rand(d))`
+round-trips with no `kind` argument. The selection walk is type-stable: the
+selected alternative is found by a hand-rolled recursion over the name tuple
+that barriers into the chosen alternative's concrete type, so inference of the
+hot-path `logpdf` is preserved.
 
 An alternative may itself be any distribution or a nested composer
 ([`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref), or another
@@ -202,6 +206,56 @@ end
 
 @doc "
 
+Score a self-describing [`Choose`](@ref) record (the shape a bare `rand(d)`
+returns).
+
+A bare `rand(d)` draw is a `NamedTuple` whose `selector` field names the drawn
+alternative and whose remaining fields are that alternative's labelled draw, so
+`logpdf(d, rand(d))` round-trips with no `kind` argument: the selector field is
+read to pick the alternative, then the rest of the record is scored under that
+alternative's own `logpdf`. A leaf alternative's value rides in the `:value`
+field; a composer alternative is scored on its own labelled record fields. A
+column table of such records is summed per row.
+
+See also: [`Choose`](@ref), [`rand`](@ref)
+"
+function logpdf(d::Choose, x::NamedTuple)
+    # A column table (a `NamedTuple` of vectors) is a multi-record source: sum
+    # the per-record scorer over its rows. A single tagged record scores below.
+    Tables.istable(x) &&
+        return sum(logpdf(d, r) for r in Tables.namedtupleiterator(x))
+    haskey(x, d.selector) || throw(ArgumentError(
+        "logpdf(::Choose, record) needs the selector field $(repr(d.selector)) " *
+        "to name the drawn alternative; pass `kind` for a bare value instead"))
+    kind = x[d.selector]
+    kind isa Symbol || throw(ArgumentError(
+        "the Choose selector field $(repr(d.selector)) must hold a Symbol " *
+        "naming the alternative; got $(typeof(kind))"))
+    inner = _drop_named_field(x, d.selector)
+    return _choose_record_logpdf(_pick(d, kind), inner)
+end
+
+# Score the chosen alternative on its slice of the record (the selector field
+# dropped), through the alternative's own `logpdf` so the same shape its `rand`
+# produced round-trips: a leaf alternative scores its single `:value` field; a
+# composer alternative scores its labelled record.
+function _choose_record_logpdf(d::UnivariateDistribution, inner::NamedTuple)
+    haskey(inner, :value) || throw(ArgumentError(
+        "a leaf Choose alternative record needs a `value` field; got fields " *
+        "$(collect(keys(inner)))"))
+    return logpdf(d, inner.value)
+end
+_choose_record_logpdf(d, inner::NamedTuple) = logpdf(d, inner)
+
+# Drop a single named field from a NamedTuple, preserving the order of the
+# rest.
+function _drop_named_field(row::NamedTuple, field::Symbol)
+    ks = filter(!=(field), keys(row))
+    return NamedTuple{ks}(map(k -> row[k], ks))
+end
+
+@doc "
+
 Probability density of the SELECTED alternative at `x`.
 
 See also: [`logpdf`](@ref)
@@ -216,25 +270,53 @@ end
 
 @doc "
 
-Sample the SELECTED alternative.
+Sample a [`Choose`](@ref), returning a self-describing record tagging which
+alternative was drawn.
 
-With a `kind` the draw is that alternative's own `rand` (a full named event
-record if the alternative is a composed tree). WITHOUT a `kind` — the
-forward-simulation path, where no data names the branch — an alternative is
-sampled uniformly and its draw returned, so `rand` produces a full path for a
-`Choose` top with no manual selection.
+Without a `kind` (the forward-simulation path, where no data names the branch)
+an alternative is sampled uniformly and the result is a `NamedTuple` carrying
+the `selector` field set to the drawn alternative's name plus that
+alternative's own draw, so the record identifies which alternative fired and
+feeds straight back into [`logpdf`](@ref) with no extra arguments. A leaf
+alternative's value is labelled `:value`; a composer alternative contributes
+its own flat event-record fields.
 
-See also: [`Choose`](@ref)
+With a `kind` (explicit selection) the draw is that alternative's own `rand`
+returned directly (a scalar for a leaf, a labelled `NamedTuple` for a
+composer), not wrapped in a selector tag: the caller already named the
+alternative, so this is the in-tree / committed-selection path
+(`logpdf(d, draw; kind)` scores it).
+
+See also: [`Choose`](@ref), [`logpdf`](@ref)
 "
 function Base.rand(
         rng::AbstractRNG, d::Choose; kind::Union{Symbol, Nothing} = nothing)
-    chosen = kind === nothing ? d.names[rand(rng, 1:_n_alternatives(d))] : kind
-    return rand(rng, _pick(d, chosen))
+    # Explicit selection: return the chosen alternative's raw draw (the caller
+    # already knows the kind, so no selector tag is added — the committed /
+    # in-tree path).
+    kind === nothing || return rand(rng, _pick(d, kind))
+    # Forward simulation: pick uniformly and return a self-describing record
+    # that tags the drawn alternative (`selector => name`) so
+    # `logpdf(d, rand(d))` recovers the alternative with no extra argument.
+    chosen = d.names[rand(rng, 1:_n_alternatives(d))]
+    return _choose_tagged_record(d, chosen, rand(rng, _pick(d, chosen)))
 end
 
 function Base.rand(d::Choose; kind::Union{Symbol, Nothing} = nothing)
     rand(default_rng(), d; kind = kind)
 end
+
+# Build the self-describing record of a bare `Choose` draw: the `selector`
+# field set to the drawn alternative's `name`, merged with that alternative's
+# labelled draw. A leaf alternative's scalar draw is labelled `:value`
+# (matching the univariate-leaf record key the vectorised path uses); a
+# composer alternative already returns a labelled `NamedTuple` that merges in
+# directly. The selector field comes first so the tag is read off the front.
+function _choose_tagged_record(d::Choose, name::Symbol, draw)
+    return merge(NamedTuple{(d.selector,)}((name,)), _choose_draw_fields(draw))
+end
+_choose_draw_fields(draw::NamedTuple) = draw
+_choose_draw_fields(draw) = (; value = draw)
 
 @doc "
 
