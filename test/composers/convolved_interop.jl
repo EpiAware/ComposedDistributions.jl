@@ -1,7 +1,8 @@
 # Interop matrix: ConvolvedDistributions verbs driven by composed trees, and
 # `Convolved` / `Difference` nodes used as leaves inside composed trees. Each
-# testitem is one matrix cell (works / errors informatively / fixed structure).
-# Censoring-free: this package composes any `UnivariateDistribution`.
+# testitem is one matrix cell (works / errors informatively / see-through
+# component fitting). Censoring-free: this package composes any
+# `UnivariateDistribution`.
 
 @testitem "convolve_distributions(chain, series): vector convolution" begin
     using Distributions
@@ -367,4 +368,115 @@ end
     # scores (the Convolved leaf sits happily inside the new shape).
     spliced = splice(seq, :total; after = :extra => Gamma(1.0, 1.0))
     @test logpdf(spliced, rand(spliced)) isa Real
+end
+
+@testitem "Convolved leaf under the codec: fixed components add no estimated dim" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension, flatten, unflatten,
+                                 as_logdensity, logdensity
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    u = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2))
+    seq = sequential(:total => conv, :report => u)
+
+    # The Convolved leaf's components ARE inventoried (see-through), but none is
+    # spec'd, so they add no ESTIMATED dimension: the estimation boundary is
+    # exactly the uncertain leaf's one spec'd parameter (`report.mu`).
+    @test flat_dimension(seq) == 1
+
+    nt = unflatten(seq, [0.9])
+    @test nt.report.mu == 0.9 && nt.report.sigma == 0.4
+    # The fixed component parameters ride the full NamedTuple at their template
+    # values (see-through), unlike the old fixed-composite contract where the
+    # composite had no key at all. (Read by field, not by NamedTuple equality:
+    # `unflatten` assembles the nested tuple key order from a Dict.)
+    @test nt.total.component_1.shape == 2.0 && nt.total.component_1.scale == 1.0
+    @test nt.total.component_2.shape == 1.0 && nt.total.component_2.scale == 1.0
+    @test flatten(seq, nt) == [0.9]
+    @test flatten(seq, unflatten(seq, [1.3])) == [1.3]
+
+    # `update` rebuilds the component-identical composite (a fresh object, so
+    # `==` not `===`) and collapses the uncertain leaf at the draw.
+    collapsed = update(seq, nt)
+    @test event(collapsed, :total) == conv
+    @test !has_uncertain(collapsed)
+
+    data = [[2.3, 0.9], [1.8, 1.1]]
+    prob = as_logdensity(seq, data)
+    expected = logpdf(Normal(0.5, 0.2), 0.9) +
+               sum(record -> logpdf(collapsed, record), data)
+    @test logdensity(prob, [0.9]) ≈ expected
+end
+
+@testitem "uncertain(...) wrapping a Convolved/Difference template errors informatively" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    # A Convolved's `params` are its components' own parameter tuples (a
+    # nested, non-scalar structure), not the flat scalar list `uncertain`
+    # attaches priors to. Wrapping one is refused eagerly at construction
+    # (not deep inside a later `rand`, where it would otherwise surface as a
+    # confusing low-level `MethodError` from rebuilding the leaf).
+    @test_throws ArgumentError uncertain(conv; param_1 = Normal(0.0, 1.0))
+
+    diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
+    @test_throws ArgumentError uncertain(diff; param_1 = Normal(0.0, 1.0))
+end
+
+@testitem "Varying leaf mapping to Convolved distributions: instantiate then fixed" begin
+    using Distributions
+
+    conv_early = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv_late = convolve_distributions(Gamma(3.0, 1.0), Gamma(2.0, 1.0))
+    v = varying(t -> t < 5 ? conv_early : conv_late;
+        covariate = :time, reference = conv_early)
+    seq = sequential(:total => v, :report => LogNormal(0.5, 0.4))
+
+    @test has_varying(seq)
+    resolved = instantiate(seq, Context(time = 10.0))
+    @test !has_varying(resolved)
+    @test event(resolved, :total) == conv_late
+
+    # Resolved, the Convolved leaf is seen through like a plain Convolved leaf:
+    # its two components' four scalar params are inventoried (four rows) plus the
+    # LogNormal's two, and none is spec'd, so the estimated dimension is zero.
+    tbl = params_table(resolved)
+    @test length(collect(ComposedDistributions.Tables.rows(tbl))) == 6
+    @test ComposedDistributions.flat_dimension(resolved) == 0
+    x = [2.3, 0.9]
+    @test logpdf(resolved, x) ≈
+          logpdf(conv_late, 2.3) + logpdf(LogNormal(0.5, 0.4), 0.9)
+end
+
+@testitem "update at a composite leaf's own level errors informatively" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
+
+    # Under see-through, a value aimed at the composite's OWN level (no
+    # `component_i` segment) does not silently vanish: it hits the shared
+    # unexpected-key check and errors, listing the component keys. This holds
+    # for a distribution (a mis-aimed bid to make it uncertain) ...
+    err = try
+        update(seq, (total = (shape = Normal(1.0, 2.0),),
+            report = (mu = 0.1, sigma = 0.2)))
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("component_1", err.msg) && occursin("component_2", err.msg)
+
+    # ... and for a `Real` re-pin (no no-op survives: a Real at a valid
+    # component path pins that component, see the round-trip testitem, but a
+    # Real at the composite level with no component segment errors just the same).
+    @test_throws ArgumentError update(seq,
+        (total = (shape = 9.0,), report = (mu = 0.1, sigma = 0.2)))
+
+    # Same contract for a Difference composite.
+    diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
+    par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
+    @test_throws ArgumentError update(par,
+        (gap = (shape = Normal(1.0, 2.0),), other = (mu = 0.1, sigma = 0.2)))
 end

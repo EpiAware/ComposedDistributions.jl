@@ -259,7 +259,10 @@ end
 # NamedTuple is keyed by `component_i`, one entry per component, each recursing
 # through the leaf update (strict replace or merge-mode uncertainty). Mirrors the
 # `Sequential`/`Parallel` recursion but rebuilds a `Convolved`/`Difference`,
-# keeping the composite an atomic (single-slot) leaf everywhere else.
+# keeping the composite an atomic (single-slot) leaf everywhere else. A value
+# aimed at the composite's own level (no `component_i` segment, whether a `Real`
+# or a distribution) hits the shared unexpected-key check and errors informatively
+# listing the component keys, rather than vanishing as a silent no-op.
 function _update(d::Union{Convolved, Difference}, params::NamedTuple, shared,
         merge::Bool)
     comps = _composite_components(d)

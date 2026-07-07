@@ -93,6 +93,15 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
         isempty(specs) && throw(ArgumentError(
             "Uncertain needs at least one distribution-valued parameter; " *
             "use the plain distribution for a fully fixed leaf"))
+        tvals = params(free_leaf(template))
+        all(v -> v isa Real, tvals) || throw(ArgumentError(
+            "the template of an Uncertain must have scalar parameters; " *
+            "$(template) has composite (non-scalar) parameters $(tvals) " *
+            "(e.g. a Convolved/Difference leaf, whose parameters are its " *
+            "components' own parameter tuples); make an individual COMPONENT " *
+            "uncertain instead — build the composite from uncertain components, " *
+            "or target one via `update(tree, (leaf = (component_1 = " *
+            "(param = prior,),),))`"))
         pnames = _leaf_param_names(template)
         for (k, v) in pairs(specs)
             k in pnames || throw(ArgumentError(
@@ -145,6 +154,14 @@ explicit override.
     moments `mean`/`var`/`std` — silently reports the template's central
     values, not the marginal. Guard a scoring/fitting loop with
     [`has_uncertain`](@ref) before assuming a tree is fully concrete.
+
+A `template` whose parameters are themselves composite (e.g. a `Convolved`/
+`Difference` node from the ConvolvedDistributions interop, whose parameters
+are its components' own parameter tuples rather than scalars) is refused with
+an informative `ArgumentError`: attach uncertainty to an individual COMPONENT
+instead, either by building the composite from uncertain components or by
+targeting one through [`update`](@ref) at its `component_i` path (that interop
+sees through a composite leaf to its component parameters).
 
 # Arguments
 - `template`: the concrete (possibly wrapped) leaf distribution, or a
