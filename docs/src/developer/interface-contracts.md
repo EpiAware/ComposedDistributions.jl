@@ -116,6 +116,7 @@ A composed tree exposes its structure through name introspection, and every buil
 
 ```julia
 using ComposedDistributions, Distributions
+import ComposedDistributions: component_names
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))

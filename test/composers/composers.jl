@@ -103,11 +103,73 @@ end
     @test var(c) >= 0
 end
 
+@testitem "Compete: support floor is the earliest cause (staggered floors)" begin
+    using Distributions, Random
+
+    # `:early` can win from t=0; `:late` only starts racing from t=1. The
+    # marginal floor (soonest ANY cause can fire) is the EARLIEST cause floor
+    # (0.0), not the latest (1.0).
+    c = compete(:early => Gamma(2.0, 1.0),
+        :late => truncated(Gamma(2.0, 1.0); lower = 1.0))
+    @test minimum(c) == 0.0
+    t = 0.5
+    @test insupport(c, t)
+    @test pdf(c, t) > 0
+    # The derived winning split must match the Monte-Carlo winning
+    # frequencies from `rand_outcome` (an inverted floor biases the
+    # quadrature lower bound used by `probs`, dropping the mass where
+    # `:early` wins before `:late`'s clock even starts).
+    rng = MersenneTwister(1)
+    wins = zeros(Int, 2)
+    n = 20000
+    for _ in 1:n
+        name, _ = ComposedDistributions.rand_outcome(rng, c)
+        wins[name == :early ? 1 : 2] += 1
+    end
+    wp = probs(c)
+    @test wins[1] / n ≈ wp.early atol = 0.02
+    @test wins[2] / n ≈ wp.late atol = 0.02
+end
+
 @testitem "Compete rejects a NoEvent branch" begin
     using Distributions
 
     @test_throws ArgumentError compete(:a => Gamma(2.0, 3.0),
         :none => NoEvent())
+end
+
+@testitem "Composers reject duplicate child/branch names" begin
+    using Distributions
+
+    # Mirrors Choose's existing "alternative names must be unique" guard:
+    # every composer must reject a repeated name, since the whole
+    # name-keyed API (event, update, prune, splice, params_table, shared)
+    # can only ever reach the first branch with a duplicate name.
+    @test_throws ArgumentError sequential(
+        :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
+    @test_throws ArgumentError Sequential(
+        (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
+    @test_throws ArgumentError parallel(
+        :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
+    @test_throws ArgumentError Parallel(
+        (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
+    @test_throws ArgumentError resolve(
+        :a => (Gamma(1.0, 1.0), 0.5), :a => Gamma(2.0, 1.0))
+    @test_throws ArgumentError Resolve(
+        (:a, :a), (Gamma(1.0, 1.0), Gamma(2.0, 1.0)), (0.5, 0.5))
+    @test_throws ArgumentError compete(
+        :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
+    @test_throws ArgumentError Compete(
+        (:a, :a), (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)))
+end
+
+@testitem "Zero-arg Sequential()/Parallel() give a friendly ArgumentError" begin
+    using Distributions
+
+    # sequential()/parallel() already guard the zero-child case; the bare
+    # struct constructors should too, rather than a bare MethodError.
+    @test_throws ArgumentError Sequential()
+    @test_throws ArgumentError Parallel()
 end
 
 @testitem "compose: NamedTuple, table and matrix build equal stacks" begin
@@ -188,6 +250,30 @@ end
     @test event_tree(nested).admit_path isa NamedTuple
     @test event(nested, :admit_path, :admit_death) == LogNormal(0.5, 0.4)
     @test event(nested, Symbol("admit_path.admit_death")) == LogNormal(0.5, 0.4)
+end
+
+@testitem "event: descriptive ArgumentError for an unknown child name" begin
+    using Distributions
+
+    nested = compose((
+        admit_path = compose((onset_admit = Gamma(2.0, 1.0),
+            admit_death = LogNormal(0.5, 0.4))),
+        onset_recover = Gamma(3.0, 1.0)))
+    # Mirrors update/prune/splice's "no child named ...; have [...]" style
+    # rather than a bare KeyError.
+    err = try
+        event(nested, :admit_path, :nonexistent)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin(":nonexistent", err.msg)
+    @test occursin(":onset_admit", err.msg)
+    @test occursin(":admit_death", err.msg)
+    @test_throws ArgumentError event(nested, :nope)
+    d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+    @test_throws ArgumentError event(d, :nope)
 end
 
 @testitem "build_priors and default_prior" begin

@@ -47,3 +47,8 @@ tune.json
 .vscode/
 worktree-*
 # managed:end
+
+# Package-specific: local git worktrees (`git worktree add worktrees/<name>`)
+# used for scratch reviews/branches. Untracked worktrees under this dir have
+# previously polluted test/tool file discovery.
+worktrees/
