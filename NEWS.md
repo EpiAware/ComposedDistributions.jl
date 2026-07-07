@@ -9,9 +9,10 @@
   and `convolve_series(::Sequential, series; events)` drives the renewal / latent
   series. No alias is kept (the package is unreleased).
 
-- `resolve`, `compete` and `choose` now accept a positional `NamedTuple`
-  spelling (`resolve((death = (Gamma(1.5, 1.0), 0.3), disch = Gamma(2.0, 1.5)))`)
-  as the equivalent of the `name => value` Pairs, for hand-written outcomes;
+- `sequential`, `parallel`, `resolve`, `compete` and `choose` now accept a
+  positional `NamedTuple` spelling
+  (`resolve((death = (Gamma(1.5, 1.0), 0.3), disch = Gamma(2.0, 1.5)))`) as the
+  equivalent of the `name => value` Pairs, for hand-written children;
   `choose`'s `selector` stays a keyword. The one_of constructors also build their
   outcome tuples with `map` rather than a generator comprehension, so
   constructing a `Resolve` / `Compete` inside a differentiated function is

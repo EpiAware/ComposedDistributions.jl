@@ -105,7 +105,9 @@ bare struct constructor.
 
 # Arguments
 - `steps`: the step distributions, either as positional distributions or as
-  `name => dist` pairs naming each step.
+  `name => dist` pairs naming each step. A single named tuple `(name = dist, …)`
+  is the equivalent positional spelling for hand-written steps; use Pairs for
+  data-driven or computed names.
 
 # Examples
 ```@example
@@ -113,6 +115,15 @@ using ComposedDistributions, Distributions
 
 d = sequential(:onset_admit => Gamma(2.0, 1.0),
     :admit_death => LogNormal(0.5, 0.4))
+event_names(d)
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+# The equivalent named tuple spelling.
+d = sequential((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
 event_names(d)
 ```
 
@@ -134,11 +145,15 @@ end
 sequential(s1, ss...) = Sequential((s1, ss...))
 sequential(steps::AbstractVector) = Sequential(Tuple(steps))
 
+# Positional NamedTuple spelling: `(a = d1, …)` lowers to `:a => d1, …` Pairs.
+sequential(steps::NamedTuple) = sequential(_nt_pairs(steps)...)
+
 # Lower a positional NamedTuple to the `name => value` Pairs the verb
 # constructors take, so a verb accepts both spellings from one Pairs path. The
 # NamedTuple is ordered, so the lowered Pairs keep field order; it is positional
 # (not kwargs), so it never clashes with a config keyword such as `choose`'s
-# `selector`. Shared by `resolve` / `compete` / `choose`.
+# `selector`. Shared by `sequential` / `parallel` / `resolve` / `compete` /
+# `choose`.
 _nt_pairs(nt::NamedTuple) = map(=>, keys(nt), values(nt))
 
 # Total number of leaf values in a realisation (sum over nested children).

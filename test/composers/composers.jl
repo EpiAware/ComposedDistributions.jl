@@ -158,6 +158,13 @@ end
         selector = :kind) ==
           choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(4.0, 1.5);
         selector = :kind)
+    # The multi-child composers accept the same spelling.
+    @test sequential((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4))) ==
+          sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4))
+    @test parallel((admit = Gamma(2.0, 1.0), notif = LogNormal(1.0, 0.5))) ==
+          parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
 end
 
 @testitem "Composers reject duplicate child/branch names" begin
