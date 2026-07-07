@@ -108,8 +108,10 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
             "the template of an Uncertain must have scalar parameters; " *
             "$(template) has composite (non-scalar) parameters $(tvals) " *
             "(e.g. a Convolved/Difference leaf, whose parameters are its " *
-            "components' own parameter tuples); compose the components as " *
-            "explicit chain steps and attach uncertainty to each instead"))
+            "components' own parameter tuples); make an individual COMPONENT " *
+            "uncertain instead — build the composite from uncertain components, " *
+            "or target one via `update(tree, (leaf = (component_1 = " *
+            "(param = prior,),),))`"))
         pnames = _leaf_param_names(template)
         for (k, v) in pairs(specs)
             k in pnames || throw(ArgumentError(
@@ -166,8 +168,10 @@ explicit override.
 A `template` whose parameters are themselves composite (e.g. a `Convolved`/
 `Difference` node from the ConvolvedDistributions interop, whose parameters
 are its components' own parameter tuples rather than scalars) is refused with
-an informative `ArgumentError`: compose the components as explicit chain
-steps instead, and attach uncertainty to each one.
+an informative `ArgumentError`: attach uncertainty to an individual COMPONENT
+instead, either by building the composite from uncertain components or by
+targeting one through [`update`](@ref) at its `component_i` path (that interop
+sees through a composite leaf to its component parameters).
 
 # Arguments
 - `template`: the concrete (possibly wrapped) leaf distribution, or a
