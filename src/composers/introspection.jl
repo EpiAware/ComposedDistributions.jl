@@ -620,7 +620,23 @@ end
 
 @doc "
 
-Update a composed distribution's free parameters from a nested `NamedTuple`.
+Update a composed distribution's parameters, replace named nodes, or read
+parameters from a fitted chain — the single verb for every shape-preserving
+edit, dispatching on the second argument.
+
+- a nested `NamedTuple` of parameter values/specs (below): fixes or re-specs
+  free parameters, the fine-grained value edit;
+- one or more `path => new_node` pairs ([`update`](@ref)`(d, edits::Pair...)`
+  in `intervene.jl`): replaces whole nodes, coarser than a value edit but
+  still SAME-shape;
+- a fitted `DynamicPPL`/`FlexiChains` chain (extension-only, in
+  `ComposedDistributionsFlexiChainsExt`): reads posterior parameter values
+  straight into the template.
+
+For topology edits that change the tree SHAPE, use [`prune`](@ref) or
+[`splice`](@ref) instead.
+
+# `update(d, params::NamedTuple)` — set free parameters
 
 `update(d, params)` returns a new distribution of the SAME structure as `d` with
 its parameters set from `params`, a nested NamedTuple mirroring the tree: a
@@ -660,15 +676,15 @@ attaches a flat `Dirichlet(ones(K))` per `Resolve`.
 Pair with [`chain_to_params`](@ref) to read posterior means or a single draw
 from a fitted chain into the right NamedTuple, so `update(template, means)`
 returns a ready-to-`rand`/inspect distribution — or call
-`update(template, chain)` directly once `DynamicPPL` and `FlexiChains` are
-loaded.
+`update(template, chain)` directly (below) once `DynamicPPL` and `FlexiChains`
+are loaded.
 
-# Arguments
+## Arguments
 - `d`: the composed distribution (or bare leaf) to update.
 - `params`: a nested NamedTuple keyed like `d`, each leaf value a `Real` (fix)
   or a `UnivariateDistribution` (make uncertain).
 
-# Examples
+## Examples
 ```@example
 using ComposedDistributions, Distributions
 
@@ -683,13 +699,67 @@ est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
 has_uncertain(est)
 ```
 
+# `update(d, path => new_node, ...)` — replace nodes
+
+`update(d, path => new_node, ...)` returns a new composed distribution of the
+SAME outer structure as `d` with the node addressed by each `path` replaced by
+`new_node`. A `path` is a `Symbol` (a top-level child), a dotted `Symbol`
+(`:admit_path.admit_resolution.death`, as in [`event`](@ref) /
+[`params_table`](@ref)), or a tuple of edge names from the root (e.g.
+`(:admit_path, :admit_resolution, :death)`); the same address [`event`](@ref)
+READS is the one this WRITES. `new_node` may be a leaf distribution or a nested
+composer. This shares the recursive reconstruction with the value-update form
+above, so the result scores and `rand`s. It preserves the tree SHAPE; for shape
+changes use [`prune`](@ref) or [`splice`](@ref).
+
+## Arguments
+- `d`: the composed distribution to edit.
+- `edits`: one or more `path => new_node` pairs.
+
+## Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+tree2 = update(tree, :admit_death => Gamma(3.0, 1.5))
+event(tree2, :admit_death)
+```
+
+# `update(template, chain)` — read from a fitted chain
+
+Available only when both `DynamicPPL` and `FlexiChains` are loaded. Reads
+`chain` (sampled through a `~ to_submodel(...)`-based parameters model) into
+the nested NamedTuple and rebuilds `template` with those values, so the
+workflow is one call instead of `update(template, chain_to_params(template,
+chain))`. By default it reduces each parameter's draws with `mean`; pass any
+`summary` reduction, restrict to a subset of draws with `draws` (a range /
+index vector, or a predicate over the iteration index), or pass `draw=i` for a
+single iteration. The `prefix` keyword names the submodel variable the
+parameters were sampled under (default `:d`).
+
+## Arguments
+- `template`: the composed distribution the chain's parameters were sampled
+  against.
+- `chain`: the fitted `FlexiChains` chain to read parameter values from.
+
+## Keyword Arguments
+- `prefix`: the submodel variable name the parameters were sampled under
+  (default `:d`).
+- `summary`: the reduction `AbstractVector -> scalar` applied to each
+  parameter's draws (default `mean`).
+- `draws`: a subset of iterations to reduce over (a range / index vector, or a
+  predicate over the iteration index); `nothing` uses every draw.
+- `draw`: a single iteration index to read (overrides `summary`/`draws`).
+
 # See also
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
 - [`param_priors`](@ref): default priors for the promote path
 - [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
-- [`update`](@ref)`(d, path => new_node)`: replace whole nodes (same shape)
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
+function update end
+
 function update(d::Union{Sequential, Parallel, AbstractOneOf, Choose},
         params::NamedTuple)
     return _update(d, params, params, _has_distribution_value(params))
