@@ -201,3 +201,116 @@ end
     spliced = splice(seq, :total; after = :extra => Gamma(1.0, 1.0))
     @test logpdf(spliced, rand(spliced)) isa Real
 end
+
+@testitem "Convolved leaf under the codec: flat_dimension / flatten / unflatten / as_logdensity" begin
+    using Distributions
+    using ComposedDistributions: flat_dimension, flatten, unflatten,
+                                 as_logdensity, logdensity
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    u = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2))
+    seq = sequential(:total => conv, :report => u)
+
+    # The Convolved leaf emits no params_table rows at all (fixed structure),
+    # so it is invisible to the codec: the estimation boundary is exactly the
+    # uncertain leaf's one spec'd parameter (`report.mu`).
+    @test flat_dimension(seq) == 1
+
+    nt = unflatten(seq, [0.9])
+    @test nt == (report = (mu = 0.9, sigma = 0.4),)
+    @test flatten(seq, nt) == [0.9]
+    @test flatten(seq, unflatten(seq, [1.3])) == [1.3]
+
+    # `unflatten`'s full NamedTuple has no `total` key at all (the Convolved
+    # leaf has no rows to rebuild one from); `update` still round-trips because
+    # the composite leaf's own `_update` method ignores whatever it is given.
+    collapsed = update(seq, nt)
+    @test event(collapsed, :total) === conv
+
+    data = [[2.3, 0.9], [1.8, 1.1]]
+    prob = as_logdensity(seq, data)
+    expected = logpdf(Normal(0.5, 0.2), 0.9) +
+               sum(record -> logpdf(collapsed, record), data)
+    @test logdensity(prob, [0.9]) ≈ expected
+end
+
+@testitem "uncertain(...) wrapping a Convolved/Difference template errors informatively" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    # A Convolved's `params` are its components' own parameter tuples (a
+    # nested, non-scalar structure), not the flat scalar list `uncertain`
+    # attaches priors to. Wrapping one is refused eagerly at construction
+    # (not deep inside a later `rand`, where it would otherwise surface as a
+    # confusing low-level `MethodError` from rebuilding the leaf).
+    @test_throws ArgumentError uncertain(conv; param_1 = Normal(0.0, 1.0))
+
+    diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
+    @test_throws ArgumentError uncertain(diff; param_1 = Normal(0.0, 1.0))
+end
+
+@testitem "Varying leaf mapping to Convolved distributions: instantiate then fixed" begin
+    using Distributions
+
+    conv_early = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    conv_late = convolve_distributions(Gamma(3.0, 1.0), Gamma(2.0, 1.0))
+    v = varying(t -> t < 5 ? conv_early : conv_late;
+        covariate = :time, reference = conv_early)
+    seq = sequential(:total => v, :report => LogNormal(0.5, 0.4))
+
+    @test has_varying(seq)
+    resolved = instantiate(seq, Context(time = 10.0))
+    @test !has_varying(resolved)
+    @test event(resolved, :total) == conv_late
+
+    # Resolved, the Convolved leaf is fixed structure for the codec exactly as
+    # a plain Convolved leaf is: no rows, zero estimated dimension.
+    tbl = params_table(resolved)
+    @test length(collect(ComposedDistributions.Tables.rows(tbl))) == 2
+    @test ComposedDistributions.flat_dimension(resolved) == 0
+    x = [2.3, 0.9]
+    @test logpdf(resolved, x) ≈
+          logpdf(conv_late, 2.3) + logpdf(LogNormal(0.5, 0.4), 0.9)
+end
+
+@testitem "update with a Real value aimed at a Convolved leaf: no-op, not an error" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
+
+    # A `Real`-valued (re-pinning) update aimed at the Convolved leaf's
+    # parameters is silently ignored, in both strict mode and merge mode
+    # (triggered here by `report`'s distribution-valued update elsewhere in
+    # the tree): the composite leaf has no free-parameter rows to key a
+    # concrete write against.
+    seq2 = update(seq,
+        (total = (param_1 = 9.0,), report = (mu = 0.1, sigma = 0.2)))
+    @test event(seq2, :total) === conv
+    @test event(seq2, :report) == LogNormal(0.1, 0.2)
+
+    seq3 = update(seq,
+        (total = (param_1 = 9.0,), report = (mu = Normal(0.5, 0.1),)))
+    @test event(seq3, :total) === conv
+    @test has_uncertain(seq3)
+end
+
+@testitem "update with a distribution value aimed at a Convolved leaf errors informatively" begin
+    using Distributions
+
+    conv = convolve_distributions(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+    seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
+
+    # A distribution-valued update aimed at the Convolved leaf's parameters is
+    # a bid to make it UNCERTAIN — the same intent `uncertain(...)` on a
+    # Convolved template refuses eagerly — so it errors here too instead of
+    # silently discarding the caller's evident intent.
+    @test_throws ArgumentError update(seq,
+        (total = (param_1 = Normal(1.0, 2.0),),
+            report = (mu = 0.1, sigma = 0.2)))
+
+    diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
+    par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
+    @test_throws ArgumentError update(par,
+        (gap = (param_1 = Normal(1.0, 2.0),), other = (mu = 0.1, sigma = 0.2)))
+end
