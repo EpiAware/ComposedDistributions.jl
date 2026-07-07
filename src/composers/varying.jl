@@ -4,6 +4,23 @@
 # docstrings below. The full design rationale, including how this seam is
 # intended to carry the uncertain-distributions work, is in
 # `design/0001-time-and-covariate-varying-distributions.md`.
+#
+# `Varying` is one of two DEFERRED LEAF types: a leaf that is not yet a concrete
+# distribution but a map to one, delegating silently to a fallback until it is
+# resolved, and guarded by a `has_*` predicate. The two cases differ only in
+# what indexes the map and who fills the slot:
+#
+#   - `Varying` (here) maps an OBSERVED covariate (time, stratum) read from a
+#     `Context`; resolved by `instantiate(tree, ctx)` looking the covariate up.
+#   - `Uncertain` (`Uncertain.jl`) maps a LATENT parameter draw with a prior;
+#     resolved by `rand` (the marginal) or collapsed by `update`.
+#
+# They share ONE resolution machinery: `instantiate` rebuilds through the same
+# `_node_children` / `_rebuild` walk that `update`'s value collapse and
+# `intervene.jl`'s path edits use, rather than hand-rolling its own tree walk.
+# A leaf can be BOTH (a time-varying delay whose per-level parameter is itself
+# `uncertain`): `instantiate` resolves the covariate and yields an `uncertain`
+# leaf the estimation layer then reads as latent.
 
 # --- the per-record / per-step context -------------------------------------
 
@@ -269,16 +286,17 @@ instantiate(d, ::Nothing) = d
 instantiate(d::UnivariateDistribution, ::AbstractContext) = d
 instantiate(d::Varying, ctx::AbstractContext) = d.f(_covariate(ctx, d.covariate))
 
-# Composers rebuild themselves with each child resolved, so the tree shape and
-# names are preserved and only the leaves change. `Resolve` / `Compete` are
-# `UnivariateDistribution`s, so their more specific methods below win over the
-# leaf identity.
-function instantiate(d::Sequential, ctx::AbstractContext)
-    return Sequential(map(c -> instantiate(c, ctx), d.components), d.names)
+# A composer resolves every child against the context and rebuilds itself
+# unchanged, so the tree shape and names are preserved and only the leaves
+# change. This reuses the `_node_children` / `_rebuild` reconstruction machinery
+# that `update`'s value walk and `intervene.jl`'s path edits already share, so
+# resolution is not a third hand-rolled tree walk. `Resolve` / `Compete` are
+# `UnivariateDistribution`s, so these node methods win over the leaf identity.
+function instantiate(d::Union{Sequential, Parallel, Resolve, Compete},
+        ctx::AbstractContext)
+    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
 end
-function instantiate(d::Parallel, ctx::AbstractContext)
-    return Parallel(map(c -> instantiate(c, ctx), d.components), d.names)
-end
+
 # A `Choose` selects an alternative by an OBSERVED data field (its `selector`).
 # That is the categorical instance of covariate indexing, so it joins the same
 # seam: if the context carries the selector covariate, `instantiate` SELECTS that
@@ -290,25 +308,12 @@ function instantiate(d::Choose, ctx::AbstractContext)
     if _has_covariate(ctx, d.selector)
         return instantiate(_pick(d, _covariate(ctx, d.selector)), ctx)
     end
-    return Choose(d.names, map(c -> instantiate(c, ctx), d.alternatives),
-        d.selector)
-end
-function instantiate(c::Resolve, ctx::AbstractContext)
-    delays = map(x -> instantiate(x, ctx), c.delays)
-    return Resolve(c.names, delays, c.branch_probs)
-end
-# NB `instantiate` treats a `Compete` as a container (walks `.delays`), whereas
-# `intervene.jl`'s `_edit_step` currently has no `Compete` method and rejects a
-# path into one (tracked separately). Keep these two hand-rolled tree-walks in
-# sync when the `_edit_step` gap is closed, so a `Compete` node is a container to
-# both.
-function instantiate(c::Compete, ctx::AbstractContext)
-    delays = map(x -> instantiate(x, ctx), c.delays)
-    return Compete(c.names, delays)
+    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
 end
 
 # A tagged shared leaf keeps its tag through resolution (the resolved value is
-# still the same shared parameter group).
+# still the same shared parameter group); it is a wrapper leaf, so it forwards
+# into its wrapped distribution rather than through `_node_children`.
 instantiate(d::Shared, ctx::AbstractContext) = Shared(d.tag, instantiate(d.dist, ctx))
 
 # --- guarding against a forgotten `instantiate` -----------------------------
@@ -348,12 +353,15 @@ has_varying(instantiate(tree, Context(time = 5.0)))  # resolved: false
 # See also
 - [`instantiate`](@ref): resolve every varying leaf against a context.
 - [`Varying`](@ref): the context-indexed leaf.
+- [`has_uncertain`](@ref): the same guard for the latent (uncertain) case.
 "
 has_varying(d::Varying) = true
 has_varying(::UnivariateDistribution) = false
 has_varying(d::Truncated) = has_varying(d.untruncated)
 has_varying(d::Shared) = has_varying(d.dist)
-has_varying(c::AbstractOneOf) = any(has_varying, c.delays)
-has_varying(d::Sequential) = any(has_varying, d.components)
-has_varying(d::Parallel) = any(has_varying, d.components)
-has_varying(d::Choose) = any(has_varying, d.alternatives)
+# The composer nodes recurse through the shared `_node_children` accessor (the
+# one `instantiate` also rebuilds through), so the guard is not a hand-rolled
+# per-node walk; `has_uncertain` mirrors this.
+function has_varying(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
+    return any(has_varying, _node_children(d))
+end
