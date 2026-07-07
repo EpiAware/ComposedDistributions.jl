@@ -269,6 +269,57 @@ _shared_tag(d::Uncertain) = _shared_tag(d.template)
 _uncertain_specs(d::Uncertain) = d.specs
 _uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
 
+# --- merge mode: `update` introduces or extends uncertainty ------------------
+#
+# `_merge_leaf` folds a (possibly partial) NamedTuple of specs/values into a
+# leaf: a distribution value makes that parameter uncertain (a spec), a `Real`
+# value pins it (collapsing any existing spec), and an absent parameter keeps
+# the leaf's current spec or fixed value. This is the object-level spelling of
+# "distribution in the slot = estimate, value = fix": `update` with distribution
+# values is the targeted way to make parameters uncertain, and
+# `update(tree, param_priors(tree))` promotes a whole tree to uncertainty over
+# its free parameters with default priors (the explicit estimate-everything
+# escape hatch). Called from the leaf `_update` in merge mode; the methods live
+# here (not introspection.jl) so they can dispatch on `Shared`/`Uncertain`.
+# Shared stays OUTERMOST so its tag keeps routing; `Uncertain` wraps the
+# concrete (possibly `Truncated`) template so its `ValueSupport` stays concrete
+# (see the parameterisation note above).
+
+# Shared stays outermost: peel the tag, merge the inner leaf, re-apply the tag.
+function _merge_leaf(leaf::Shared, updates::NamedTuple)
+    Shared(leaf.tag, _merge_leaf(leaf.dist, updates))
+end
+
+function _merge_leaf(leaf, updates::NamedTuple)
+    pnames = _leaf_param_names(leaf)
+    _check_merge_keys(updates, pnames, nameof(typeof(leaf)))
+    tvals = params(free_leaf(leaf))
+    existing = _uncertain_specs(leaf)
+    # Re-pin the fixed value at any `Real` update; keep the current value else.
+    new_vals = ntuple(length(pnames)) do i
+        p = pnames[i]
+        (haskey(updates, p) && updates[p] isa Real) ? updates[p] : tvals[i]
+    end
+    new_template = _update_leaf(leaf, new_vals)
+    # The new specs: a distribution update wins, a `Real` drops the spec, else
+    # keep any existing spec.
+    names = Symbol[]
+    vals = Any[]
+    for p in pnames
+        if haskey(updates, p) && updates[p] isa UnivariateDistribution
+            push!(names, p)
+            push!(vals, updates[p])
+        elseif haskey(updates, p) && updates[p] isa Real
+            # pinned: collapses any existing spec, so no entry.
+        elseif existing !== nothing && haskey(existing, p)
+            push!(names, p)
+            push!(vals, existing[p])
+        end
+    end
+    isempty(names) && return new_template
+    return Uncertain(new_template, NamedTuple{Tuple(names)}(Tuple(vals)))
+end
+
 # --- the univariate surface: delegate to the template ------------------------
 #
 # Every ordinary query is answered at the template's (central) parameter values,
