@@ -135,16 +135,29 @@ fitted = update(resolved, (onset_admit = (shape = 2.0, scale = 1.1),
 
 logpdf(fitted, rand(Xoshiro(2), fitted))
 
-# ## Direction of travel
+# ## Uncertain-first estimation
 #
 # The `uncertain` surface is the direct way to say "this parameter is estimated,
 # with this prior": the spec is the prior and the declaration in one, and every
 # parameter without a spec stays fixed.
-# The relationship between this surface and the `params_table` / `build_priors`
-# route is being reworked towards an uncertain-first specification (issue #69), so
-# prefer expressing a model with `uncertain` leaves and treat the flat table as a
-# derived view.
-#
+# The estimation layer keys off exactly these specs.
+# [`flatten`](@ref) / [`unflatten`](@ref) / `flat_dimension` and `as_logdensity`
+# target the spec'd parameters only, so a tree with no uncertain leaves estimates
+# nothing (a pure likelihood at the fixed tree), and the flat table is a derived
+# view.
+
+flat = ComposedDistributions.flat_dimension(resolved)
+(estimated_parameters = flat,)
+
+# [`update`](@ref) is the verb that moves the estimation boundary. A distribution
+# in a parameter slot makes just that parameter uncertain (a partial update);
+# `update(tree, param_priors(tree))` promotes every free parameter to uncertain
+# with support-derived default priors, the explicit estimate-everything path.
+
+promoted = update(resolved, param_priors(resolved))
+(before = ComposedDistributions.flat_dimension(resolved),
+    after = ComposedDistributions.flat_dimension(promoted))
+
 # Partial pooling across strata — estimating region-specific parameters that
 # shrink towards a shared mean, rather than the fully independent (per-stratum) or
 # fully tied ([`shared`](@ref)) extremes shown here — is designed in issue #23 and
