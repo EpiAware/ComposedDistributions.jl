@@ -12,6 +12,17 @@ The design rationale (why non-stationarity lives here and not in the convolution
 layer, and how it relates to the uncertain-distributions work) is written up in
 `design/0001-time-and-covariate-varying-distributions.md`.
 
+!!! note "Two cases of one concept"
+    [`Varying`](@ref) and [`Uncertain`](@ref) are the two *deferred leaves*: a
+    leaf that is not yet a concrete distribution but a map to one. `Varying`
+    maps an **observed** covariate (time, stratum) read from a [`Context`](@ref)
+    and is resolved by [`instantiate`](@ref); [`Uncertain`](@ref) maps a
+    **latent** parameter draw (a value a sampler draws, with a prior) and is
+    resolved by `rand` or collapsed by [`update`](@ref). Both delegate silently
+    to a fallback until resolved and share one resolution walk. Only the index
+    differs — observed vs latent — so a leaf can be *both*, as the
+    latent-parameters section below shows.
+
 ## The three pieces
 
 - [`Varying`](@ref) — a leaf holding a map `covariate ↦ Distribution`, the
@@ -103,12 +114,21 @@ keyed on a parameter name resolves against a context carrying that value, which
 [`with_covariates`](@ref) threads in alongside the observed covariates:
 
 ```@example varying
-uncertain = varying(θ -> Gamma(θ, 1.0); covariate = :inc_shape,
+latent = varying(θ -> Gamma(θ, 1.0); covariate = :inc_shape,
     reference = Gamma(2.0, 1.0))
 
 ctx = with_covariates(Context(time = 4.0); inc_shape = 2.5)  # sampler adds θ
-instantiate(uncertain, ctx)
+instantiate(latent, ctx)
 ```
+
+This is the same generalisation as [`uncertain`](@ref), along a different index.
+A `Varying` leaf keyed on a sampled parameter, resolved once the sampler fills
+the slot, is the bare bridge; [`Uncertain`](@ref) is the richer latent leaf that
+also carries each parameter's **prior** (so [`params_table`](@ref) rides it on
+the `prior` column and the estimation layer reads it), draws the marginal with
+`rand`, and collapses via [`update`](@ref). Both are deferred leaves resolved by
+one machinery; a leaf keyed on an observed covariate whose per-level parameter
+is itself `uncertain` is both cases at once.
 
 ## Feeding a recurrent / renewal operator
 

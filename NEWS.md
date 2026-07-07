@@ -1,3 +1,17 @@
+## Unreleased
+
+- Reconciled the `Varying`/`instantiate` seam with the `Uncertain` machinery
+  (#47): `Varying` and `Uncertain` are now presented as the two cases of one
+  *deferred leaf* concept — a leaf that maps to a distribution and resolves
+  later, `Varying` from an observed covariate (via `instantiate`) and
+  `Uncertain` from a latent parameter draw (via `rand`/`update`). `instantiate`
+  now rebuilds through the shared `_node_children`/`_rebuild` reconstruction
+  machinery that `update` and the structural edits already use, and the
+  `has_varying`/`has_uncertain` guards share one node walk, so resolution is no
+  longer a separate hand-rolled tree traversal. No user-facing API change;
+  `instantiate`, `update`, `has_varying`/`has_uncertain`, and the codec's
+  rejection of an un-`instantiate`d `Varying` leaf are unchanged.
+
 ## 0.1.0 — initial release
 
 - The generic composition algebra ported from CensoredDistributions.jl:
