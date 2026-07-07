@@ -215,30 +215,11 @@ function Base.rand(rng::AbstractRNG, c::Compete)
 end
 Base.rand(c::Compete) = rand(default_rng(), c)
 
-@doc "
-
-Sample a racing-hazard outcome AND its time, returning `(name, time)`: draw a
-latent time per cause and return the `argmin` cause with its `min` time.
-
-This is the generative dual of the [`logpdf`](@ref) (`f_j ∏_{k≠j} S_k`) and of
-the forward `convolve_distributions` stream: the Monte Carlo winning-cause
-frequencies match the derived `Distributions.probs` split and the forward
-per-outcome stream masses.
-
-# Arguments
-- `rng`: random number generator (the no-`rng` method uses the global default).
-- `c`: the [`Compete`](@ref) node to sample a winning cause from.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions, Random
-
-node = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
-name, time = rand_outcome(MersenneTwister(1), node)
-```
-
-See also: [`Compete`](@ref), `Distributions.probs`
-"
+# Racing-hazard form of `rand_outcome`; documented on the umbrella docstring
+# `@doc` on `function rand_outcome end` in `Resolve.jl` (see
+# `rand_outcome(rng, c::Compete)` there) so the bare `[`rand_outcome`](@ref)`
+# used throughout the docs resolves to one binding rather than being split
+# across per-method docstrings.
 function rand_outcome(rng::AbstractRNG, c::Compete)
     n = _n_branches(c)
     best_i = 1

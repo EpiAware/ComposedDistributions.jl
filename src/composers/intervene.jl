@@ -84,41 +84,11 @@ _as_path(p::Tuple) = p
 # boundary, so the type-stable scoring path (the NamedTuple worker `_update`) is
 # untouched by the structural-edit path.
 
-@doc "
-
-Replace named nodes of a composed distribution with new distributions.
-
-`update(d, path => new_node, ...)` returns a new composed distribution of the
-SAME outer structure as `d` with the node addressed by each `path` replaced by
-`new_node`. A `path` is a `Symbol` (a top-level child), a dotted `Symbol`
-(`:admit_path.admit_resolution.death`, as in [`event`](@ref) /
-[`params_table`](@ref)), or a tuple of edge names from the root (e.g.
-`(:admit_path, :admit_resolution, :death)`); the same address [`event`](@ref)
-READS is the one this WRITES. `new_node` may be a leaf distribution or a nested
-composer. This shares the recursive reconstruction with the value-update method
-[`update`](@ref)`(d, params::NamedTuple)`, so the result scores and `rand`s. It
-preserves the tree SHAPE; for shape changes use [`prune`](@ref) or
-[`splice`](@ref).
-
-# Arguments
-- `d`: the composed distribution to edit.
-- `edits`: one or more `path => new_node` pairs.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-tree2 = update(tree, :admit_death => Gamma(3.0, 1.5))
-event(tree2, :admit_death)
-```
-
-# See also
-- [`prune`](@ref): drop a `Resolve` arm or `Choose` alternative (changes shape)
-- [`splice`](@ref): insert a before/after step at a node (changes shape)
-- [`update`](@ref)`(d, params::NamedTuple)`: replace free parameter values
-"
+# Node-replacement form of `update`; documented on the umbrella docstring
+# `@doc` on `function update end` in `introspection.jl` (see
+# `update(d, path => new_node, ...)` there) so the bare `[`update`](@ref)`
+# used throughout the docs resolves to one binding rather than being split
+# across per-method docstrings.
 function update(d::Union{Sequential, Parallel, Resolve, Choose},
         edits::Pair...)
     out = d

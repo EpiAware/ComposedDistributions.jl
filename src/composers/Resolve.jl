@@ -729,19 +729,28 @@ Base.rand(c::Resolve) = rand(default_rng(), c)
 
 @doc "
 
-Sample a one_of outcome AND its time, returning `(name, time)`.
+Sample a composed-distribution outcome AND its time, returning `(name, time)`.
 
-Unlike the univariate [`rand`](@ref) (the marginal time-to-resolution, which
-discards which outcome occurred), this draws the resolved outcome from the branch
-probabilities and the time from that outcome's own delay, so the chosen outcome
-is retained. Used by the full-path tree simulation, where a `Resolve` node
-resolves to a single named outcome.
+`rand_outcome` retains WHICH outcome/cause occurred, unlike the univariate
+[`rand`](@ref) (the marginal time only, which discards which outcome/cause
+won). Dispatches on the composer:
 
-# Arguments
+- a [`Resolve`](@ref) node (below): draws the resolved outcome from the branch
+  probabilities and the time from that outcome's own delay;
+- a [`Compete`](@ref) node (below, in `hazard_one_of.jl`): draws a
+  racing-hazard outcome, a latent time per cause with the `argmin` cause and
+  its `min` time returned.
+
+# `rand_outcome(rng, c::Resolve)`
+
+Used by the full-path tree simulation, where a `Resolve` node resolves to a
+single named outcome, so the chosen outcome is retained rather than discarded.
+
+## Arguments
 - `rng`: random number generator (the no-`rng` method uses the global default).
 - `c`: the [`Resolve`](@ref) node to sample an outcome from.
 
-# Examples
+## Examples
 ```@example
 using ComposedDistributions, Distributions, Random
 
@@ -750,8 +759,32 @@ node = Resolve(:death => (Gamma(1.5, 1.0), 0.3),
 name, time = rand_outcome(MersenneTwister(1), node)
 ```
 
-See also: [`Resolve`](@ref), [`rand`](@ref)
+# `rand_outcome(rng, c::Compete)`
+
+This is the generative dual of the [`logpdf`](@ref) (`f_j ∏_{k≠j} S_k`) and of
+the forward `convolve_distributions` stream: the Monte Carlo winning-cause
+frequencies match the derived `Distributions.probs` split and the forward
+per-outcome stream masses.
+
+## Arguments
+- `rng`: random number generator (the no-`rng` method uses the global default).
+- `c`: the [`Compete`](@ref) node to sample a winning cause from.
+
+## Examples
+```@example
+using ComposedDistributions, Distributions, Random
+
+node = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
+name, time = rand_outcome(MersenneTwister(1), node)
+```
+
+# See also
+- [`Resolve`](@ref), [`Compete`](@ref): the composer nodes
+- [`rand`](@ref): the marginal time-only draw
+- `Distributions.probs`
 "
+function rand_outcome end
+
 function rand_outcome(rng::AbstractRNG, c::Resolve)
     i = _sample_branch(rng, c.branch_probs)
     # A no-event win yields `missing` (no event time recorded); a real outcome

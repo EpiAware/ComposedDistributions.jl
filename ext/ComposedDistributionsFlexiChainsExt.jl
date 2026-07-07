@@ -240,41 +240,11 @@ end
 # hand. Reads the chain into the nested NamedTuple (posterior means, or a
 # single `draw`) at the submodel `prefix`, then reconstructs through the core
 # `update`.
-@doc "
-
-Update a composed distribution's parameters straight from a fitted chain.
-
-`update(template, chain)` reads `chain` (sampled through a
-`~ to_submodel(...)`-based parameters model) into the nested NamedTuple and
-rebuilds `template` with those values, so the workflow is one call instead of
-`update(template, chain_to_params(template, chain))`. By default it reduces
-each parameter's draws with `mean`; pass any `summary` reduction, restrict to a
-subset of draws with `draws` (a range / index vector, or a predicate over the
-iteration index), or pass `draw=i` for a single iteration. The `prefix`
-keyword names the submodel variable the parameters were sampled under
-(default `:d`).
-
-This method is available only when both `DynamicPPL` and `FlexiChains` are
-loaded.
-
-# Arguments
-- `template`: the composed distribution the chain's parameters were sampled
-  against.
-- `chain`: the fitted `FlexiChains` chain to read parameter values from.
-
-# Keyword Arguments
-- `prefix`: the submodel variable name the parameters were sampled under
-  (default `:d`).
-- `summary`: the reduction `AbstractVector -> scalar` applied to each
-  parameter's draws (default `mean`).
-- `draws`: a subset of iterations to reduce over (a range / index vector, or a
-  predicate over the iteration index); `nothing` uses every draw.
-- `draw`: a single iteration index to read (overrides `summary`/`draws`).
-
-# See also
-- [`chain_to_params`](@ref): the nested NamedTuple this reads.
-- [`update`](@ref): the NamedTuple-keyed reconstruction this delegates to.
-"
+# Chain-read-back form of `update`; documented on the umbrella docstring
+# `@doc` on `function update end` in `composers/introspection.jl` (see
+# `update(template, chain)` there) so the bare `[`update`](@ref)` used
+# throughout the docs resolves to one binding rather than being split across
+# per-method docstrings.
 function update(template, chain::FlexiChains.FlexiChain;
         prefix::Symbol = :d, draw = nothing, draws = nothing, summary = mean)
     params = chain_to_params(template, chain; prefix = prefix, draw = draw,
