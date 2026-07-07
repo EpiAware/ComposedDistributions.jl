@@ -16,3 +16,11 @@ public AbstractComposedDistribution, AbstractMultiChild, AbstractOneOf
 # The reusable interface-conformance harness (`TestUtils.test_interface` and
 # the per-family `test_*` checks).
 public TestUtils
+
+# The LogDensityProblems core codec: the flat-vector <-> nested-NamedTuple
+# bijection (`flat_dimension`/`flatten`/`unflatten`) and the assembled
+# PPL-neutral log-density (`ComposedLogDensity`/`as_logdensity`/`logdensity`).
+# A weakdep `LogDensityProblems` extension wraps `ComposedLogDensity` as a
+# standard problem; this core stays Turing/LogDensityProblems-free.
+public flat_dimension, flatten, unflatten
+public ComposedLogDensity, as_logdensity, logdensity

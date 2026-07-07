@@ -155,6 +155,11 @@ include("composers/Uncertain.jl")
 # Shared against a context) and after introspection (it extends free_leaf/
 # rewrap_leaf/_shared_tag for the Varying leaf).
 include("composers/varying.jl")
+# The LogDensityProblems core codec (flat <-> nested + `ComposedLogDensity`).
+# After introspection (`params_table`/`build_priors`/`update`), Uncertain
+# (an uncertain leaf's row is inventoried like any other) and varying (the
+# codec refuses a tree that still carries a `Varying` leaf via `has_varying`).
+include("composers/logdensity.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
