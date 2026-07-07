@@ -21,9 +21,3 @@ jobs:
       # until ConvolvedDistributions is registered.
       julia_versions: '["1", "pre"]'
     secrets: inherit  # pragma: allowlist secret
-
-  # downgrade-compat is disabled: julia-downgrade-compat resolves minimum
-  # versions against the General registry, and ConvolvedDistributions is
-  # unregistered ([sources]-pinned), so the job can never resolve. Restore
-  # it (and the 1.10 lts test cell) once ConvolvedDistributions is
-  # registered.

@@ -11,9 +11,9 @@ name: Benchmark history
 # Push/tag triggers are disabled until ConvolvedDistributions is
 # registered (#41): AirspeedVelocity installs the package into a temp
 # environment where [sources] pins do not apply, so the unregistered
-# dependency can never resolve and every run fails. The PR-comparison
-# workflow is unaffected (it runs from a checkout, where [sources]
-# applies). Re-enable push/tags alongside the other #41 items.
+# dependency can never resolve and every run fails. Re-enable push/tags
+# alongside the other #41 items. Tracked for the template in
+# EpiAwarePackageTools#153.
 on:
   workflow_dispatch:
 
@@ -68,8 +68,7 @@ jobs:
 
       # Last 5 tags (newest first) plus the pushed commit. On a tag push
       # GITHUB_SHA already points at the tagged commit, so HEAD is the
-      # newest point on the timeline either way. Before the first tag the
-      # timeline is HEAD alone (no leading comma, which benchpkg rejects).
+      # newest point on the timeline either way.
       - name: Collect revs (last 5 tags + HEAD)
         id: revs
         run: |
@@ -77,6 +76,9 @@ jobs:
           if [ -n "$TAGS" ]; then
             echo "revs=${TAGS},${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           else
+            # Pre-first-tag bootstrap: with no tags the timeline is just
+            # HEAD. Emit the bare SHA so the revs list carries no leading
+            # comma, which benchpkg rejects (#125).
             echo "revs=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -84,15 +86,17 @@ jobs:
       # (the default script benchpkg discovers in benchmark/). --bench-on
       # pins the benchmark *script* to HEAD so older revs are measured
       # with the current suite definition. --tune re-tunes parameters per
-      # run to quieten run-to-run noise on shared runners. --url points
-      # benchpkg at this repo: the package is unregistered, so resolving
-      # the name against General fails without it.
+      # run to quieten run-to-run noise on shared runners.
+      # --url points benchpkg at this repo directly so it resolves an
+      # unregistered package (otherwise `benchpkg <name>` looks it up in
+      # General and errors "not found ... in registry"). Harmless for a
+      # registered package. (#125)
       - name: Run benchmarks
         run: |
           mkdir -p results
           benchpkg ComposedDistributions \
-            --rev="${{ steps.revs.outputs.revs }}" \
             --url="https://github.com/${{ github.repository }}" \
+            --rev="${{ steps.revs.outputs.revs }}" \
             --bench-on="${{ github.sha }}" \
             --output-dir=results \
             --tune
