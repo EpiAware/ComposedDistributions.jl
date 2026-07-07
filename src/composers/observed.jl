@@ -43,6 +43,24 @@ function observed_distribution(d::Sequential)
            convolve_distributions(leaves)
 end
 
+# A `Parallel` has several independent observed endpoints and so no single
+# observed scalar to lower to; name the branches as the way forward.
+function observed_distribution(::Parallel)
+    throw(ArgumentError(
+        "a Parallel has several independent observed endpoints and no single " *
+        "observed scalar; lower each branch, e.g. " *
+        "`observed_distribution(event(d, name))`"))
+end
+
+# A `Choose`'s observed quantity depends on the data-selected alternative, so it
+# has no single lowering; direct the caller to the chosen alternative.
+function observed_distribution(::Choose)
+    throw(ArgumentError(
+        "a Choose's observed quantity depends on the data-selected " *
+        "alternative; lower the chosen alternative, e.g. " *
+        "`observed_distribution(event(d, :index))`"))
+end
+
 # A `Sequential` chain collapses to its observed convolved total, so
 # `convolve_distributions` accepts the chain directly (the same collapse as
 # `observed_distribution`, extending the ConvolvedDistributions verb to a

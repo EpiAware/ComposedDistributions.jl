@@ -1,3 +1,16 @@
+## Unreleased
+
+- Extended the ConvolvedDistributions verbs to composed trees:
+  `convolve_distributions(chain, series)` convolves a timeseries (e.g. expected
+  infections) through a [`Sequential`](@ref) chain's observed total delay (the
+  renewal / latent observation layer), and `difference(a, b)` forms the
+  difference of two chains' observed totals; a `Parallel` / `Choose` (no single
+  observed delay) errors with guidance. A `Convolved` / `Difference` node used
+  as a leaf inside a tree scores, samples, and reports moments as a plain
+  univariate leaf, and is treated as fixed structure by `params_table` /
+  `build_priors` / `update` (fit its components by composing them as explicit
+  chain steps).
+
 ## 0.1.0 — initial release
 
 - The generic composition algebra ported from CensoredDistributions.jl:
