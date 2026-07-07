@@ -29,6 +29,21 @@
   winning-probability / cause-cdf quadratures thread a shared 64-node
   Gauss-Legendre rule (#96).
 
+- Partial pooling across strata (#78). A new `pool(group, population)` spec,
+  placed inside `uncertain` where a prior would go, declares a parameter
+  partially pooled across the leaves that name the same group: each member's
+  parameter is drawn from one shared `population` distribution whose own free
+  parameters are the estimated hyperparameters (carrying their priors through
+  the ordinary `uncertain` spec machinery). It is the middle of the pooling
+  spectrum between `shared`/`tie` (complete pooling, one value everywhere) and
+  independent `uncertain` specs (no pooling, K unlinked values). A location-scale
+  population (`Normal`/`LogNormal`) is reparameterised non-centred (one
+  `Normal(0, 1)` latent per member, member `k` reconstructed as `mu + tau*z_k`
+  or `exp(mu + tau*z_k)`), keeping the CensoredDistributions-compatible
+  `[hyper..., z...]` flat layout; a general population takes the centred path
+  (each member's parameter scored directly against the population). The
+  hyperparameters flatten as ordinary uncertain-spec rows on the population.
+
 - Node-level uncertainty: a `Resolve`'s branch probabilities can now be
   estimated (#89). Attach a simplex-valued `Distributions.Dirichlet` prior with
   `update(node, (branch_probs = Dirichlet(α),))`. The `Dirichlet` is what you

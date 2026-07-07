@@ -221,24 +221,28 @@ is [`params_table`](@ref)`(dist)`'s row order restricted to the estimated
 - `loglik`: a reducer `(d, data) -> Real` (default sums `logpdf(d, record)`).
 - `flat_priors`: `priors` flattened once at construction, in estimated-row
   order, so [`logdensity`](@ref) does not re-derive it on every evaluation.
+- `centred_pools`: the centred pooled parameters' `(path, param, pool)` rows,
+  collected once at construction, so their population-dependent prior term is
+  added without a per-evaluation table walk (empty when nothing pools centred).
 
 # See also
 - [`as_logdensity`](@ref): the assembler.
 - [`logdensity`](@ref): evaluate on a flat vector.
 - [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec.
 "
-struct ComposedLogDensity{D <: AbstractComposedDistribution, P, T, L, FP}
+struct ComposedLogDensity{D <: AbstractComposedDistribution, P, T, L, FP, CP}
     dist::D
     priors::P
     data::T
     loglik::L
     flat_priors::FP
+    centred_pools::CP
 end
 
 function ComposedLogDensity(
         dist::AbstractComposedDistribution, priors, data, loglik)
     return ComposedLogDensity(dist, priors, data, loglik,
-        flatten(dist, priors))
+        flatten(dist, priors), _centred_pool_rows(dist))
 end
 
 # The nested prior `NamedTuple` of a tree's uncertain specs, keyed like the
@@ -309,6 +313,9 @@ ComposedDistributions.logdensity(prob, [2.0])
 "
 function as_logdensity(dist::AbstractComposedDistribution, priors, data;
         loglik = _default_loglik)
+    # Gate the pooling groups' consistency once here (not per gradient
+    # evaluation): every member of a group must share one population.
+    _validate_pool_groups(dist)
     return ComposedLogDensity(dist, priors, data, loglik)
 end
 
@@ -354,7 +361,22 @@ function logdensity(prob::ComposedLogDensity, x::AbstractVector)
     length(x) == length(fp) || throw(DimensionMismatch(
         "flat parameter vector has length $(length(x)) but " *
         "$(prob.dist) has $(length(fp)) estimated parameters"))
-    lp = isempty(x) ? 0.0 : sum(i -> logpdf(fp[i], x[i]), eachindex(x))
-    d = update(prob.dist, unflatten(prob.dist, x))
+    # The fixed per-row priors (hyperparameters, non-centred latents, ordinary
+    # uncertain parameters). A centred pooled parameter's row carries a
+    # `CentredPoolPrior` marker instead — its prior is the population at the
+    # current hyperparameters, so it is scored below, not here.
+    lp = _fixed_row_logprior(fp, x)
+    nt = unflatten(prob.dist, x)
+    lp += _pool_centred_logprior(prob.centred_pools, nt)
+    d = update(prob.dist, nt)
     return lp + prob.loglik(d, prob.data)
+end
+
+# Sum the fixed per-row prior log-densities, skipping centred-pool marker rows
+# (scored against the population in `_pool_centred_logprior`).
+function _fixed_row_logprior(fp, x)
+    isempty(x) && return 0.0
+    return sum(eachindex(x)) do i
+        fp[i] isa CentredPoolPrior ? zero(eltype(x)) : logpdf(fp[i], x[i])
+    end
 end
