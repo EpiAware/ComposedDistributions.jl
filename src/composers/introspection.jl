@@ -987,24 +987,33 @@ function _event_tree_child(
 end
 _event_tree_child(name::Symbol, ::Any) = name
 
+# No child named `name` at this level: raise the same "no child named ...;
+# have [...]" style `edit`/`prune`/`splice`/`_pick` use, rather than a bare
+# `KeyError` with no hint about the valid alternatives.
+function _no_event_child_error(d, name::Symbol, names::Tuple)
+    throw(ArgumentError(
+        "event($(nameof(typeof(d))), ...): no child named $(repr(name)); " *
+        "have $(collect(names))"))
+end
+
 # Direct-child lookup by a single (un-dotted) name. Internal so the public
 # `event` can split a dotted path before descending.
 function _event_child(d::Union{Sequential, Parallel}, name::Symbol)
     names = component_names(d)
     idx = findfirst(==(name), names)
-    idx === nothing && throw(KeyError(name))
+    idx === nothing && _no_event_child_error(d, name, names)
     return d.components[idx]
 end
 
 function _event_child(c::AbstractOneOf, name::Symbol)
     idx = findfirst(==(name), c.names)
-    idx === nothing && throw(KeyError(name))
+    idx === nothing && _no_event_child_error(c, name, c.names)
     return c.delays[idx]
 end
 
 function _event_child(d::Choose, name::Symbol)
     idx = findfirst(==(name), d.names)
-    idx === nothing && throw(KeyError(name))
+    idx === nothing && _no_event_child_error(d, name, d.names)
     return d.alternatives[idx]
 end
 
@@ -1017,8 +1026,9 @@ single `Symbol` fetches a direct child (a branch of a [`Parallel`](@ref), a step
 of a [`Sequential`](@ref), an outcome delay of a [`Resolve`](@ref), or an
 alternative of a [`Choose`](@ref)); multiple `Symbol`s, or a single dotted-path
 `Symbol` (`:admit_path.admit_death`, as in [`params_table`](@ref)'s `edge`
-column), descend the tree one name per step. Throws a `KeyError` if a name along
-the path is not a child at that level.
+column), descend the tree one name per step. Throws an `ArgumentError` naming
+the valid children if a name along the path is not a child at that level
+(mirroring [`update`](@ref)/[`prune`](@ref)/[`splice`](@ref)).
 
 # Arguments
 - `d`: the composed distribution to look up a child of (or descend into).

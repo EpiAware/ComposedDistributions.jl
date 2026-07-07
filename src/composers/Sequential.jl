@@ -53,6 +53,8 @@ struct Sequential{C <: Tuple, N <: Tuple} <:
                 "Sequential names must match the number of components"))
         all(n -> n isa Symbol, names) ||
             throw(ArgumentError("every Sequential name must be a Symbol"))
+        allunique(names) ||
+            throw(ArgumentError("Sequential step names must be unique"))
         new{C, N}(components, names)
     end
 end
@@ -61,6 +63,11 @@ end
 function Sequential(components::C) where {C <: Tuple}
     return Sequential(components, _default_names(:step, length(components)))
 end
+
+# A zero-arg call has no method through the variadic `Sequential(c1, cs...)`
+# front-end below, so it would otherwise raise a bare `MethodError` rather
+# than the inner constructor's friendly "needs at least one component".
+Sequential() = throw(ArgumentError("Sequential needs at least one component"))
 
 @doc "
 
