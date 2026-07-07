@@ -1,5 +1,28 @@
 ## Unreleased
 
+- `convolve_distributions(chain, series; events)` convolves a timeseries to a
+  named INTERIM event of a `Sequential` chain, not just its endpoint. The
+  cumulative delay to an event is the observed collapse of the chain prefix up
+  to it, so a single event name returns that event's count series and a tuple or
+  vector of names returns a `NamedTuple` of series (the endpoint reproduces the
+  whole-chain result). Only a plain continuous chain (every step a delay leaf)
+  has per-event cumulative delays; a branching step is rejected, and an unknown
+  event name errors listing the valid events. The discrete-event and
+  thinning/branch-probability variants stay in CensoredDistributions.
+
+- See-through fitting of `Convolved` / `Difference` leaf component parameters,
+  replacing the previous fixed-composite treatment. `params_table` now
+  inventories each component's scalar parameters under a `component_i` path
+  segment (e.g. `total.component_1.shape`), and `update` rebuilds the composite
+  from the updated components (preserving the solver method). A component may be
+  made `uncertain` in place, so the uncertain-first codec
+  (`flatten` / `unflatten` / `flat_dimension` / `as_logdensity`) estimates a
+  spec'd component parameter like any other leaf parameter. The composite joins
+  the shared `_node_children`/`_rebuild` deferred-leaf walk, so `has_uncertain`,
+  `has_varying` and `instantiate` all see through a composite carrying an
+  uncertain or varying component; it stays a single flat scored slot and an
+  atomic node to the structural edits.
+
 - Reconciled the `Varying`/`instantiate` seam with the `Uncertain` machinery
   (#47): `Varying` and `Uncertain` are now presented as the two cases of one
   *deferred leaf* concept — a leaf that maps to a distribution and resolves
