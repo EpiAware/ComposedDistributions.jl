@@ -138,6 +138,28 @@ end
         :none => NoEvent())
 end
 
+@testitem "NamedTuple constructor spelling matches the Pairs spelling" begin
+    using Distributions
+
+    # A positional NamedTuple `(a = v, …)` lowers to `:a => v, …` Pairs, so the
+    # two spellings build identical nodes (field order preserved).
+    cfr = 0.3
+    @test resolve((death = (Gamma(1.5, 1.0), cfr),
+        disch = (Gamma(2.0, 1.5), 1 - cfr))) ==
+          resolve(:death => (Gamma(1.5, 1.0), cfr),
+        :disch => (Gamma(2.0, 1.5), 1 - cfr))
+    # The residual (last probability omitted) spelling round-trips too.
+    @test resolve((death = (Gamma(1.5, 1.0), cfr), disch = Gamma(2.0, 1.5))) ==
+          resolve(:death => (Gamma(1.5, 1.0), cfr), :disch => Gamma(2.0, 1.5))
+    @test compete((death = Gamma(2.0, 3.0), recover = Gamma(3.0, 2.0))) ==
+          compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
+    # `choose`'s NamedTuple form keeps `selector` a keyword (not an alternative).
+    @test choose((index = Gamma(2.0, 1.0), sourced = Gamma(4.0, 1.5));
+        selector = :kind) ==
+          choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(4.0, 1.5);
+        selector = :kind)
+end
+
 @testitem "Composers reject duplicate child/branch names" begin
     using Distributions
 

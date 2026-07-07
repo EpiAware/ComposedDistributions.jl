@@ -13,6 +13,13 @@ public free_leaf, rewrap_leaf, component_names
 # dispatch on these.
 public AbstractComposedDistribution, AbstractMultiChild, AbstractOneOf
 
+# The compact `(outcome, time)` pair view of a one_of draw. A bare `rand` of a
+# `Resolve` / `Compete` returns the full named event record (the primary,
+# self-describing draw); `rand_outcome` is the two-tuple view for when only the
+# winning name and time are wanted. Public but not exported (the record-returning
+# `rand` is the exported entry point).
+public rand_outcome
+
 # The reusable interface-conformance harness (`TestUtils.test_interface` and
 # the per-family `test_*` checks).
 public TestUtils

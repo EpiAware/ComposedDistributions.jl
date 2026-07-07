@@ -134,6 +134,13 @@ end
 sequential(s1, ss...) = Sequential((s1, ss...))
 sequential(steps::AbstractVector) = Sequential(Tuple(steps))
 
+# Lower a positional NamedTuple to the `name => value` Pairs the verb
+# constructors take, so a verb accepts both spellings from one Pairs path. The
+# NamedTuple is ordered, so the lowered Pairs keep field order; it is positional
+# (not kwargs), so it never clashes with a config keyword such as `choose`'s
+# `selector`. Shared by `resolve` / `compete` / `choose`.
+_nt_pairs(nt::NamedTuple) = map(=>, keys(nt), values(nt))
+
 # Total number of leaf values in a realisation (sum over nested children).
 Base.length(d::Sequential) = _nleaves(d.components)
 

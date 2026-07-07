@@ -9,6 +9,19 @@
   and `convolve_series(::Sequential, series; events)` drives the renewal / latent
   series. No alias is kept (the package is unreleased).
 
+- `resolve`, `compete` and `choose` now accept a positional `NamedTuple`
+  spelling (`resolve((death = (Gamma(1.5, 1.0), 0.3), disch = Gamma(2.0, 1.5)))`)
+  as the equivalent of the `name => value` Pairs, for hand-written outcomes;
+  `choose`'s `selector` stays a keyword. The one_of constructors also build their
+  outcome tuples with `map` rather than a generator comprehension, so
+  constructing a `Resolve` / `Compete` inside a differentiated function is
+  Enzyme-safe (no `collect_to!` `Array` temporary Enzyme's type analysis rejects).
+
+- `rand_outcome` is now a documented `public` binding (previously an undocumented
+  internal), matching CensoredDistributions. It stays unexported — the
+  record-returning `rand` is the exported entry point — so reach it
+  module-qualified as `ComposedDistributions.rand_outcome`.
+
 - **Breaking:** `rand` of a standalone `Resolve` or `Compete` node now returns
   the named event record of the outcome that fired — a `NamedTuple` keyed by
   `event_names(node)` (a positional origin slot then one slot per outcome, the

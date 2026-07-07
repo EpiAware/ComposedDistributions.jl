@@ -278,12 +278,19 @@ mean(node)
 function Resolve(outcomes::Pair...)
     length(outcomes) >= 2 ||
         throw(ArgumentError("Resolve needs at least two outcomes"))
-    names = Tuple(o.first for o in outcomes)
-    payloads = Tuple(o.second for o in outcomes)
+    # `map` over the outcome tuple, not `Tuple(gen)`: a generator-collect lowers
+    # to `collect_to!` building an intermediate `Vector` whose element type is
+    # the (possibly heterogeneous, e.g. `Tuple{Sequential, Float64}` vs
+    # `Tuple{Gamma, Float64}`) payload union. Enzyme's type analysis rejects that
+    # non-concrete `Array` allocation inside a differentiated `Resolve` build
+    # (`IllegalTypeAnalysisException` on `collect_to!`). `map` over a tuple stays
+    # type-stable and returns a `Tuple` with no `Array` temporary.
+    names = map(o -> o.first, outcomes)
+    payloads = map(o -> o.second, outcomes)
     all(n -> n isa Symbol, names) ||
         throw(ArgumentError("each one_of outcome name must be a Symbol"))
-    delays = Tuple(_one_of_delay(p) for p in payloads)
-    branch_probs = Tuple(_one_of_prob(p) for p in payloads)
+    delays = map(_one_of_delay, payloads)
+    branch_probs = map(_one_of_prob, payloads)
     # The inner constructor validates the bounds and structure; the user-facing
     # constructor additionally requires the probabilities to sum to one.
     _validate_branch_probs_sum(branch_probs)
@@ -311,7 +318,9 @@ node where the winning probability is derived from the hazards) use
 - `outcomes`: two or more `name => (delay, branch_prob)` pairs, each giving the
   outcome name (a `Symbol`), its delay distribution, and the probability that
   the outcome occurs. The last pair's probability may be omitted (a bare
-  `name => delay`), taking the residual `1 - sum(of the others)`.
+  `name => delay`), taking the residual `1 - sum(of the others)`. A single named
+  tuple `(name = (delay, branch_prob), …)` is the equivalent positional spelling
+  for hand-written outcomes; use Pairs for data-driven or computed names.
 
 # Examples
 ```@example
@@ -320,6 +329,16 @@ using ComposedDistributions, Distributions
 cfr = 0.3
 node = resolve(:death => (Gamma(1.5, 1.0), cfr),
     :disch => (Gamma(2.0, 1.5), 1 - cfr))
+mean(node)
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+# The equivalent named tuple spelling for hand-written outcomes.
+cfr = 0.3
+node = resolve((death = (Gamma(1.5, 1.0), cfr),
+    disch = (Gamma(2.0, 1.5), 1 - cfr)))
 mean(node)
 ```
 
@@ -343,7 +362,10 @@ mean(node)
 function resolve(outcomes::Pair...)
     length(outcomes) >= 2 ||
         throw(ArgumentError("resolve needs at least two outcomes"))
-    payloads = Tuple(o.second for o in outcomes)
+    # `map`, not `Tuple(gen)`, to keep the payload tuple type-stable and off the
+    # `collect_to!` `Array` temporary Enzyme cannot type-analyse (see the
+    # `Resolve` constructor).
+    payloads = map(o -> o.second, outcomes)
     # `resolve` builds the fixed-probability mixture `Resolve` (cause and timing
     # independent): every outcome carries a `(delay, branch_prob)` pair, or every
     # outcome but the last does and the last is a bare delay taking the residual
@@ -368,6 +390,10 @@ function resolve(outcomes::Pair...)
         "racing-hazard node use `compete`"))
 end
 
+# Positional NamedTuple spelling: `(a = v1, …)` lowers to `:a => v1, …` Pairs,
+# each value a `(delay, prob)` pair or a bare residual delay as for the Pairs.
+resolve(outcomes::NamedTuple) = resolve(_nt_pairs(outcomes)...)
+
 @doc "
 
 Build a racing-hazard [`Compete`](@ref) node from bare `name => delay`
@@ -381,13 +407,23 @@ mixture where cause is independent of timing) use [`resolve`](@ref) instead.
 # Arguments
 - `outcomes`: two or more bare `name => delay` pairs, each giving the outcome
   name (a `Symbol`) and its cause-specific delay distribution (no branch
-  probability).
+  probability). A single named tuple `(name = delay, …)` is the equivalent
+  positional spelling for hand-written outcomes; use Pairs for data-driven or
+  computed names.
 
 # Examples
 ```@example
 using ComposedDistributions, Distributions
 
 node = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
+probs(node)
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+# The equivalent named tuple spelling for hand-written outcomes.
+node = compete((death = Gamma(2.0, 3.0), recover = Gamma(3.0, 2.0)))
 probs(node)
 ```
 
@@ -400,7 +436,9 @@ probs(node)
 function compete(outcomes::Pair...)
     length(outcomes) >= 2 ||
         throw(ArgumentError("compete needs at least two outcomes"))
-    payloads = Tuple(o.second for o in outcomes)
+    # `map`, not `Tuple(gen)`, to keep the payload tuple off the `collect_to!`
+    # `Array` temporary Enzyme cannot type-analyse (see `Resolve`).
+    payloads = map(o -> o.second, outcomes)
     # `compete` builds the racing-hazard `Compete`: every outcome is a
     # bare delay (no branch probability), the winning probability being derived
     # from the hazards. A `(delay, prob)` pair anywhere is the fixed-probability
@@ -414,6 +452,9 @@ function compete(outcomes::Pair...)
         "pair was given. For the fixed-probability split (an explicit per-" *
         "outcome probability) use `resolve` instead"))
 end
+
+# Positional NamedTuple spelling: `(a = d1, …)` lowers to `:a => d1, …` Pairs.
+compete(outcomes::NamedTuple) = compete(_nt_pairs(outcomes)...)
 
 # The residual mixture shape: every outcome but the last carries a `(delay,
 # prob)` pair and the last is a bare delay, so the last outcome's probability is
@@ -441,7 +482,7 @@ function _fill_residual_outcome(outcomes::Tuple)
     n = length(outcomes)
     leading = Base.front(outcomes)
     last_pair = outcomes[n]
-    leading_probs = Tuple(_one_of_prob(o.second) for o in leading)
+    leading_probs = map(o -> _one_of_prob(o.second), leading)
     _validate_branch_prob_bounds(leading_probs)
     total = sum(leading_probs)
     (total <= 1 + 1e-6) || throw(ArgumentError(
