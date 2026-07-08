@@ -624,12 +624,19 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
     edge = tag === nothing ? _join_path(path) : tag
     tag === nothing || push!(seen, tag)
     for (pname, v, s) in zip(pnames, vals, sups)
+        spec = specs === nothing ? nothing : get(specs, pname, nothing)
+        # A pooled parameter lowers to the group's shared population
+        # hyperparameters (once) plus this member's own latent, all scalar rows.
+        if spec isa Pool
+            _pool_rows!(edges, params_col, values, supports, priors, seen,
+                spec, edge, pname, v, s)
+            continue
+        end
         push!(edges, edge)
         push!(params_col, pname)
         push!(values, v)
         push!(supports, s)
-        push!(priors,
-            specs === nothing ? nothing : get(specs, pname, nothing))
+        push!(priors, spec)
     end
     return nothing
 end
@@ -700,7 +707,10 @@ spelling of \"distribution in the slot = estimate, value = fix\"):
   `update(tree, (onset = (shape = LogNormal(log(2), 0.2),),))` makes just
   `onset`'s `shape` uncertain. Promote a whole tree to uncertainty over its
   free parameters with default priors via `update(tree, `
-  [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path.
+  [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path;
+- a **[`pool`](@ref) spec** makes the parameter partially pooled across the
+  leaves that name the same group (also a partial update), e.g.
+  `update(tree, (onset = (shape = pool(:district),),))`.
 
 A [`Resolve`](@ref) node's `branch_probs` are a node-level parameter, not a
 leaf: attach a simplex-valued `Distributions.Dirichlet` at the `branch_probs`
@@ -941,6 +951,12 @@ function _update(leaf, params::NamedTuple, shared, merge::Bool)
     end
     leaf_params = tag === nothing ? params : _shared_entry(shared, tag, leaf)
     pnames = _leaf_param_names(leaf)
+    # A pooled leaf reconstructs each pooled parameter from the group's shared
+    # hyperparameters (read from the top-level group entry, threaded like a
+    # shared tag) and the member's own latent, rather than taking scalar values.
+    pooled = _pool_specs(leaf)
+    pooled === nothing || return _reconstruct_pooled_leaf(
+        leaf, leaf_params, shared, pooled, pnames)
     _check_update_keys(leaf_params, pnames, nameof(typeof(leaf)))
     vals = ntuple(i -> leaf_params[pnames[i]], length(pnames))
     return _update_leaf(leaf, vals)
@@ -956,10 +972,10 @@ function _check_merge_keys(updates::NamedTuple, expected::Tuple, what)
             "expected $(collect(expected))"))
     end
     for (k, v) in pairs(updates)
-        v isa Union{Real, UnivariateDistribution} || throw(ArgumentError(
+        v isa Union{Real, UnivariateDistribution, Pool} || throw(ArgumentError(
             "update($what, ...): the value for $(repr(k)) must be a Real " *
-            "(a fixed value) or a UnivariateDistribution (an uncertain " *
-            "spec); got $(typeof(v))"))
+            "(a fixed value), a UnivariateDistribution (an uncertain spec), " *
+            "or a `pool(...)` spec (partial pooling); got $(typeof(v))"))
     end
     return nothing
 end

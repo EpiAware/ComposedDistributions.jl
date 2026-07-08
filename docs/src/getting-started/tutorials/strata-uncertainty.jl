@@ -158,11 +158,64 @@ promoted = update(resolved, param_priors(resolved))
 (before = ComposedDistributions.flat_dimension(resolved),
     after = ComposedDistributions.flat_dimension(promoted))
 
-# Partial pooling across strata — estimating region-specific parameters that
-# shrink towards a shared mean, rather than the fully independent (per-stratum) or
-# fully tied ([`shared`](@ref)) extremes shown here — is designed in issue #23 and
-# is not yet a built verb.
-# For now a parameter is either independent per stratum or tied across all strata.
+# ## Partial pooling across strata
+#
+# Between the extremes above — a parameter estimated independently per stratum
+# (each an [`uncertain`](@ref) leaf, unlinked) or tied across every stratum (one
+# [`shared`](@ref) value) — sits partial pooling: each stratum's parameter is
+# drawn from one common _population_ distribution whose own parameters are
+# estimated, so a data-poor stratum shrinks towards the population while a
+# data-rich one moves freely.
+# A [`pool`](@ref) spec, placed inside [`uncertain`](@ref) where a prior would
+# go, declares that. The population is an ordinary distribution — usually an
+# [`uncertain`](@ref) one, so its free parameters carry their priors like any
+# other uncertain leaf. The strata are the leaves that name the same group.
+
+pooled = compose((
+    north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+    east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+
+# `pool(:district)` uses a default estimated-`LogNormal` population. The codec
+# lowers the group to ordinary scalar rows: the population's hyperparameters
+# `district.mu`, `district.sigma` (once), plus one latent per stratum. A
+# `LogNormal` population is reparameterised non-centred, so the latent is
+# `<stratum>.shape.z ~ Normal(0, 1)` and each stratum's shape is reconstructed as
+# `exp(mu + sigma*z_k)`.
+# So `K = 3` strata estimate `2 + 3 = 5` parameters.
+
+pooled_table = params_table(pooled)
+(edge = pooled_table.edge, param = pooled_table.param)
+
+# The estimated flat vector is `[mu, sigma, z_north, z_east, z_south]` — the same
+# layout a CensoredDistributions user hand-writes in a Turing `@model`
+# (`mu ~ ...; sigma ~ ...; z ~ filldist(Normal(0, 1), K)`), so a model authored
+# either way is interchangeable.
+
+(pool_dimension = ComposedDistributions.flat_dimension(pooled),)
+
+# Passing a different population changes how the strata relate. A general
+# (non-location-scale) population takes the centred path, with each stratum's
+# parameter scored directly against the population.
+
+gamma_pool = compose((
+    north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:district,
+            uncertain(Gamma(2.0, 1.0);
+                shape = truncated(Normal(2.0, 1.0); lower = 0),
+                scale = truncated(Normal(1.0, 1.0); lower = 0)))),
+    east = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:district,
+            uncertain(Gamma(2.0, 1.0);
+                shape = truncated(Normal(2.0, 1.0); lower = 0),
+                scale = truncated(Normal(1.0, 1.0); lower = 0))))))
+
+(gamma_pool_dimension = ComposedDistributions.flat_dimension(gamma_pool),)
+
+# One edit to the `shape` spec moves along the whole pooling spectrum: a
+# [`shared`](@ref)/[`tie`](@ref) gives one tied value, an independent
+# [`uncertain`](@ref) gives unlinked per-stratum values, and [`pool`](@ref) gives
+# the population hyperparameters plus the linked per-stratum latents.
 #
 # ## Summary
 #
@@ -172,6 +225,9 @@ promoted = update(resolved, param_priors(resolved))
 #   together; [`has_varying`](@ref) guards a tree that is not yet resolved.
 # - [`shared`](@ref) ties a parameter across strata, and the tie survives
 #   `instantiate`.
+# - [`pool`](@ref) partially pools a parameter across the leaves of a group: each
+#   stratum's parameter is drawn from one shared, estimated population
+#   distribution, the middle of the pooling spectrum.
 # - An [`uncertain`](@ref) leaf carries a parameter's prior; [`params_table`](@ref)
 #   rides it on the `prior` column, `rand` draws the marginal, and
 #   [`update`](@ref) collapses it to a concrete leaf, guarded by

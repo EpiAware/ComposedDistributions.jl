@@ -98,6 +98,15 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain
 
+# Partial pooling: a parameter drawn, across the leaves of a group, from one
+# shared population distribution whose free parameters are the estimated
+# hyperparameters. `pool(:group, population)` is a spec inside `uncertain`; a
+# location-scale population lowers non-centred (hyperparameters + one
+# `Normal(0, 1)` latent per member), a general population is scored centred. The
+# middle of the pooling spectrum between `shared`/`tie` (complete) and
+# independent `uncertain` (none).
+export Pool, pool
+
 # Context-indexed (non-stationary) leaves: a `Varying` leaf varies with a
 # covariate (time, strata, ...); `instantiate(tree, Context(...))` resolves a tree
 # against a context to a concrete stationary tree. See
@@ -165,6 +174,11 @@ include("composers/Shared.jl")
 # `_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
 # the tag wrapper).
 include("composers/Uncertain.jl")
+# Partial pooling (a parameter pooled, across a group of leaves, through one
+# estimated population). After Uncertain (a `Pool` rides an uncertain leaf's
+# specs) and introspection (it reuses `_node_children`/`_split_edge`/`_join_path`
+# /`_update_leaf` and the `_walk_rows!` / `_update` leaf hooks).
+include("composers/Pool.jl")
 # Context-indexed leaves + the `instantiate` resolution seam. After every
 # composer type exists (it rebuilds Sequential/Parallel/Choose/Resolve/Compete/
 # Shared against a context) and after introspection (it extends free_leaf/

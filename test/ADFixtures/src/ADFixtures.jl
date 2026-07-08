@@ -5,9 +5,11 @@ Shared AD gradient scenarios and backend metadata for ComposedDistributions.
 Used by `test/ad/runtests.jl`. Covers the composed `logpdf` of a `Sequential`
 chain, a `Resolve` mixture marginal (differentiating through a covariate branch
 probability), a `Compete` racing-hazard marginal (differentiating through the
-survival product), and a `Resolve` whose branch-probability simplex is uncertain
-(differentiating through the stick-breaking reconstruction), across the
-ForwardDiff / ReverseDiff / Enzyme / Mooncake backend matrix.
+survival product), a `Resolve` whose branch-probability simplex is uncertain
+(differentiating through the stick-breaking reconstruction), and a partially
+pooled parameter (differentiating through the non-centred `exp(mu + tau*z)`
+reconstruction), across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
+backend matrix.
 
 The composed value `logpdf` is a sum over flat leaf slices, so the gradient
 flows through each leaf's own `logpdf`; the reference is computed with
@@ -57,8 +59,18 @@ end
 "Scenario names broken on every backend."
 broken_scenario_names() = String[]
 
+# The partial-pooling reconstruction differentiates `logpdf(Gamma(shape), x)`
+# w.r.t. a shape that is `exp(mu + tau*z)` with `mu`, `tau` SHARED across the
+# strata. ForwardDiff, ReverseDiff and Enzyme all agree (the reconstruction is
+# AD-correct — the main suite also checks ForwardDiff vs finite differences),
+# but Mooncake returns a wrong gradient for this pattern (the shared
+# hyperparameters' reverse contributions through the Gamma `loggamma`/`digamma`
+# path are mis-accumulated). Marked broken on Mooncake pending an upstream fix.
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
-backend_broken_scenarios() = Dict{String, Set{String}}()
+function backend_broken_scenarios()
+    return Dict("Mooncake reverse" =>
+        Set(["Pool non-centred reconstruction logpdf"]))
+end
 
 "Per-backend scenario names too unstable to run at all."
 backend_skip_scenarios() = Dict{String, Set{String}}()
@@ -137,6 +149,24 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
                         :disch => (Gamma(θ[2], 1.5), p[2])), x), obs)
         end,
         [1.5, 2.0, 0.4], (Constant(obs),))
+
+    # Partial pooling: two strata whose shapes are reconstructed non-centred
+    # from the shared location-scale population `(mu, sigma)` = `(θ[1], θ[2])`
+    # and their own latents `θ[3]`, `θ[4]` through `exp(mu + sigma*z)` (a
+    # `LogNormal` population — exactly the non-centred map the codec applies),
+    # the AD-critical path for pooling (#78). The gradient flows through the
+    # reconstruction — with `mu`, `sigma` shared across both strata, so the
+    # reverse pass must accumulate each hyperparameter from both — into each
+    # stratum's Gamma `logpdf`.
+    _push!("Pool non-centred reconstruction logpdf",
+        (θ, obs) -> begin
+            s1 = exp(θ[1] + θ[2] * θ[3])
+            s2 = exp(θ[1] + θ[2] * θ[4])
+            sum(
+                x -> logpdf(Gamma(s1, 1.0), x) + logpdf(Gamma(s2, 1.0), x),
+                obs)
+        end,
+        [0.2, 0.5, 0.3, -0.4], (Constant(obs),))
 
     return out
 end

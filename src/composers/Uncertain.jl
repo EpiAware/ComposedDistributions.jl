@@ -117,9 +117,10 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
             k in pnames || throw(ArgumentError(
                 "unknown uncertain parameter $(repr(k)); the template " *
                 "$(template) has parameters $(collect(pnames))"))
-            v isa UnivariateDistribution || throw(ArgumentError(
+            v isa Union{UnivariateDistribution, Pool} || throw(ArgumentError(
                 "the spec for $(repr(k)) must be a UnivariateDistribution " *
-                "(a distribution over the parameter); got $(typeof(v))"))
+                "(a distribution over the parameter) or a `pool(...)` spec " *
+                "(partial pooling across a group); got $(typeof(v))"))
         end
         return new{VS, L, S}(template, specs)
     end
@@ -210,11 +211,13 @@ function uncertain(template::UnivariateDistribution; kwargs...)
         k in pnames || throw(ArgumentError(
             "unknown parameter $(repr(k)) for $(template); expected one of " *
             "$(collect(pnames))"))
-        v isa Union{Real, UnivariateDistribution} || throw(ArgumentError(
-            "the value for $(repr(k)) must be a Real (a fixed value) or a " *
-            "UnivariateDistribution (an uncertain parameter); got $(typeof(v))"))
+        v isa Union{Real, UnivariateDistribution, Pool} || throw(ArgumentError(
+            "the value for $(repr(k)) must be a Real (a fixed value), a " *
+            "UnivariateDistribution (an uncertain parameter), or a `pool(...)` " *
+            "spec (partial pooling); got $(typeof(v))"))
     end
-    spec_keys = Tuple(k for (k, v) in pairs(nt) if v isa UnivariateDistribution)
+    spec_keys = Tuple(k
+    for (k, v) in pairs(nt) if v isa Union{UnivariateDistribution, Pool})
     specs = NamedTuple{spec_keys}(Tuple(nt[k] for k in spec_keys))
     fixed_keys = Tuple(k for (k, v) in pairs(nt) if v isa Real)
     pinned = if isempty(fixed_keys)
@@ -333,7 +336,7 @@ function _merge_leaf(leaf, updates::NamedTuple)
     names = Symbol[]
     vals = Any[]
     for p in pnames
-        if haskey(updates, p) && updates[p] isa UnivariateDistribution
+        if haskey(updates, p) && updates[p] isa Union{UnivariateDistribution, Pool}
             push!(names, p)
             push!(vals, updates[p])
         elseif haskey(updates, p) && updates[p] isa Real
