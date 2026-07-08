@@ -39,8 +39,5 @@ Tables = "1"
 Test = "1"
 julia = "1.11, 1.12"
 
-[sources]
-ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
-
 [workspace]
 projects = ["test", "docs"]
