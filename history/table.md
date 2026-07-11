@@ -1,45 +1,45 @@
-|                                                                           | ce5046ccb4ae8b...  |
+|                                                                           | 7be65715efeb5e...  |
 |:--------------------------------------------------------------------------|:------------------:|
-| AD gradients/Compete racing-hazard marginal logpdf/Enzyme reverse         | 10 ± 0.071 μs      |
-| AD gradients/Compete racing-hazard marginal logpdf/ForwardDiff            | 8.34 ± 1.7 μs      |
-| AD gradients/Compete racing-hazard marginal logpdf/Mooncake reverse       | 0.074 ± 0.016 ms   |
-| AD gradients/Compete racing-hazard marginal logpdf/ReverseDiff (tape)     | 0.0527 ± 0.0072 ms |
-| AD gradients/Pool non-centred reconstruction logpdf/Enzyme reverse        | 1.99 ± 0.017 μs    |
-| AD gradients/Pool non-centred reconstruction logpdf/ForwardDiff           | 0.994 ± 0.024 μs   |
-| AD gradients/Pool non-centred reconstruction logpdf/Mooncake reverse      | 31.4 ± 8.8 μs      |
-| AD gradients/Pool non-centred reconstruction logpdf/ReverseDiff (tape)    | 27.2 ± 0.68 μs     |
-| AD gradients/Resolve mixture marginal logpdf/Enzyme reverse               | 3.33 ± 0.073 μs    |
-| AD gradients/Resolve mixture marginal logpdf/ForwardDiff                  | 9.97 ± 2.1 μs      |
-| AD gradients/Resolve mixture marginal logpdf/Mooncake reverse             | 0.264 ± 0.042 ms   |
-| AD gradients/Resolve mixture marginal logpdf/ReverseDiff (tape)           | 0.0638 ± 0.009 ms  |
-| AD gradients/Resolve stick-breaking branch-prob logpdf/Enzyme reverse     | 3.28 ± 0.22 μs     |
-| AD gradients/Resolve stick-breaking branch-prob logpdf/ForwardDiff        | 9.81 ± 2.2 μs      |
-| AD gradients/Resolve stick-breaking branch-prob logpdf/Mooncake reverse   | 0.254 ± 0.041 ms   |
-| AD gradients/Resolve stick-breaking branch-prob logpdf/ReverseDiff (tape) | 0.0521 ± 0.0078 ms |
-| AD gradients/Sequential Gamma+LogNormal logpdf/Enzyme reverse             | 0.109 ± 0.018 ms   |
-| AD gradients/Sequential Gamma+LogNormal logpdf/ForwardDiff                | 7.39 ± 1.4 μs      |
-| AD gradients/Sequential Gamma+LogNormal logpdf/Mooncake reverse           | 0.357 ± 0.064 ms   |
-| AD gradients/Sequential Gamma+LogNormal logpdf/ReverseDiff (tape)         | 24.8 ± 0.57 μs     |
-| Composition/Choose/construct                                              | 1.55 ± 0.009 ns    |
-| Composition/Choose/logpdf                                                 | 0.032 ± 0.00017 μs |
-| Composition/Compete/construct                                             | 1.55 ± 0.01 ns     |
-| Composition/Compete/logccdf                                               | 0.313 ± 0.0013 μs  |
-| Composition/Compete/rand                                                  | 0.578 ± 0.099 μs   |
-| Composition/Nested/compose                                                | 1.41 ± 0.074 μs    |
-| Composition/Nested/logpdf                                                 | 1.69 ± 0.068 μs    |
-| Composition/Nested/rand                                                   | 4.85 ± 0.13 μs     |
-| Composition/Parallel/construct                                            | 1.02 ± 0.048 μs    |
-| Composition/Parallel/logpdf                                               | 0.106 ± 0.022 μs   |
-| Composition/Parallel/rand                                                 | 0.815 ± 0.16 μs    |
-| Composition/Resolve/construct                                             | 3.41 ± 0.01 ns     |
-| Composition/Resolve/logpdf                                                | 0.114 ± 0.00049 μs |
-| Composition/Resolve/rand                                                  | 0.561 ± 0.1 μs     |
-| Composition/Sequential/construct                                          | 0.902 ± 0.23 μs    |
-| Composition/Sequential/logpdf                                             | 0.106 ± 0.021 μs   |
-| Composition/Sequential/rand                                               | 1.92 ± 0.03 μs     |
-| time_to_load                                                              | 0.864 ± 0.006 s    |
+| AD gradients/Compete racing-hazard marginal logpdf/Enzyme reverse         | 10.3 ± 0.14 μs     |
+| AD gradients/Compete racing-hazard marginal logpdf/ForwardDiff            | 8.47 ± 1.1 μs      |
+| AD gradients/Compete racing-hazard marginal logpdf/Mooncake reverse       | 0.0728 ± 0.0063 ms |
+| AD gradients/Compete racing-hazard marginal logpdf/ReverseDiff (tape)     | 0.052 ± 0.0081 ms  |
+| AD gradients/Pool non-centred reconstruction logpdf/Enzyme reverse        | 2.09 ± 0.029 μs    |
+| AD gradients/Pool non-centred reconstruction logpdf/ForwardDiff           | 1.03 ± 0.042 μs    |
+| AD gradients/Pool non-centred reconstruction logpdf/Mooncake reverse      | 0.0322 ± 0.0093 ms |
+| AD gradients/Pool non-centred reconstruction logpdf/ReverseDiff (tape)    | 26.9 ± 0.95 μs     |
+| AD gradients/Resolve mixture marginal logpdf/Enzyme reverse               | 3.39 ± 0.087 μs    |
+| AD gradients/Resolve mixture marginal logpdf/ForwardDiff                  | 8.7 ± 0.44 μs      |
+| AD gradients/Resolve mixture marginal logpdf/Mooncake reverse             | 0.225 ± 0.046 ms   |
+| AD gradients/Resolve mixture marginal logpdf/ReverseDiff (tape)           | 0.0602 ± 0.01 ms   |
+| AD gradients/Resolve stick-breaking branch-prob logpdf/Enzyme reverse     | 3.45 ± 0.26 μs     |
+| AD gradients/Resolve stick-breaking branch-prob logpdf/ForwardDiff        | 10.8 ± 2.4 μs      |
+| AD gradients/Resolve stick-breaking branch-prob logpdf/Mooncake reverse   | 0.22 ± 0.043 ms    |
+| AD gradients/Resolve stick-breaking branch-prob logpdf/ReverseDiff (tape) | 0.0502 ± 0.0095 ms |
+| AD gradients/Sequential Gamma+LogNormal logpdf/Enzyme reverse             | 0.106 ± 0.019 ms   |
+| AD gradients/Sequential Gamma+LogNormal logpdf/ForwardDiff                | 7.51 ± 1.6 μs      |
+| AD gradients/Sequential Gamma+LogNormal logpdf/Mooncake reverse           | 0.279 ± 0.063 ms   |
+| AD gradients/Sequential Gamma+LogNormal logpdf/ReverseDiff (tape)         | 24.7 ± 0.7 μs      |
+| Composition/Choose/construct                                              | 1.74 ± 0.01 ns     |
+| Composition/Choose/logpdf                                                 | 29.8 ± 0.061 ns    |
+| Composition/Compete/construct                                             | 1.74 ± 0.01 ns     |
+| Composition/Compete/logccdf                                               | 0.336 ± 0.0021 μs  |
+| Composition/Compete/rand                                                  | 0.54 ± 0.12 μs     |
+| Composition/Nested/compose                                                | 1.42 ± 0.095 μs    |
+| Composition/Nested/logpdf                                                 | 1.72 ± 0.11 μs     |
+| Composition/Nested/rand                                                   | 4.87 ± 0.18 μs     |
+| Composition/Parallel/construct                                            | 0.899 ± 0.2 μs     |
+| Composition/Parallel/logpdf                                               | 0.105 ± 0.023 μs   |
+| Composition/Parallel/rand                                                 | 0.913 ± 0.043 μs   |
+| Composition/Resolve/construct                                             | 3.5 ± 0.01 ns      |
+| Composition/Resolve/logpdf                                                | 0.109 ± 0.0014 μs  |
+| Composition/Resolve/rand                                                  | 0.521 ± 0.11 μs    |
+| Composition/Sequential/construct                                          | 0.904 ± 0.21 μs    |
+| Composition/Sequential/logpdf                                             | 0.104 ± 0.024 μs   |
+| Composition/Sequential/rand                                               | 2.24 ± 0.041 μs    |
+| time_to_load                                                              | 0.865 ± 0.0028 s   |
 
-|                                                                           | ce5046ccb4ae8b...         |
+|                                                                           | 7be65715efeb5e...         |
 |:--------------------------------------------------------------------------|:-------------------------:|
 | AD gradients/Compete racing-hazard marginal logpdf/Enzyme reverse         | 24  allocs: 1.3 kB        |
 | AD gradients/Compete racing-hazard marginal logpdf/ForwardDiff            | 0.132 k allocs: 6.2 kB    |
