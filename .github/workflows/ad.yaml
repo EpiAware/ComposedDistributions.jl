@@ -40,6 +40,10 @@ jobs:
     with:
       backends: '[{"name":"ForwardDiff","tag":"forwarddiff","flag":"ad-forwarddiff"},{"name":"ReverseDiff (tape)","tag":"reversediff","flag":"ad-reversediff"},{"name":"Enzyme forward","tag":"enzyme_forward","flag":"ad-enzyme-forward"},{"name":"Enzyme reverse","tag":"enzyme_reverse","flag":"ad-enzyme-reverse"},{"name":"Mooncake reverse","tag":"mooncake_reverse","flag":"ad-mooncake-reverse"},{"name":"Mooncake forward","tag":"mooncake_forward","flag":"ad-mooncake-forward"}]'
       # Count extension lines too (the Mooncake ext is exercised by this
-      # very suite).
+      # very suite). Kit's `with:` preservation (#73) does not cover this:
+      # `ad.yaml`'s `with:` block already renders `backends:` from the
+      # template, so the seed always wins and this line is dropped on every
+      # scaffold_update. Re-added by hand until the kit supports it as a
+      # first-class input (#88).
       coverage_directories: 'src,ext'
     secrets: inherit  # pragma: allowlist secret

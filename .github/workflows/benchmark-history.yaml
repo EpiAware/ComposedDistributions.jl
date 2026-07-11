@@ -8,13 +8,11 @@ name: Benchmark history
 # HEAD so a timeline accumulates. Triggers are disjoint from
 # `benchmark.yaml` (push/tags here vs pull_request there), so the two
 # never run on the same event.
-# Push/tag triggers are disabled until ConvolvedDistributions is
-# registered (#41): AirspeedVelocity installs the package into a temp
-# environment where [sources] pins do not apply, so the unregistered
-# dependency can never resolve and every run fails. Re-enable push/tags
-# alongside the other #41 items. Tracked for the template in
-# EpiAwarePackageTools#153.
 on:
+  # push/tags parked until this package is registered: an
+  # unregistered `[sources]`-pinned dependency never resolves in
+  # benchpkg's temp environment, so a push/tag `history` run always
+  # fails (#153). Restore the push/tags triggers once registered.
   workflow_dispatch:
 
 # `contents: write` lets JamesIves/github-pages-deploy-action push the
