@@ -3,7 +3,7 @@
 # Thin entry point for the standard EpiAware documentation build. All build
 # logic lives in `EpiAwarePackageTools.DocsBuild.build_docs` (versioned +
 # tested in the kit); this file only wires the package-owned `pages.jl` +
-# `docs_config.jl` into that call, so it can be re-applied on every `update`
+# `docs_config.jl` into that call, so it can be re-applied on every `scaffold_update`
 # without losing package content.
 #
 # `build_docs`:
@@ -29,15 +29,20 @@ Pkg.instantiate()
 using EpiAwarePackageTools
 using ComposedDistributions
 
-# The docs navigation tree (package-owned).
-include("pages.jl")
-# Package-specific build config: tutorial lists, README/index link rewrites,
-# named-section strips, and linkcheck ignores. Package-owned and never
-# overwritten, so an empty config builds a site with no tutorials.
-include("docs_config.jl")
+# The docs navigation tree (`pages.jl`) and package-specific build config
+# (`docs_config.jl`: tutorial lists, README/index link rewrites, named-section
+# strips, linkcheck ignores). Both are package-owned — written on `scaffold`,
+# never re-applied by `scaffold_update` — so an adopter predating either file has none.
+# Guard the include so a re-applied managed `make.jl` still loads and falls
+# back to defaults (#163) rather than erroring on a missing file; `_cfg` then
+# defaults every key a missing or older config predates.
+for _f in ("pages.jl", "docs_config.jl")
+    isfile(joinpath(@__DIR__, _f)) && include(joinpath(@__DIR__, _f))
+end
 
-# Read a package-owned config const, defaulting when an older `docs_config.jl`
-# (package-owned, not re-applied by `update`) predates it.
+# Read a package-owned config const, defaulting when a missing or older
+# `docs_config.jl`/`pages.jl` (package-owned, not re-applied by `scaffold_update`)
+# predates it.
 _cfg(sym, default) = isdefined(@__MODULE__, sym) ?
                      getfield(@__MODULE__, sym) : default
 
@@ -46,7 +51,7 @@ build_docs(
     repo = "EpiAware/ComposedDistributions.jl",
     authors = "Sam Abbott, EpiAware contributors",
     deploy_url = "composeddistributions.epiaware.org",
-    pages = pages,
+    pages = _cfg(:pages, ["Home" => "index.md"]),
     skip_notebooks = "--skip-notebooks" in ARGS ||
                      get(ENV, "SKIP_NOTEBOOKS", "false") == "true",
     tutorials_subdir = _cfg(:TUTORIALS_SUBDIR,
