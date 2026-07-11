@@ -51,7 +51,8 @@ import Tables
 # packages sit on ComposedDistributions alone. Every name is imported explicitly
 # (the exported surface plus the public-but-unexported quadrature helpers).
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
-                              convolve_series, Difference, difference,
+                              convolve_series, discretise_pmf, DelayPMF,
+                              Difference, difference,
                               AnalyticalSolver, NumericSolver, gl_integrate,
                               GaussLegendre, integrate, AbstractSolverMethod,
                               Convolved
@@ -138,9 +139,9 @@ export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
 # convolution + quadrature through ComposedDistributions alone.
-export convolved, convolve_series, Difference, difference,
-       AnalyticalSolver, NumericSolver, Convolved, AbstractSolverMethod,
-       GaussLegendre, integrate, gl_integrate
+export convolved, convolve_series, discretise_pmf, DelayPMF, Difference,
+       difference, AnalyticalSolver, NumericSolver, Convolved,
+       AbstractSolverMethod, GaussLegendre, integrate, gl_integrate
 
 # --- includes --------------------------------------------------------------
 
