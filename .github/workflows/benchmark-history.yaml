@@ -9,10 +9,9 @@ name: Benchmark history
 # `benchmark.yaml` (push/tags here vs pull_request there), so the two
 # never run on the same event.
 on:
-  # push/tags parked until this package is registered: an
-  # unregistered `[sources]`-pinned dependency never resolves in
-  # benchpkg's temp environment, so a push/tag `history` run always
-  # fails (#153). Restore the push/tags triggers once registered.
+  push:
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 # `contents: write` lets JamesIves/github-pages-deploy-action push the
