@@ -24,6 +24,14 @@
   now re-exported. Compat bumped to `0.2`; because 0.2 is unregistered the source
   is git-pinned (re-adding what #107 removed) until it registers.
 
+- **refactor:** the racing-hazard (`Compete`) moment, winning-probability and
+  cause-cdf quadratures now call the public
+  `integrate(::GaussLegendre, f, lo, hi)` rather than reaching into
+  ConvolvedDistributions' internal `GaussLegendre(; n).rule` and `gl_integrate`.
+  Results are identical (the same fixed 64-node rule); this drops the coupling
+  to an unexported upstream type that could change without a breaking bump
+  (#109).
+
 - **refactor:** renamed the internal `src/composers/intervene.jl` to
   `structural_edits.jl`, naming the `update` / `prune` / `splice` verbs it holds
   (the `intervene` verb is gone from the public API). No user-facing change
