@@ -24,9 +24,15 @@ const QA_CONFIG = (
     # shared tag and uncertain parameter specs inside a composed tree;
     # `_leaf_param_names` and `_collect_shared` are the internal leaf-naming
     # and shared-group lookups the FlexiChains extension reuses to read a
-    # fitted chain back onto a composed tree.
+    # fitted chain back onto a composed tree; `_thin_factor` and
+    # `_set_thin_factor` are the internal thin-factor read/write hooks, and
+    # `_leaf_mean`/`_leaf_var` are the internal per-leaf moment hooks, that the
+    # ModifiedDistributions extension extends so a thin(...)/affine(...) leaf
+    # surfaces its reporting probability and honours its analytic moment
+    # inside a composed tree.
     ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs,
-        :_leaf_param_names, :_collect_shared),
+        :_leaf_param_names, :_collect_shared, :_thin_factor,
+        :_set_thin_factor, :_leaf_mean, :_leaf_var),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface
