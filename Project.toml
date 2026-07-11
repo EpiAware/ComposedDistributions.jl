@@ -25,7 +25,7 @@ ComposedDistributionsModifiedDistributionsExt = "ModifiedDistributions"
 ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
-ConvolvedDistributions = "0.1"
+ConvolvedDistributions = "0.2"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
 DynamicPPL = "0.39, 0.40, 0.41, 0.42"
