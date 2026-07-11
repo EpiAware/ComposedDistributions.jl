@@ -8,7 +8,7 @@
 # this workflow proactively pulls the newest standard on a schedule and reacts
 # to Dependabot action bumps so a repo never silently falls behind.
 #
-# Refs are preserved: `update` keeps whatever reusable-workflow SHA Dependabot
+# Refs are preserved: `scaffold_update` keeps whatever reusable-workflow SHA Dependabot
 # has pinned in this repo, so a sync never reverts a Dependabot bump — it only
 # re-applies the rest of the managed standard.
 

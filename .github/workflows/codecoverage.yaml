@@ -19,6 +19,11 @@ jobs:
       julia_version: '1'
       # Package extensions carry real code (Mooncake, FlexiChains); count
       # their lines so patch coverage on ext-touching PRs reflects reality.
+      # Kit's `with:` preservation (#73) does not cover this: this job's
+      # `with:` block already renders `julia_version:` from the template, so
+      # the seed always wins and this line is dropped on every
+      # scaffold_update. Re-added by hand until the kit supports it as a
+      # first-class input (#88).
       coverage_directories: 'src,ext'
       # Hard-fail the coverage check on an upload error. This is intentional:
       # a repo with no CODECOV_TOKEN cannot upload on a protected branch
