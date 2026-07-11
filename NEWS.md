@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **test:** end-to-end continuous delay-stack scenarios. A committed
+  `test/composers/stack_scenarios.jl` testset drives a handful of named,
+  epi-flavoured continuous stacks (an onset→admission→death `Sequential` chain,
+  a `Parallel` of independent reporting branches, a death-vs-discharge
+  `Resolve`, a competing-causes `Compete`, nested composes mixing them, a
+  renewal `convolve_series`, a `tie` group and a `difference`) through the whole
+  verb surface together — construction via both spellings, `rand`/`logpdf`
+  round-trip, a seeded large-N Monte-Carlo moment check against the analytic /
+  quadrature values, the introspection / edit / prior surface, and a ForwardDiff
+  gradient per stack.
+
 - **Breaking (upstream-driven):** following ConvolvedDistributions' rename, the
   re-exported `convolve_distributions` is split into two verbs —
   `convolved(dists...; method)` for the distribution form (the sum `X + Y`, a
