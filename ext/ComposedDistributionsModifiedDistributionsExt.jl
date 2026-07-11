@@ -18,8 +18,10 @@
 module ComposedDistributionsModifiedDistributionsExt
 
 import ComposedDistributions: free_leaf, rewrap_leaf, _shared_tag,
-                              _uncertain_specs, _thin_factor, _set_thin_factor
+                              _uncertain_specs, _thin_factor, _set_thin_factor,
+                              _leaf_mean, _leaf_var
 using ComposedDistributions: Shared
+using Distributions: mean, var
 import ModifiedDistributions: get_dist
 using ModifiedDistributions: Affine, Weighted, Transformed, Modified,
                              ThinOp, affine, modify
@@ -63,6 +65,40 @@ _uncertain_specs(d::Affine) = _uncertain_specs(d.dist)
 _uncertain_specs(d::Weighted) = _uncertain_specs(d.dist)
 _uncertain_specs(d::Transformed) = _uncertain_specs(d.dist)
 _uncertain_specs(d::Modified) = _uncertain_specs(d.dist)
+
+# --- overall moments: use the modifier's own moment, not the free leaf's -----
+#
+# The per-leaf moment defaults to `mean(free_leaf(leaf))`, which is the free
+# delay's — right for the parameter surface, but wrong for a moment when the
+# modifier itself changes the distribution. `Affine` has correct analytic
+# moments (`scale*mean + shift`, `scale^2*var`) and its `rand` honours the
+# transform, so its overall moment must too. `Weighted` / `Transformed` delegate
+# their moments straight to the inner delay, so their free-leaf moment already
+# agrees — no method needed.
+
+_leaf_mean(d::Affine) = mean(d)
+_leaf_var(d::Affine) = var(d)
+
+# `Modified` has no analytic moment yet (blocked on ModifiedDistributions#44's
+# numeric cumulative-hazard path), and `free_leaf` peels it to the inner delay —
+# so the default `mean(free_leaf(d))` would silently return the UNMODIFIED
+# delay's moment, understating the hazard modification. Error informatively
+# instead: a chain containing a hazard-modified step has no overall moment until
+# #44 lands (draw the marginal with `rand` meanwhile).
+function _leaf_mean(d::Modified)
+    throw(ArgumentError(
+        "a hazard-modified (`Modified`) leaf has no analytic mean; the " *
+        "modified moment needs numeric cumulative-hazard integration " *
+        "(ModifiedDistributions#44). Draw the marginal with `rand` for a " *
+        "Monte-Carlo moment, or exclude the modified step."))
+end
+function _leaf_var(d::Modified)
+    throw(ArgumentError(
+        "a hazard-modified (`Modified`) leaf has no analytic variance; the " *
+        "modified moment needs numeric cumulative-hazard integration " *
+        "(ModifiedDistributions#44). Draw the marginal with `rand` for a " *
+        "Monte-Carlo moment, or exclude the modified step."))
+end
 
 # --- _thin_factor / _set_thin_factor: surface a thin(...) reporting
 # probability as a free parameter -------------------------------------------

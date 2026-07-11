@@ -23,6 +23,14 @@
   quadrature values, the introspection / edit / prior surface, and a ForwardDiff
   gradient per stack.
 
+- Overall moments of a composed tree now honour an `affine` modifier: a chain
+  with an `affine(delay; scale, shift)` step reports the scale/shift-adjusted
+  mean/var (matching what `rand` draws) instead of peeling the affine off to the
+  inner delay's moment. A hazard-modified (`Modified`) leaf has no analytic
+  moment yet, so a chain containing one now errors informatively rather than
+  silently returning the unmodified free-leaf moment, pending
+  ModifiedDistributions#44's numeric cumulative-hazard path (#120).
+
 - **Breaking (upstream-driven):** following ConvolvedDistributions' rename, the
   re-exported `convolve_distributions` is split into two verbs —
   `convolved(dists...; method)` for the distribution form (the sum `X + Y`, a
