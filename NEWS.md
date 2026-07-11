@@ -24,6 +24,11 @@
   now re-exported. Compat bumped to `0.2`; because 0.2 is unregistered the source
   is git-pinned (re-adding what #107 removed) until it registers.
 
+- **refactor:** renamed the internal `src/composers/intervene.jl` to
+  `structural_edits.jl`, naming the `update` / `prune` / `splice` verbs it holds
+  (the `intervene` verb is gone from the public API). No user-facing change
+  (#114).
+
 - **test:** end-to-end continuous delay-stack scenarios. A committed
   `test/composers/stack_scenarios.jl` testset drives a handful of named,
   epi-flavoured continuous stacks (an onset→admission→death `Sequential` chain,

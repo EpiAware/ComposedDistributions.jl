@@ -168,7 +168,7 @@ include("composers/readback.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.
-include("composers/intervene.jl")
+include("composers/structural_edits.jl")
 # Shared (name-tagged tied leaf): after introspection so it can extend
 # `free_leaf`/`rewrap_leaf`, and after the structural edits (reuses `_edit_at`).
 include("composers/Shared.jl")

@@ -417,7 +417,7 @@ end
     @test event(tree2, :admit_death) == LogNormal(0.7, 0.5)
 end
 
-@testitem "intervene: update node, prune, splice" begin
+@testitem "structural edits: update node, prune, splice" begin
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -436,7 +436,7 @@ end
     @test event(sp, :admit_death) isa Sequential
 end
 
-@testitem "intervene through a nested Compete: update, prune, tie" begin
+@testitem "structural edits through a nested Compete: update, prune, tie" begin
     using Distributions
 
     node = compete(:immediate => Gamma(2.0, 1.0),
