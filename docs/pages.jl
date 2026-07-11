@@ -9,9 +9,9 @@
 
 pages = [
     "Home" => "index.md",
-    # Authored quickstart + infrastructure guide (package-owned source pages,
-    # distinct from the README-derived home page). Add tutorials under
-    # `getting-started/` as the package grows.
+    # Authored quickstart (package-owned source pages, distinct from the
+    # README-derived home page). Add tutorials under `getting-started/` as
+    # the package grows.
     "Getting started" => [
         "Overview" => "getting-started/index.md",
         "Concepts" => "getting-started/concepts.md",
@@ -22,8 +22,7 @@ pages = [
             "Multi-strata trees and parameter uncertainty" => "getting-started/tutorials/strata-uncertainty.md"
         ],
         "Time- and covariate-varying distributions" => "getting-started/varying-distributions.md",
-        "FAQ" => "getting-started/faq.md",
-        "Infrastructure and template sync" => "getting-started/infrastructure.md"
+        "FAQ" => "getting-started/faq.md"
     ],
     # Developer reference: the contracts a type must satisfy to take part in
     # composition, grounded in the conformance suite under `test/interfaces.jl`.
