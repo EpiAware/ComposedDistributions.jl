@@ -85,7 +85,7 @@ the template's central values until you pin concrete parameters with
 ```@example overview
 u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
 utree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
-has_uncertain(utree)
+(has_uncertain = has_uncertain(utree),)
 ```
 
 An [`uncertain`](@ref) leaf is one of two *deferred leaves*: a leaf that is not
