@@ -10,9 +10,9 @@ develops.
     This site's layout, navigation, and infrastructure are produced by
     [EpiAwarePackageTools](https://github.com/EpiAware/EpiAwarePackageTools.jl).
     Editing the generated pages by hand is not needed; write your content in
-    the package-owned source pages and let the scaffold render the rest.
-    See [Infrastructure and template sync](@ref infrastructure) for how the
-    kit keeps this repository in sync.
+    the package-owned source pages and let the scaffold render the rest. See
+    the [EpiAwarePackageTools documentation](https://github.com/EpiAware/EpiAwarePackageTools.jl)
+    for how the kit keeps this repository in sync.
 
 ## Installation
 
