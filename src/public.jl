@@ -31,3 +31,9 @@ public TestUtils
 # standard problem; this core stays Turing/LogDensityProblems-free.
 public flat_dimension, flatten, unflatten
 public ComposedLogDensity, as_logdensity, logdensity
+
+# The prior-driven unconstrained -> constrained transform (public but not
+# exported, like the rest of the codec): `to_constrained(prob, z)` has no
+# method until `Bijectors` is loaded, when `ComposedDistributionsBijectorsExt`
+# supplies it.
+public to_constrained

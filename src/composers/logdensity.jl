@@ -380,3 +380,48 @@ function _fixed_row_logprior(fp, x)
         fp[i] isa CentredPoolPrior ? zero(eltype(x)) : logpdf(fp[i], x[i])
     end
 end
+
+@doc "
+
+Map an unconstrained vector to the constrained scale and its log-Jacobian.
+
+`to_constrained(prob, z)` returns `(x, logjac)`: the constrained ESTIMATED flat
+parameters `x` corresponding to the unconstrained vector `z`, and the
+log-determinant Jacobian of that (inverse) transform. The transform is built
+per row from [`ComposedLogDensity`](@ref)'s stored `flat_priors` (each row's
+`Bijectors.bijector(prior)` — a positive-support prior pushes through an
+exp-type link, a stick-breaking `Beta` row through a logit-type link, and so
+on); a centred-pooled row (see [`pool`](@ref)) carries no fixed prior of its
+own — its row holds a `CentredPoolPrior` marker instead, since its population
+is hyperparameter-dependent — so its transform is read off its population's
+family instead. The unconstrained log-density a sampler works with is
+`logdensity(prob, x) + logjac`.
+
+This has no method until `Bijectors` is loaded; the prior-driven transform
+lives in the `ComposedDistributionsBijectorsExt` extension, so the core codec
+stays free of a `Bijectors` dependency.
+
+# Arguments
+- `prob`: the assembled [`ComposedLogDensity`](@ref).
+- `z`: an unconstrained flat vector of length
+  [`flat_dimension`](@ref)`(prob.dist)`.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions, Bijectors
+
+tree = compose((
+    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    admit_death = LogNormal(0.5, 0.4)))
+prob = ComposedDistributions.as_logdensity(tree, [[0.5, 2.0]])
+# An unconstrained draw maps to constrained parameters plus a log-Jacobian.
+z = zeros(ComposedDistributions.flat_dimension(tree))
+x, logjac = ComposedDistributions.to_constrained(prob, z)
+x
+```
+
+# See also
+- [`as_logdensity`](@ref): assemble `prob`.
+- [`logdensity`](@ref): the constrained-scale density this transform feeds.
+"
+function to_constrained end

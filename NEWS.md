@@ -1,5 +1,17 @@
 ## Unreleased
 
+- **feat:** `to_constrained(prob, z)` completes the PPL-neutral codec's HMC
+  surface: given an assembled `ComposedLogDensity` and an unconstrained flat
+  vector, it returns the constrained ESTIMATED parameters and the
+  log-determinant Jacobian a sampler needs
+  (`logdensity(prob, x) + logjac` is the unconstrained-space target). The
+  transform is built per row from each row's prior via `Bijectors.bijector`
+  (a stick-breaking `Beta` row, a positive-support prior, a non-centred
+  pooled latent/hyperparameter), or, for a centred-pooled row, from its
+  population's family. It lives in a new `ComposedDistributionsBijectorsExt`
+  weakdep extension, so the core codec stays free of a `Bijectors`
+  dependency.
+
 - **test:** end-to-end continuous delay-stack scenarios. A committed
   `test/composers/stack_scenarios.jl` testset drives a handful of named,
   epi-flavoured continuous stacks (an onset→admission→death `Sequential` chain,

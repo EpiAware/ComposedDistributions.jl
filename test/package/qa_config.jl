@@ -18,15 +18,21 @@ const QA_CONFIG = (
 
     # ExplicitImports `ignore`: symbols imported non-publicly.
     # `_logccdf_ad_safe` is a ConvolvedDistributions internal the racing-hazard
-    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag` and
-    # `_uncertain_specs` are the internal tag/spec protocols the
-    # ModifiedDistributions extension extends so a modified leaf peels its
-    # shared tag and uncertain parameter specs inside a composed tree;
-    # `_leaf_param_names` and `_collect_shared` are the internal leaf-naming
-    # and shared-group lookups the FlexiChains extension reuses to read a
-    # fitted chain back onto a composed tree.
+    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag`,
+    # `_uncertain_specs`, `_thin_factor` and `_set_thin_factor` are the internal
+    # tag/spec/thin-factor protocols the ModifiedDistributions extension
+    # extends so a modified leaf peels its shared tag and uncertain parameter
+    # specs inside a composed tree and a `thin` reporting probability
+    # round-trips through `params_table`/`update`; `_leaf_param_names` and
+    # `_collect_shared` are the internal leaf-naming and shared-group lookups
+    # the FlexiChains extension reuses to read a fitted chain back onto a
+    # composed tree; `CentredPoolPrior` and `_population_template` are the
+    # internal pooling marker type and population-family lookup the Bijectors
+    # extension reuses to read a centred-pooled row's constraint off its
+    # population instead of a fixed prior.
     ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs,
-        :_leaf_param_names, :_collect_shared),
+        :_thin_factor, :_set_thin_factor, :_leaf_param_names,
+        :_collect_shared, :CentredPoolPrior, :_population_template),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface
