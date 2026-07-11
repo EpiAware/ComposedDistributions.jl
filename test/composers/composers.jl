@@ -103,6 +103,21 @@ end
     @test var(c) >= 0
 end
 
+@testitem "Compete: winning probabilities sum to exactly one (#115)" begin
+    using Distributions
+
+    # Two proper competing risks: exactly one must win, so the derived winning
+    # probabilities sum to one. The per-cause Gauss-Legendre quadrature can
+    # overshoot (sum ≈ 1.0000322 before normalisation); `probs` rescales the
+    # split so the vector is a valid probability vector.
+    c = compete(:death => Gamma(1.5, 1.0), :recover => Gamma(2.0, 1.5))
+    p = probs(c)
+    @test sum(values(p)) ≈ 1.0
+    @test sum(values(p)) <= 1.0
+    @test occurrence_probability(c) ≈ 1.0
+    @test occurrence_probability(c) <= 1.0
+end
+
 @testitem "Compete: support floor is the earliest cause (staggered floors)" begin
     using Distributions, Random
 

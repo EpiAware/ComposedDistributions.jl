@@ -24,6 +24,13 @@
   now re-exported. Compat bumped to `0.2`; because 0.2 is unregistered the source
   is git-pinned (re-adding what #107 removed) until it registers.
 
+- **fix:** `probs` / `occurrence_probability` on a racing-hazard (`Compete`)
+  node no longer return winning probabilities that sum slightly above one. The
+  per-cause split is mathematically sub-stochastic (sums to `1 - ∏ S_k(∞) ≤ 1`),
+  but Gauss-Legendre quadrature could overshoot to e.g. 1.0000322 for proper
+  causes; the split is now rescaled to a valid probability vector when it
+  exceeds one, leaving a genuine sub-one defective deficit intact (#115).
+
 - **refactor:** the racing-hazard (`Compete`) moment, winning-probability and
   cause-cdf quadratures now call the public
   `integrate(::GaussLegendre, f, lo, hi)` rather than reaching into

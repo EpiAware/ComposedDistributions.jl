@@ -332,6 +332,13 @@ function probs(c::Compete)
     winning = ntuple(n) do j
         integrate(_PRIMARY, t -> exp(_hazard_cause_logpdf(c, j, t)), lo, hi)
     end
+    # The winning split is mathematically sub-stochastic: it sums to
+    # `1 - ∏ S_k(∞) ≤ 1`, the deficit being a defective cause's never-resolved
+    # mass. Gauss-Legendre quadrature can overshoot slightly above one for
+    # proper (eventually-certain) causes, so rescale down to a valid probability
+    # vector in that case, leaving a genuine sub-one defective deficit intact.
+    total = sum(winning)
+    winning = total > one(total) ? winning ./ total : winning
     return NamedTuple{c.names}(winning)
 end
 
