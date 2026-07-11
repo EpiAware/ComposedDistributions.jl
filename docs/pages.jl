@@ -19,7 +19,8 @@ pages = [
             "Composing distributions" => "getting-started/tutorials/composing-distributions.md",
             "Competing outcomes" => "getting-started/tutorials/competing-outcomes.md",
             "Delay chains and the linear chain trick" => "getting-started/tutorials/linear-chain.md",
-            "Multi-strata trees and parameter uncertainty" => "getting-started/tutorials/strata-uncertainty.md"
+            "Multi-strata trees and parameter uncertainty" => "getting-started/tutorials/strata-uncertainty.md",
+            "Automatic differentiation backends" => "getting-started/tutorials/ad-backends.md"
         ],
         "Time- and covariate-varying distributions" => "getting-started/varying-distributions.md",
         "FAQ" => "getting-started/faq.md"
