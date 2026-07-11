@@ -18,6 +18,7 @@ TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
 ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
 ConvolvedDistributions = "f5b942c9-bc5b-4664-8486-7f531bb06742"
+EpiAwareADTools = "908e2895-a690-4874-a954-ca006cb9734d"
 
 [sources]
 ADFixtures = {path = "../ADFixtures"}
@@ -26,6 +27,9 @@ ComposedDistributions = {path = "../.."}
 # registered (the registry still has 0.1). Pin it by git so the env resolves.
 # Drop this once 0.2 is released.
 ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
+# EpiAwareADTools (ConvolvedDistributions 0.2 AD-safe helpers, #137) is
+# unregistered; pin it by git so the env resolves. Drop once it registers.
+EpiAwareADTools = {url = "https://github.com/EpiAware/EpiAwareADTools.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit
 # alongside this package.

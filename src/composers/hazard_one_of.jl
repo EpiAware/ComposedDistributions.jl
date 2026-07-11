@@ -113,24 +113,24 @@ end
 
 # Survival of the marginal any-event time: `log ∏_k S_k(t) = Σ_k logccdf_k(t)`,
 # summed directly so a `Dual`/tracked leaf param propagates (no `float` strip).
-# Each term goes through `_logccdf_ad_safe` so a `Gamma` survival differentiates
+# Each term goes through `logccdf_ad_safe` so a `Gamma` survival differentiates
 # w.r.t. its shape/scale (the stock `logccdf(::Gamma)` has no `Dual`-shape rule).
 function _hazard_logsurvival(c::Compete, t::Real)
-    return sum(ntuple(k -> _logccdf_ad_safe(c.delays[k], t), _n_branches(c)))
+    return sum(ntuple(k -> logccdf_ad_safe(c.delays[k], t), _n_branches(c)))
 end
 
 # Cause-resolved log sub-density `log f_j(t) ∏_{k≠j} S_k(t) = log f_j(t) +
 # Σ_{k≠j} logccdf_k(t)`, the likelihood term for an observed `(cause j, time t)`.
 # Equivalently `logpdf_j(t) - logccdf_j(t) + Σ_k logccdf_k(t)` (the hazard form),
 # but written as the explicit `≠ j` sum to avoid an `Inf - Inf` when a cause's
-# survival underflows. AD-safe (`_logccdf_ad_safe` per term; the leaf params flow
+# survival underflows. AD-safe (`logccdf_ad_safe` per term; the leaf params flow
 # through).
 function _hazard_cause_logpdf(c::Compete, j::Int, t::Real)
     n = _n_branches(c)
     return logpdf(c.delays[j], t) +
            sum(ntuple(
-        k -> k == j ? zero(_logccdf_ad_safe(c.delays[k], t)) :
-             _logccdf_ad_safe(c.delays[k], t), n))
+        k -> k == j ? zero(logccdf_ad_safe(c.delays[k], t)) :
+             logccdf_ad_safe(c.delays[k], t), n))
 end
 
 @doc "
@@ -209,10 +209,10 @@ logccdf(c::Compete, t::Real) = _hazard_logsurvival(c, t)
 
 # A racing-hazard node is a univariate leaf for the survival surface (#465 / the
 # forward path): its AD-safe survival is just `_hazard_logsurvival`, so an outer
-# `_logccdf_ad_safe`/`_ccdf_ad_safe` query (e.g. a parent racing node) recurses
+# `logccdf_ad_safe`/`ccdf_ad_safe` query (e.g. a parent racing node) recurses
 # through the already-AD-safe terms rather than the stock `logccdf`.
-ConvolvedDistributions._logccdf_ad_safe(c::Compete, t::Real) = _hazard_logsurvival(c, t)
-ConvolvedDistributions._ccdf_ad_safe(c::Compete, t::Real) = exp(_hazard_logsurvival(c, t))
+EpiAwareADTools.logccdf_ad_safe(c::Compete, t::Real) = _hazard_logsurvival(c, t)
+EpiAwareADTools.ccdf_ad_safe(c::Compete, t::Real) = exp(_hazard_logsurvival(c, t))
 cdf(c::Compete, t::Real) = -expm1(_hazard_logsurvival(c, t))
 function logcdf(c::Compete, t::Real)
     return log1mexp(_hazard_logsurvival(c, t))

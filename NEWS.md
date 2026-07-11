@@ -1,5 +1,14 @@
 ## Unreleased
 
+- **Breaking (upstream-driven):** adopt the ConvolvedDistributions AD-seam move
+  (#137): ConvolvedDistributions 0.2 relocated its AD-safe hook family out to the
+  new `EpiAwareADTools` package under underscore-free names, so the racing-hazard
+  node now calls and extends `EpiAwareADTools.logccdf_ad_safe` /
+  `ccdf_ad_safe` (was `ConvolvedDistributions._logccdf_ad_safe` /
+  `._ccdf_ad_safe`). `EpiAwareADTools` is a new dependency; it is unregistered, so
+  it is git-pinned in the root and isolated (`test/ad`, `test/jet`, `benchmark`)
+  environments until it registers. No user-facing API change.
+
 - **Breaking (upstream-driven):** adopt ConvolvedDistributions 0.2, which makes
   the bare-distribution `convolve_series(delay, series)` discrete-only — a
   continuous delay now throws, because discretising it is an explicit modelling
