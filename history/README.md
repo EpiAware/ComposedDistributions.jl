@@ -1,6 +1,6 @@
 # ComposedDistributions.jl benchmark history
 
-Revisions: 2c15541087c3dcf53cc823674a3b76eec1d4da1e
+Revisions: c627d3f156288cb5f9f51075c327ba5d4d71760e
 
 See `table.md` for the ratio summary and the PNG
 files in this folder for per-benchmark timelines.
