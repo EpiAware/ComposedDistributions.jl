@@ -11,6 +11,7 @@ ADFixtures = "ec1ee8ad-3b9d-4294-a190-df7eed043993"
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
+ConvolvedDistributions = "f5b942c9-bc5b-4664-8486-7f531bb06742"
 DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
 DifferentiationInterfaceTest = "a82114a7-5aa3-49a8-9643-716bb13727a3"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
@@ -23,6 +24,10 @@ ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 [sources]
 ADFixtures = {path = "../test/ADFixtures"}
 ComposedDistributions = {path = ".."}
+# `convolved` only exists in ConvolvedDistributions 0.2, which is not yet
+# registered (the registry still has 0.1). Pin it by git so the env resolves.
+# Drop this once 0.2 is released.
+ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so
 # the env resolves out of the box. Switch to a local path to
 # develop the kit alongside this package.

@@ -5,9 +5,14 @@
 EpiAwarePackageTools = "7aaea248-0d11-4a0d-a7dc-86da30abb951"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
+ConvolvedDistributions = "f5b942c9-bc5b-4664-8486-7f531bb06742"
 
 [sources]
 ComposedDistributions = {path = "../.."}
+# `convolved` only exists in ConvolvedDistributions 0.2, which is not yet
+# registered (the registry still has 0.1). Pin it by git so the env resolves.
+# Drop this once 0.2 is released.
+ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so
 # the env resolves out of the box. Switch to a local path to
 # develop the kit alongside this package.

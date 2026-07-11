@@ -17,10 +17,15 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
 ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
+ConvolvedDistributions = "f5b942c9-bc5b-4664-8486-7f531bb06742"
 
 [sources]
 ADFixtures = {path = "../ADFixtures"}
 ComposedDistributions = {path = "../.."}
+# `convolved` only exists in ConvolvedDistributions 0.2, which is not yet
+# registered (the registry still has 0.1). Pin it by git so the env resolves.
+# Drop this once 0.2 is released.
+ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit
 # alongside this package.

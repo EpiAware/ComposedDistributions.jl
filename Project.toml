@@ -25,7 +25,7 @@ ComposedDistributionsModifiedDistributionsExt = "ModifiedDistributions"
 ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
-ConvolvedDistributions = "0.1"
+ConvolvedDistributions = "0.2"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
 DynamicPPL = "0.39, 0.40, 0.41, 0.42"
@@ -38,6 +38,15 @@ Statistics = "1"
 Tables = "1"
 Test = "1"
 julia = "1.11, 1.12"
+
+# TEMPORARY: `convolved`/`convolve_series` only exist in ConvolvedDistributions
+# 0.2, which is not yet registered (the registry still has 0.1). It is a direct
+# dependency, so in the test/docs workspace its source pin must live here in the
+# root (a workspace member's `[sources]` is not honoured for a root-level dep).
+# This reverts #107; drop it once 0.2 is registered (then this package becomes
+# registrable again too).
+[sources]
+ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
 
 [workspace]
 projects = ["test", "docs"]
