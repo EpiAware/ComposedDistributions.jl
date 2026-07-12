@@ -15,17 +15,20 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [weakdeps]
+Bijectors = "76274a88-744f-5084-9051-94815aaf08c4"
 DynamicPPL = "366bfd00-2699-11ea-058f-f148b4cae6d8"
 FlexiChains = "4a37a8b9-6e57-4b92-8664-298d46e639f7"
 ModifiedDistributions = "664e6f8c-d74f-44d3-9f37-f82699103046"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [extensions]
+ComposedDistributionsBijectorsExt = "Bijectors"
 ComposedDistributionsFlexiChainsExt = ["DynamicPPL", "FlexiChains"]
 ComposedDistributionsModifiedDistributionsExt = "ModifiedDistributions"
 ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
+Bijectors = "0.13, 0.14, 0.15, 0.16"
 ConvolvedDistributions = "0.2"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
