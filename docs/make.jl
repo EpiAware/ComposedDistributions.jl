@@ -35,9 +35,17 @@ using ComposedDistributions
 # never re-applied by `scaffold_update` — so an adopter predating either file has none.
 # Guard the include so a re-applied managed `make.jl` still loads and falls
 # back to defaults (#163) rather than erroring on a missing file; `_cfg` then
-# defaults every key a missing or older config predates.
+# defaults every key a missing or older config predates. The fallback warns
+# because a build that silently defaults `pages` publishes a Home-only
+# navigation, which a green docs run would otherwise hide (#188).
 for _f in ("pages.jl", "docs_config.jl")
-    isfile(joinpath(@__DIR__, _f)) && include(joinpath(@__DIR__, _f))
+    if isfile(joinpath(@__DIR__, _f))
+        include(joinpath(@__DIR__, _f))
+    else
+        @warn "docs/$(_f) not found; building with defaults " *
+              "(a missing pages.jl leaves the site with a Home-only nav). " *
+              "Write it if this package should own one."
+    end
 end
 
 # Read a package-owned config const, defaulting when a missing or older
@@ -64,5 +72,18 @@ build_docs(
     index_rewrites = _cfg(:INDEX_REWRITES, Pair{String, String}[]),
     readme_execute = _cfg(:README_EXECUTE, true),
     index_strip_sections = _cfg(:INDEX_STRIP_SECTIONS, String[]),
-    benchmark_page = _cfg(:BENCHMARK_PAGE, false)
+    benchmark_page = _cfg(:BENCHMARK_PAGE, false),
+    # Performance-history rendering (#193): restrict to headline suites and cap
+    # the overall summary/detail to the most-recent revisions. Both default to
+    # the whole timeline when a package predates these config keys.
+    history_suites = _cfg(:HISTORY_SUITES, String[]),
+    history_commits = _cfg(:HISTORY_COMMITS, 5),
+    # Overall-summary regression cutoff: the ratio (against the oldest shown
+    # revision) at or above which a suite's `Status` flags "⚠ reg". Defaults
+    # when a package predates this config key.
+    history_regression_threshold = _cfg(:HISTORY_REGRESSION_THRESHOLD, 1.1),
+    # Extra docstring-owning modules for a re-export the alias walk cannot
+    # reach (e.g. one referenced only from prose); owners of re-exported API
+    # bindings are auto-discovered, so most packages leave this empty (#175).
+    extra_modules = _cfg(:EXTRA_MODULES, Module[])
 )
