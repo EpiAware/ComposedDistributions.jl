@@ -17,7 +17,8 @@
 #
 # They share ONE resolution machinery: `instantiate` rebuilds through the same
 # `_node_children` / `_rebuild` walk that `update`'s value collapse and
-# `intervene.jl`'s path edits use, rather than hand-rolling its own tree walk.
+# `structural_edits.jl`'s path edits use, rather than hand-rolling its own tree
+# walk.
 # A leaf can be BOTH (a time-varying delay whose per-level parameter is itself
 # `uncertain`): `instantiate` resolves the covariate and yields an `uncertain`
 # leaf the estimation layer then reads as latent.
@@ -289,7 +290,8 @@ instantiate(d::Varying, ctx::AbstractContext) = d.f(_covariate(ctx, d.covariate)
 # A composer resolves every child against the context and rebuilds itself
 # unchanged, so the tree shape and names are preserved and only the leaves
 # change. This reuses the `_node_children` / `_rebuild` reconstruction machinery
-# that `update`'s value walk and `intervene.jl`'s path edits already share, so
+# that `update`'s value walk and `structural_edits.jl`'s path edits already
+# share, so
 # resolution is not a third hand-rolled tree walk. `Resolve` / `Compete` are
 # `UnivariateDistribution`s, so these node methods win over the leaf identity.
 function instantiate(d::Union{Sequential, Parallel, Resolve, Compete},

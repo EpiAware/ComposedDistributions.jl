@@ -676,7 +676,7 @@ edit, dispatching on the second argument.
 - a nested `NamedTuple` of parameter values/specs (below): fixes or re-specs
   free parameters, the fine-grained value edit;
 - one or more `path => new_node` pairs ([`update`](@ref)`(d, edits::Pair...)`
-  in `intervene.jl`): replaces whole nodes, coarser than a value edit but
+  in `structural_edits.jl`): replaces whole nodes, coarser than a value edit but
   still SAME-shape;
 - a fitted `DynamicPPL`/`FlexiChains` chain (extension-only, in
   `ComposedDistributionsFlexiChainsExt`): reads posterior parameter values

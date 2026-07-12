@@ -169,29 +169,28 @@ function _hazard_marginal_window(c::Compete)
     return _hazard_quad_window(c)
 end
 
-# The shared 64-node Gauss-Legendre rule for the racing-hazard moment / winning-
-# probability / cause-cdf quadratures. The convolution quadrature default
-# (`_CONVOLVED_GL`, 192 nodes) is tuned for the batched-window convolution path;
-# these smooth density-weighted integrals over one window converge at far fewer
-# nodes, so a fixed 64-node rule threads through them for speed with no loss of
-# accuracy (matching CensoredDistributions' `_PRIMARY_GL`).
-const _PRIMARY_GL = GaussLegendre(; n = 64).rule
+# The shared 64-node Gauss-Legendre solver for the racing-hazard moment /
+# winning-probability / cause-cdf quadratures, driven through the public
+# `integrate(::GaussLegendre, f, lo, hi)` (no reach into the internal rule). The
+# convolution quadrature default (192 nodes) is tuned for the batched-window
+# convolution path; these smooth density-weighted integrals over one window
+# converge at far fewer nodes, so a fixed 64-node solver threads through them
+# for speed with no loss of accuracy.
+const _PRIMARY = GaussLegendre(; n = 64)
 
 function mean(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("mean")
     hi = _hazard_marginal_window(c)
-    return gl_integrate(zero(hi), hi, _PRIMARY_GL) do t
-        exp(_hazard_logsurvival(c, t))
-    end
+    return integrate(
+        _PRIMARY, t -> exp(_hazard_logsurvival(c, t)), zero(hi), hi)
 end
 
 function var(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("var")
     hi = _hazard_marginal_window(c)
     m = mean(c)
-    e2 = gl_integrate(zero(hi), hi, _PRIMARY_GL) do t
-        2 * t * exp(_hazard_logsurvival(c, t))
-    end
+    e2 = integrate(
+        _PRIMARY, t -> 2 * t * exp(_hazard_logsurvival(c, t)), zero(hi), hi)
     # Two independent quadratures can leave `e2 - m^2` a tiny negative for a
     # near-degenerate node; clamp to keep the variance non-negative.
     diff = e2 - m^2
@@ -331,10 +330,15 @@ function probs(c::Compete)
     hi = isfinite(hi_raw) ? hi_raw : lo + _hazard_quad_window(c)
     n = _n_branches(c)
     winning = ntuple(n) do j
-        gl_integrate(lo, hi, _PRIMARY_GL) do t
-            exp(_hazard_cause_logpdf(c, j, t))
-        end
+        integrate(_PRIMARY, t -> exp(_hazard_cause_logpdf(c, j, t)), lo, hi)
     end
+    # The winning split is mathematically sub-stochastic: it sums to
+    # `1 - ∏ S_k(∞) ≤ 1`, the deficit being a defective cause's never-resolved
+    # mass. Gauss-Legendre quadrature can overshoot slightly above one for
+    # proper (eventually-certain) causes, so rescale down to a valid probability
+    # vector in that case, leaving a genuine sub-one defective deficit intact.
+    total = sum(winning)
+    winning = total > one(total) ? winning ./ total : winning
     return NamedTuple{c.names}(winning)
 end
 
@@ -409,9 +413,9 @@ pdf(d::_HazardCauseDelay, t::Real) = exp(logpdf(d, t))
 function cdf(d::_HazardCauseDelay, t::Real)
     lo = float(minimum(d.node))
     t <= lo && return zero(float(t))
-    return gl_integrate(lo, float(t), _PRIMARY_GL) do u
-        exp(_hazard_cause_logpdf(d.node, d.cause, u))
-    end
+    return integrate(
+        _PRIMARY, u -> exp(_hazard_cause_logpdf(d.node, d.cause, u)),
+        lo, float(t))
 end
 
 @doc "

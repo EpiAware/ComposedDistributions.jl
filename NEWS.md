@@ -36,6 +36,34 @@
   now re-exported. Compat bumped to `0.2`; because 0.2 is unregistered the source
   is git-pinned (re-adding what #107 removed) until it registers.
 
+- **feat:** re-export ConvolvedDistributions 0.2's Mellin product family (the
+  `product` constructor for `Z = X * Y`), so the convolution surface is complete
+  through ComposedDistributions alone. The `product` constructor is exported;
+  the `Product` type stays unexported (a bare `Product` would clash with
+  Distributions' deprecated `Product`) but is public and reachable as
+  `ComposedDistributions.Product`, mirroring ConvolvedDistributions. Composing a
+  `Product` leaf into a tree is not yet wired (#139).
+
+- **fix:** `probs` / `occurrence_probability` on a racing-hazard (`Compete`)
+  node no longer return winning probabilities that sum slightly above one. The
+  per-cause split is mathematically sub-stochastic (sums to `1 - ∏ S_k(∞) ≤ 1`),
+  but Gauss-Legendre quadrature could overshoot to e.g. 1.0000322 for proper
+  causes; the split is now rescaled to a valid probability vector when it
+  exceeds one, leaving a genuine sub-one defective deficit intact (#115).
+
+- **refactor:** the racing-hazard (`Compete`) moment, winning-probability and
+  cause-cdf quadratures now call the public
+  `integrate(::GaussLegendre, f, lo, hi)` rather than reaching into
+  ConvolvedDistributions' internal `GaussLegendre(; n).rule` and `gl_integrate`.
+  Results are identical (the same fixed 64-node rule); this drops the coupling
+  to an unexported upstream type that could change without a breaking bump
+  (#109).
+
+- **refactor:** renamed the internal `src/composers/intervene.jl` to
+  `structural_edits.jl`, naming the `update` / `prune` / `splice` verbs it holds
+  (the `intervene` verb is gone from the public API). No user-facing change
+  (#114).
+
 - **test:** end-to-end continuous delay-stack scenarios. A committed
   `test/composers/stack_scenarios.jl` testset drives a handful of named,
   epi-flavoured continuous stacks (an onset→admission→death `Sequential` chain,
