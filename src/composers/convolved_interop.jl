@@ -11,7 +11,11 @@
 #     tree (its component parameters inventoried and fitted in place).
 # Each collapses the composed operand to its observed univariate quantity
 # (`observed_distribution`) and then reuses the univariate ConvolvedDistributions
-# method, so the composed and univariate results are identical by construction.
+# method. `difference` reuses it directly. `convolve_series` collapses to a
+# CONTINUOUS observed total, which ConvolvedDistributions 0.2 no longer
+# discretises silently (it is discrete-only), so the chain path discretises the
+# total with the interval-censored-secondary scheme (`discretise_pmf`) before
+# convolving — identical to the pre-0.2 continuous output by construction.
 
 # --- vector (timeseries) convolution driven by a composed chain --------------
 
@@ -28,9 +32,17 @@ times `0, 1, ..., t` (e.g. infections), the result is the expected downstream
 event counts at the same times — the EpiNow2-style latent / renewal observation
 layer, driven by a composed delay rather than a bare distribution.
 
-The result is identical to
-`convolve_series(observed_distribution(chain), series)`: the chain is
-collapsed to its convolved total and then the univariate timeseries method runs.
+ConvolvedDistributions 0.2 makes the bare-distribution `convolve_series`
+discrete-only, because discretising a continuous delay is an explicit modelling
+choice (single- vs double-interval censoring). A composed chain collapses to a
+CONTINUOUS observed total, so this convenience discretises it for you with the
+interval-censored-secondary scheme ([`discretise_pmf`](@ref) over lags
+`0:(length(series) - 1)`) before convolving; the result is
+`convolve_series(discretise_pmf(observed_distribution(chain),`
+`length(series) - 1; interval), series)` and is unchanged from the pre-0.2
+continuous output. For day-binned (double-interval-censored) primaries,
+discretise the total yourself and pass the PMF to
+`convolve_series(pmf, series)`.
 
 Pass `events` to convolve the series to a chosen INTERIM event of the chain
 rather than its endpoint. A single event name returns the count series at that
@@ -46,9 +58,9 @@ per-event cumulative delays; a chain with a branching step is rejected.
 - `series`: the input timeseries (expected events at unit-spaced times from 0).
 
 # Keyword Arguments
-- `interval`: the discretisation grid width, which is also the series time-step.
-  The series is unit-spaced, so this must be `1` (the default); any other value
-  is rejected by the underlying univariate method.
+- `interval`: the discretisation grid width passed to [`discretise_pmf`](@ref),
+  which is also the series time-step (default `1`). The series is read on this
+  grid, so lag `k` shifts by `k` steps of this width.
 - `events`: a chain event name, or a tuple/vector of names, to convolve the
   series to (the cumulative delay of the chain prefix up to that event). The
   valid names are the chain's [`event_names`](@ref) after the origin. `nothing`
@@ -77,9 +89,36 @@ by_event = convolve_series(onset_to, infections;
 function ConvolvedDistributions.convolve_series(
         d::Sequential, series::AbstractVector{<:Real};
         interval = 1, events = nothing)
-    events === nothing && return convolve_series(
-        observed_distribution(d), series; interval = interval)
+    events === nothing && return _convolve_observed_series(
+        observed_distribution(d), series, interval)
     return _convolve_chain_events(d, series, events, interval)
+end
+
+# ConvolvedDistributions 0.2 makes the bare-distribution `convolve_series`
+# discrete-only: a continuous delay carries no mass on the integer lag grid
+# until it is discretised, and the single- vs double-interval-censoring choice
+# is one upstream will not make silently. A composed tree collapses to a
+# CONTINUOUS observed total delay, so the composed-tree convenience discretises
+# it here rather than pushing that step onto the caller. `discretise_pmf`'s
+# CDF-difference masses over lags `0:(length(series) - 1)` are exactly the
+# pre-0.2 continuous discretisation, so the composed output is unchanged; the
+# masses then ride the discrete `convolve_series(pmf, series)` method.
+function _convolve_observed_series(
+        delay::UnivariateDistribution, series::AbstractVector{<:Real}, interval)
+    pmf = discretise_pmf(delay, length(series) - 1; interval = interval)
+    return convolve_series(pmf, series)
+end
+
+# A one_of node (`Resolve` / `Compete`) IS a univariate continuous delay — its
+# marginal time to the resolving event — so `observed_distribution` returns it
+# unchanged. Under ConvolvedDistributions 0.2 the bare-distribution
+# `convolve_series` is discrete-only and would reject that continuous marginal,
+# so the composed-tree convenience discretises it here (identical to the pre-0.2
+# output) rather than making the caller collapse and discretise it by hand.
+function ConvolvedDistributions.convolve_series(
+        d::AbstractOneOf, series::AbstractVector{<:Real}; interval = 1)
+    return _convolve_observed_series(
+        observed_distribution(d), series, interval)
 end
 
 # A `Parallel` has several independent endpoints and so no single observed delay
@@ -120,7 +159,7 @@ end
 function _convolve_chain_events(
         d::Sequential, series::AbstractVector{<:Real}, name::Symbol, interval)
     delay = _event_prefix_delay(d, name)
-    return convolve_series(delay, series; interval = interval)
+    return _convolve_observed_series(delay, series, interval)
 end
 
 # Several event names: a `NamedTuple` of the per-event series, keyed by the names.
