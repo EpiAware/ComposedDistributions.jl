@@ -51,14 +51,17 @@ import Tables
 # packages sit on ComposedDistributions alone. Every name is imported explicitly
 # (the exported surface plus the public-but-unexported quadrature helpers).
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
-                              convolve_series, Difference, difference,
+                              convolve_series, discretise_pmf, DelayPMF,
+                              Difference, difference,
                               AnalyticalSolver, NumericSolver, gl_integrate,
                               GaussLegendre, integrate, AbstractSolverMethod,
                               Convolved
-# AD-safe survival helper. Called by the racing-hazard node and extended for it
-# (the `Compete` methods are defined fully-qualified in hazard_one_of.jl). This
-# is an upstream internal, so it is listed in `ei_ignore` in the QA config.
-using ConvolvedDistributions: _logccdf_ad_safe
+# AD-safe survival helpers, now owned by EpiAwareADTools (ConvolvedDistributions
+# 0.2 moved the `*_ad_safe` family out under underscore-free names, #137).
+# `logccdf_ad_safe` is called by the racing-hazard node and both it and
+# `ccdf_ad_safe` are extended for `Compete` (the methods are defined
+# fully-qualified in hazard_one_of.jl, so the module name is imported too).
+using EpiAwareADTools: EpiAwareADTools, logccdf_ad_safe
 
 # Docstring-template helpers, imported here (centralised) and used by the
 # `@template` blocks in src/docstrings.jl.
@@ -138,9 +141,9 @@ export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
 # convolution + quadrature through ComposedDistributions alone.
-export convolved, convolve_series, Difference, difference,
-       AnalyticalSolver, NumericSolver, Convolved, AbstractSolverMethod,
-       GaussLegendre, integrate, gl_integrate
+export convolved, convolve_series, discretise_pmf, DelayPMF, Difference,
+       difference, AnalyticalSolver, NumericSolver, Convolved,
+       AbstractSolverMethod, GaussLegendre, integrate, gl_integrate
 
 # --- includes --------------------------------------------------------------
 
