@@ -188,6 +188,21 @@ end
           mean(g) - mean(observed_distribution(onset))
 end
 
+@testitem "product / Product reachable via ComposedDistributions (#139)" begin
+    using Distributions
+
+    # The Mellin product family (`Z = X * Y`) is reachable through
+    # ComposedDistributions alone, so a downstream sitting on this package sees
+    # the whole convolution surface. `product` is exported; `Product` stays
+    # unexported (Distributions clash) but is reachable module-qualified. Bare
+    # re-export only; composing a `Product` leaf into a tree is out of scope.
+    @test isdefined(ComposedDistributions, :product)
+    @test isdefined(ComposedDistributions, :Product)
+    d = product(Gamma(3.0, 1.0), LogNormal(0.0, 0.3))
+    @test d isa ComposedDistributions.Product
+    @test mean(d) ≈ 3.0 * exp(0.3^2 / 2)
+end
+
 @testitem "Convolved leaf in a tree: rand / logpdf / moments" begin
     using Distributions
     using Random

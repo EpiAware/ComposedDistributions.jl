@@ -52,7 +52,7 @@ import Tables
 # (the exported surface plus the public-but-unexported quadrature helpers).
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
                               convolve_series, discretise_pmf, DelayPMF,
-                              Difference, difference,
+                              Difference, difference, product, Product,
                               AnalyticalSolver, NumericSolver, gl_integrate,
                               GaussLegendre, integrate, AbstractSolverMethod,
                               Convolved
@@ -140,9 +140,13 @@ export chain_to_params, param_draws, strip_prefix
 export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
-# convolution + quadrature through ComposedDistributions alone.
+# convolution + quadrature through ComposedDistributions alone. The `product`
+# constructor is exported; its `Product` type stays unexported (see `public.jl`)
+# because a bare `Product` would clash with Distributions' deprecated `Product`
+# under the usual `using ComposedDistributions, Distributions` — reach it as
+# `ComposedDistributions.Product`, exactly as ConvolvedDistributions intends.
 export convolved, convolve_series, discretise_pmf, DelayPMF, Difference,
-       difference, AnalyticalSolver, NumericSolver, Convolved,
+       difference, product, AnalyticalSolver, NumericSolver, Convolved,
        AbstractSolverMethod, GaussLegendre, integrate, gl_integrate
 
 # --- includes --------------------------------------------------------------

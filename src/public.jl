@@ -24,6 +24,12 @@ public rand_outcome
 # the per-family `test_*` checks).
 public TestUtils
 
+# The Mellin product type (`Z = X * Y`) re-exported from ConvolvedDistributions.
+# Its `product` constructor is exported, but the `Product` type stays unexported
+# because a bare `Product` would clash with Distributions' deprecated `Product`;
+# reach it as `ComposedDistributions.Product`.
+public Product
+
 # The LogDensityProblems core codec: the flat-vector <-> nested-NamedTuple
 # bijection (`flat_dimension`/`flatten`/`unflatten`) and the assembled
 # PPL-neutral log-density (`ComposedLogDensity`/`as_logdensity`/`logdensity`).

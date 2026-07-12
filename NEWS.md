@@ -24,6 +24,14 @@
   now re-exported. Compat bumped to `0.2`; because 0.2 is unregistered the source
   is git-pinned (re-adding what #107 removed) until it registers.
 
+- **feat:** re-export ConvolvedDistributions 0.2's Mellin product family (the
+  `product` constructor for `Z = X * Y`), so the convolution surface is complete
+  through ComposedDistributions alone. The `product` constructor is exported;
+  the `Product` type stays unexported (a bare `Product` would clash with
+  Distributions' deprecated `Product`) but is public and reachable as
+  `ComposedDistributions.Product`, mirroring ConvolvedDistributions. Composing a
+  `Product` leaf into a tree is not yet wired (#139).
+
 - **fix:** `probs` / `occurrence_probability` on a racing-hazard (`Compete`)
   node no longer return winning probabilities that sum slightly above one. The
   per-cause split is mathematically sub-stochastic (sums to `1 - ∏ S_k(∞) ≤ 1`),
