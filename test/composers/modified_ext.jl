@@ -348,3 +348,38 @@ end
     # The overall chain moment honours the resolved affine (mean 2*3 + 1 = 7).
     @test mean(resolved) ≈ (2.0 * mean(Gamma(2.0, 1.5)) + 1.0) + 3.0
 end
+
+@testitem "Modified extension: a modifier wrapping a Varying leaf resolves" begin
+    using Distributions
+    using ModifiedDistributions
+    using ModifiedDistributions: affine, weight, thin, modify
+
+    # The OUTER form: a modifier wraps a Varying leaf directly. Without the
+    # instantiate/has_varying descent this silently scores against the
+    # reference (the footgun has_varying guards against).
+    v = varying(t -> LogNormal(1.0 + 0.1 * t, 0.5);
+        covariate = :time, reference = LogNormal(1.0, 0.5))
+    ctx = Context(time = 3.0)
+    resolved_inner = instantiate(v, ctx)
+
+    @test has_varying(affine(v; scale = 2.0))
+    @test has_varying(weight(v, 0.5))
+    @test has_varying(thin(v, 0.3))
+    @test has_varying(modify(v, 0.5))
+    @test !has_varying(modify(LogNormal(1.0, 0.5), 0.5))
+
+    @test instantiate(affine(v; scale = 2.0), ctx) ==
+          affine(resolved_inner; scale = 2.0)
+    @test instantiate(weight(v, 0.5), ctx) == weight(resolved_inner, 0.5)
+    @test instantiate(thin(v, 0.3), ctx) == thin(resolved_inner, 0.3)
+
+    rm = instantiate(modify(v, 0.5), ctx)
+    @test rm isa ModifiedDistributions.Modified
+    @test rm.dist == resolved_inner
+    @test !has_varying(rm)
+
+    # End to end: a Sequential chain with a modified varying step.
+    chain = sequential(:step => modify(v, 0.5), :tail => Gamma(3.0, 1.0))
+    @test has_varying(chain)
+    @test !has_varying(instantiate(chain, ctx))
+end

@@ -19,8 +19,8 @@ module ComposedDistributionsModifiedDistributionsExt
 
 import ComposedDistributions: free_leaf, rewrap_leaf, _shared_tag,
                               _uncertain_specs, _thin_factor, _set_thin_factor,
-                              _leaf_mean, _leaf_var
-using ComposedDistributions: Shared
+                              _leaf_mean, _leaf_var, instantiate, has_varying
+using ComposedDistributions: Shared, AbstractContext
 using Distributions: mean, var
 import ModifiedDistributions: get_dist
 using ModifiedDistributions: Affine, Weighted, Transformed, Modified,
@@ -136,5 +136,33 @@ end
 # --- get_dist: the composed `Shared` tag is transparent to the unwrap protocol
 
 get_dist(d::Shared) = d.dist
+
+# --- instantiate / has_varying: resolve a Varying leaf through a modifier ---
+#
+# A modifier wrapping a `Varying` leaf must peel through so the inner Varying
+# resolves at a `Context`; without these methods `instantiate` falls to the
+# identity `instantiate(::UnivariateDistribution, ctx) = d`, silently scoring
+# against the reference, and `has_varying` falls to `false`, so the guard
+# never fires. Mirrors the `Shared` descent.
+
+function instantiate(d::Affine, ctx::AbstractContext)
+    affine(
+        instantiate(d.dist, ctx); scale = d.scale, shift = d.shift)
+end
+function instantiate(d::Weighted, ctx::AbstractContext)
+    Weighted(instantiate(d.dist, ctx), d.weight)
+end
+function instantiate(d::Transformed, ctx::AbstractContext)
+    Transformed(instantiate(d.dist, ctx), d.op)
+end
+function instantiate(d::Modified, ctx::AbstractContext)
+    modify(
+        instantiate(d.dist, ctx), d.effect; link = d.link)
+end
+
+has_varying(d::Affine) = has_varying(d.dist)
+has_varying(d::Weighted) = has_varying(d.dist)
+has_varying(d::Transformed) = has_varying(d.dist)
+has_varying(d::Modified) = has_varying(d.dist)
 
 end # module
