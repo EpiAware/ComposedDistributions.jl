@@ -17,8 +17,8 @@ const QA_CONFIG = (
     aqua = (;),
 
     # ExplicitImports `ignore`: symbols imported non-publicly.
-    # `_logccdf_ad_safe` is a ConvolvedDistributions internal the racing-hazard
-    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag` and
+    # (`logccdf_ad_safe` is a public EpiAwareADTools export the racing-hazard node
+    # reuses and extends, so it needs no ignore.) `_shared_tag` and
     # `_uncertain_specs` are the internal tag/spec protocols the
     # ModifiedDistributions extension extends so a modified leaf peels its
     # shared tag and uncertain parameter specs inside a composed tree;
@@ -30,7 +30,7 @@ const QA_CONFIG = (
     # ModifiedDistributions extension extends so a thin(...)/affine(...) leaf
     # surfaces its reporting probability and honours its analytic moment
     # inside a composed tree.
-    ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs,
+    ei_ignore = (:_shared_tag, :_uncertain_specs,
         :_leaf_param_names, :_collect_shared, :_thin_factor,
         :_set_thin_factor, :_leaf_mean, :_leaf_var),
 
