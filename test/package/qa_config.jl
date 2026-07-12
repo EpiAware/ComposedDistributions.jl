@@ -17,8 +17,8 @@ const QA_CONFIG = (
     aqua = (;),
 
     # ExplicitImports `ignore`: symbols imported non-publicly.
-    # `_logccdf_ad_safe` is a ConvolvedDistributions internal the racing-hazard
-    # node reuses (and extends) for an AD-safe Gamma survival; `_shared_tag`,
+    # (`logccdf_ad_safe` is a public EpiAwareADTools export the racing-hazard node
+    # reuses and extends, so it needs no ignore.) `_shared_tag`,
     # `_uncertain_specs`, `_thin_factor` and `_set_thin_factor` are the internal
     # tag/spec/thin-factor protocols, and `_leaf_mean`/`_leaf_var` the internal
     # per-leaf moment hooks, that the ModifiedDistributions extension extends
@@ -32,10 +32,9 @@ const QA_CONFIG = (
     # marker type and population-family lookup the Bijectors extension reuses
     # to read a centred-pooled row's constraint off its population instead of
     # a fixed prior.
-    ei_ignore = (:_logccdf_ad_safe, :_shared_tag, :_uncertain_specs,
-        :_thin_factor, :_set_thin_factor, :_leaf_mean, :_leaf_var,
-        :_leaf_param_names, :_collect_shared, :CentredPoolPrior,
-        :_population_template),
+    ei_ignore = (:_shared_tag, :_uncertain_specs, :_thin_factor,
+        :_set_thin_factor, :_leaf_mean, :_leaf_var, :_leaf_param_names,
+        :_collect_shared, :CentredPoolPrior, :_population_template),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface

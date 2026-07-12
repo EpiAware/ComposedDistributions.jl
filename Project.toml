@@ -7,6 +7,7 @@ version = "0.1.0"
 ConvolvedDistributions = "f5b942c9-bc5b-4664-8486-7f531bb06742"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+EpiAwareADTools = "908e2895-a690-4874-a954-ca006cb9734d"
 LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
@@ -28,10 +29,11 @@ ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
 Bijectors = "0.13, 0.14, 0.15, 0.16"
-ConvolvedDistributions = "0.1"
+ConvolvedDistributions = "0.2"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
 DynamicPPL = "0.39, 0.40, 0.41, 0.42"
+EpiAwareADTools = "0.1"
 FlexiChains = "0.4, 0.5, 0.6"
 LogExpFunctions = "0.3, 1"
 ModifiedDistributions = "0.1"
@@ -41,6 +43,16 @@ Statistics = "1"
 Tables = "1"
 Test = "1"
 julia = "1.11, 1.12"
+
+# TEMPORARY: `convolved`/`convolve_series` only exist in ConvolvedDistributions
+# 0.2, and its AD-safe helpers now live in EpiAwareADTools (adopted here, #137);
+# neither is registered yet. They are direct dependencies, so in the test/docs
+# workspace their source pins must live here in the root (a workspace member's
+# `[sources]` is not honoured for a root-level dep). This reverts #107; drop both
+# pins once the packages register (then this package becomes registrable again).
+[sources]
+ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
+EpiAwareADTools = {url = "https://github.com/EpiAware/EpiAwareADTools.jl", rev = "main"}
 
 [workspace]
 projects = ["test", "docs"]

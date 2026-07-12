@@ -12,6 +12,30 @@
   weakdep extension, so the core codec stays free of a `Bijectors`
   dependency.
 
+- **Breaking (upstream-driven):** adopt the ConvolvedDistributions AD-seam move
+  (#137): ConvolvedDistributions 0.2 relocated its AD-safe hook family out to the
+  new `EpiAwareADTools` package under underscore-free names, so the racing-hazard
+  node now calls and extends `EpiAwareADTools.logccdf_ad_safe` /
+  `ccdf_ad_safe` (was `ConvolvedDistributions._logccdf_ad_safe` /
+  `._ccdf_ad_safe`). `EpiAwareADTools` is a new dependency; it is unregistered, so
+  it is git-pinned in the root and isolated (`test/ad`, `test/jet`, `benchmark`)
+  environments until it registers. No user-facing API change.
+
+- **Breaking (upstream-driven):** adopt ConvolvedDistributions 0.2, which makes
+  the bare-distribution `convolve_series(delay, series)` discrete-only — a
+  continuous delay now throws, because discretising it is an explicit modelling
+  choice (single- vs double-interval censoring) upstream will not make silently
+  (ConvolvedDistributions #31/#47). The composed-tree convenience is preserved:
+  `convolve_series(::Sequential, series; events)` and
+  `convolve_series(::Resolve/::Compete, series)` collapse to their continuous
+  observed total and discretise it for you with the interval-censored-secondary
+  scheme (`discretise_pmf` over lags `0:(length(series) - 1)`) before convolving,
+  so the composed output is unchanged from before. For day-binned
+  (double-interval-censored) primaries, discretise the total yourself and pass
+  the PMF to `convolve_series(pmf, series)`. `discretise_pmf` and `DelayPMF` are
+  now re-exported. Compat bumped to `0.2`; because 0.2 is unregistered the source
+  is git-pinned (re-adding what #107 removed) until it registers.
+
 - **test:** end-to-end continuous delay-stack scenarios. A committed
   `test/composers/stack_scenarios.jl` testset drives a handful of named,
   epi-flavoured continuous stacks (an onset→admission→death `Sequential` chain,
