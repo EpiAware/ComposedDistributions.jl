@@ -16,7 +16,7 @@ const LIGHT_TUTORIALS = ["composing-distributions.jl",
 
 # Heavy tutorials (live MCMC fits, multi-backend AD, plotting) are each
 # executed once in a fresh subprocess so native/memory state cannot accumulate.
-const HEAVY_TUTORIALS = ["ad-backends.jl"]
+const HEAVY_TUTORIALS = String[]
 
 # Where the tutorial `.jl` sources and rendered `.md` pages live, relative to
 # `docs/src`.
@@ -30,8 +30,7 @@ const TUTORIAL_STUBS = [
     "composing-distributions.md" => "# [Composing distributions](@id composing-distributions)",
     "competing-outcomes.md" => "# [Competing outcomes: resolve versus compete](@id competing-outcomes)",
     "linear-chain.md" => "# [Delay chains and the linear chain trick](@id linear-chain)",
-    "strata-uncertainty.md" => "# [Multi-strata trees and parameter uncertainty](@id strata-uncertainty)",
-    "ad-backends.md" => "# [Automatic differentiation backends](@id ad-backends)"
+    "strata-uncertainty.md" => "# [Multi-strata trees and parameter uncertainty](@id strata-uncertainty)"
 ]
 
 # Regexes for URLs to skip during the (full-build) linkcheck, e.g. a page
