@@ -231,6 +231,23 @@ end
     @test compose((a = Gamma(2.0, 1.0),)) isa Parallel
 end
 
+@testitem "compose: varargs-pairs spelling matches the NamedTuple spelling" begin
+    using Distributions
+
+    # `compose(:a => d1, ...)` is a thin convenience over the NamedTuple form
+    # (CensoredDistributions-migration compat, #145); both spellings round-trip
+    # to the identical stack, nested branches included.
+    @test compose(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4)) ==
+          compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    @test compose(:a => [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],
+        :b => Gamma(1.0, 1.0)) ==
+          compose((a = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],
+        b = Gamma(1.0, 1.0)))
+    @test_throws ArgumentError compose()
+end
+
 @testitem "compose: table compete/prob column builds a Resolve" begin
     using Distributions
 
