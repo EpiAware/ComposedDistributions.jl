@@ -13,6 +13,15 @@
   silently dropped by `build_priors`; without `_leaf_detail_lines`, a wrapped
   leaf's `inspect` detail fell back to its raw struct dump.
 
+- **test:** pin three seams now that ConvolvedDistributions 0.2 is adopted: a
+  Modified-wrapped chain step (affine / weight / thin) lowering through
+  `observed_distribution` / `convolve_series` (#117); the recurrent-operator
+  seam end to end (a time-varying chain resolved per step, collapsed,
+  discretised, and driving the vector convolution surface, plus one hand-rolled
+  renewal step, refs #82); and the restored real `cdf` assertion on a
+  `difference` of two chains that the #122 workaround stood in for while
+  ConvolvedDistributions #45 was open (#137).
+
 - **feat:** `to_constrained(prob, z)` completes the PPL-neutral codec's HMC
   surface: given an assembled `ComposedLogDensity` and an unconstrained flat
   vector, it returns the constrained ESTIMATED parameters and the
