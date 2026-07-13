@@ -18,9 +18,10 @@ const QA_CONFIG = (
 
     # ExplicitImports `ignore`: symbols imported non-publicly.
     # (`logccdf_ad_safe` is a public EpiAwareADTools export the racing-hazard node
-    # reuses and extends, so it needs no ignore.) `_shared_tag`,
-    # `_uncertain_specs`, `_thin_factor` and `_set_thin_factor` are the internal
-    # tag/spec/thin-factor protocols, and `_leaf_mean`/`_leaf_var` the internal
+    # reuses and extends, so it needs no ignore. `_uncertain_specs` and
+    # `_leaf_detail_lines` are `public` (#142), so they need no ignore either.)
+    # `_shared_tag`, `_thin_factor` and `_set_thin_factor` are the internal
+    # tag/thin-factor protocols, and `_leaf_mean`/`_leaf_var` the internal
     # per-leaf moment hooks, that the ModifiedDistributions extension extends
     # so a modified leaf peels its shared tag and uncertain parameter specs, a
     # `thin` reporting probability round-trips through `params_table`/`update`,
@@ -32,7 +33,7 @@ const QA_CONFIG = (
     # marker type and population-family lookup the Bijectors extension reuses
     # to read a centred-pooled row's constraint off its population instead of
     # a fixed prior.
-    ei_ignore = (:_shared_tag, :_uncertain_specs, :_thin_factor,
+    ei_ignore = (:_shared_tag, :_thin_factor,
         :_set_thin_factor, :_leaf_mean, :_leaf_var, :_leaf_param_names,
         :_collect_shared, :CentredPoolPrior, :_population_template),
 
