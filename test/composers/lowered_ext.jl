@@ -32,9 +32,9 @@
     @test p isa PhaseType
     @test length(p.α) == 2
     @test isapprox(sum(p.α), 1; atol = 1e-8)
-    mean, var = pt_moments(p)
-    @test isapprox(mean, 2.0 + 3.0; atol = 1e-8)
-    @test isapprox(var, 4.0 + 9.0; atol = 1e-8)
+    mseq, vseq = pt_moments(p)
+    @test isapprox(mseq, 2.0 + 3.0; atol = 1e-8)
+    @test isapprox(vseq, 4.0 + 9.0; atol = 1e-8)
 
     # A multi-phase step (Erlang) convolved with an exponential.
     seq2 = sequential(Gamma(3.0, 1.5), Exponential(2.0))
