@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **feat:** a `LogDensityProblems` weak-dependency extension exposes a
+  `ComposedLogDensity` (from `as_logdensity`) as a standard
+  `LogDensityProblems` problem, so a composed distribution's posterior over its
+  estimated parameters is sampleable by any LogDensityProblems consumer
+  (AdvancedHMC, DynamicHMC, Pathfinder, Turing's `externalsampler`) with
+  gradients supplied by LogDensityProblemsAD (#13). The extension implements
+  `dimension` (the estimated flat-parameter count), `logdensity` (the codec's
+  evaluator), and the zeroth-order `capabilities`. This is the Turing-free
+  inference substrate that complements the DynamicPPL path, and it needs no new
+  hard dependency.
+
 - **feat:** a `LoweredDistributions` weak-dependency extension lowers a
   composed distribution to a backend-agnostic dynamical-systems
   representation, so `lower(compose(...))` yields a phase-type or
