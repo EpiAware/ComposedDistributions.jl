@@ -154,12 +154,33 @@ function _inspect_leaf(io::IO, leaf, prefix::String)
     return nothing
 end
 
-# The per-leaf inspect detail lines. The generic detail is the leaf's full
-# `text/plain` show, split so a multi-line struct dump stays aligned. This is
-# the extension point a leaf-wrapper layer overrides: CensoredDistributions
-# defines `_leaf_detail_lines` for its censored leaves (`PrimaryCensored` /
-# `IntervalCensored` / `Truncated`), which slot in here by dispatch (they stay
-# CD-side; only the generic hook lives upstream).
+@doc raw"
+
+Per-leaf `inspect` detail lines for a (possibly wrapped) leaf.
+
+The leaf-detail extension point [`inspect`](@ref) reads through
+`_inspect_leaf`: the generic method returns the leaf's full `text/plain` show,
+split into lines so a multi-line struct dump stays aligned under its tree
+prefix. A leaf-wrapper type (censoring in CensoredDistributions, the modifiers
+in ModifiedDistributions) adds its own method dispatching on its own type, to
+surface the inner free delay's detail instead of the wrapper's raw struct
+dump. Pair with [`_uncertain_specs`](@ref), the sibling extension hook for the
+`prior` column.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution to render.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions._leaf_detail_lines(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`free_leaf`](@ref), [`rewrap_leaf`](@ref): the sibling leaf-wrapper hooks.
+- [`inspect`](@ref): the tree-printing entry point this feeds.
+"
 _leaf_detail_lines(leaf) = split(sprint(show, MIME"text/plain"(), leaf), '\n')
 
 # --- nested name-keyed params (hand-rolled, type-stable) --------------------
@@ -302,11 +323,39 @@ function rewrap_leaf(d::Truncated, inner)
         upper = d.upper)
 end
 
-# The uncertain-spec protocol: the NamedTuple of a leaf's distribution-valued
-# parameters (its attached priors), or `nothing` for a fully fixed leaf. The
-# default is `nothing`; `Uncertain` reports its specs and the wrapper leaves
-# forward (see Uncertain.jl), so a wrapped uncertain leaf still exposes them to
-# `params_table`'s `prior` column and the stack surfaces.
+@doc raw"
+
+Leaf-level distribution-valued parameter specs, or `nothing` for a fixed leaf.
+
+The uncertain-spec protocol: a `NamedTuple` of a leaf's distribution-valued
+parameters (its attached priors), keyed by parameter name, or `nothing` when
+the leaf carries no attached prior. The base identity returns `nothing`, and a
+`Truncated` peels to its untruncated inner delay's specs (the truncation
+bounds are fixed structure, not free parameters). [`Uncertain`](@ref) reports
+its own specs (see Uncertain.jl), and a leaf-wrapper type (censoring in
+CensoredDistributions, the modifiers in ModifiedDistributions) adds its own
+method dispatching on its own type and forwarding to its inner delay's specs,
+so an uncertain prior attached under a wrapper still reaches
+[`params_table`](@ref)'s `prior` column and [`build_priors`](@ref). Without a
+forwarding method the attached prior is silently dropped and the parameter is
+treated as fixed.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions._uncertain_specs(Gamma(2.0, 1.0)) === nothing
+```
+
+# See also
+- [`free_leaf`](@ref), [`rewrap_leaf`](@ref): the sibling leaf-wrapper hooks.
+- [`_leaf_detail_lines`](@ref): the sibling extension hook for `inspect`
+  rendering.
+- [`has_uncertain`](@ref): the boolean check built on this protocol.
+"
 _uncertain_specs(leaf) = nothing
 _uncertain_specs(d::Truncated) = _uncertain_specs(d.untruncated)
 

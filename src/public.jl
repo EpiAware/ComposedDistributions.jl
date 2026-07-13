@@ -6,6 +6,15 @@
 public child_nleaves, child_logpdf, child_rand!
 public free_leaf, rewrap_leaf, component_names
 
+# The leaf-introspection recursion a leaf-wrapper package extends alongside
+# `free_leaf`/`rewrap_leaf`: `_uncertain_specs` routes a leaf's attached prior
+# specs through to `params_table`/`build_priors`, and `_leaf_detail_lines`
+# routes a leaf's `inspect` rendering. CensoredDistributions extends both for
+# its censored leaves; a leaf-wrapper package that extends only `free_leaf`/
+# `rewrap_leaf` but not these silently drops an attached prior on a wrapped
+# leaf (`build_priors` then treats it as fixed).
+public _uncertain_specs, _leaf_detail_lines
+
 # The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
 # root the composer nodes subtype; `AbstractMultiChild` groups the positional
 # multi-child composers (`Sequential` / `Parallel`); `AbstractOneOf` is the

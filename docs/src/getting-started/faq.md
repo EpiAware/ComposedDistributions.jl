@@ -29,6 +29,13 @@ ComposedDistributions.rand_outcome(Xoshiro(1), node),
 rand(Xoshiro(1), as_mixture(node))
 ```
 
+## I'm migrating from CensoredDistributions' `compose`: what changed?
+
+CensoredDistributions' `compose` took varargs pairs, `compose(:a => d1, :b => d2)`.
+This package's `compose` takes a `NamedTuple`, `compose((a = d1, b = d2))`, as its primary spelling, because a `NamedTuple` also carries recursively-nested branch names for tables and matrices, where a flat pairs list cannot.
+The varargs-pairs spelling still works: `compose(:a => d1, :b => d2, ...)` is a thin convenience method that lowers to the `NamedTuple` form and returns the identical stack, so existing CensoredDistributions-style call sites keep working unmodified.
+Prefer the `NamedTuple` form in new code.
+
 ## How do I get the total-delay distribution of a chain?
 
 A [`Sequential`](@ref) chain models each step separately, and its `rand` returns the per-step record.
