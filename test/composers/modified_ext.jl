@@ -383,3 +383,41 @@ end
     @test has_varying(chain)
     @test !has_varying(instantiate(chain, ctx))
 end
+
+@testitem "Modified extension: modified leaves drive convolve_series (#117)" begin
+    using Distributions
+    using ModifiedDistributions: affine, weight, thin
+
+    # ModifiedDistributions#40: a Modified-wrapped chain step must participate in
+    # the observed-total collapse that drives a count series, not be silently
+    # dropped. Each modifier family (affine / weight / thin) wraps the first step
+    # of a Sequential; the chain lowers through observed_distribution and
+    # convolve_series identically to the hand-built Convolved of the same wrapped
+    # leaf. Under ConvolvedDistributions 0.2 the bare convolve_series is
+    # discrete-only, so the observed total is discretised first. One matrix cell
+    # per modifier.
+    series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
+    maxlag = length(series) - 1
+    tail = Gamma(3.0, 1.0)
+
+    for mod in (affine(Gamma(2.0, 1.0); scale = 2.0, shift = 1.0),
+        weight(Gamma(2.0, 1.0), 0.5),
+        thin(Gamma(2.0, 1.0), 0.3))
+        chain = Sequential(mod, tail)
+
+        # The collapse accepts the wrapped leaf: the modifier rides into the
+        # observed Convolved total as the first component.
+        od = observed_distribution(chain)
+        @test od isa Convolved
+        @test od.components[1] == mod
+
+        # The convolved output matches discretising the observed total by hand,
+        # and equals the direct Convolved of the wrapped leaf and the tail.
+        out = convolve_series(chain, series)
+        @test out == convolve_series(discretise_pmf(od, maxlag), series)
+        @test out ==
+              convolve_series(discretise_pmf(convolved(mod, tail), maxlag),
+            series)
+        @test length(out) == length(series)
+    end
+end

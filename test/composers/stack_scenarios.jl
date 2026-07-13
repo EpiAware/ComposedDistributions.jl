@@ -448,7 +448,7 @@ end
 end
 
 @testitem "Scenario: difference of two observed reporting totals" tags = [:scenarios] begin
-    using Distributions
+    using Distributions, Random
 
     # Story: the gap between two observed reporting totals — an onset→admit→
     # death chain and an onset→report→confirm chain — as a Difference of the two
@@ -463,8 +463,18 @@ end
     # Collapsing each chain first and differencing the totals is identical.
     @test gap == difference(observed_distribution(onset),
         observed_distribution(report))
-    # The difference mean is the difference of the observed-total means, and
-    # the variance is additive over the two independent totals.
+    # The difference mean is the difference of the observed-total means.
     @test mean(gap) ≈ mean(onset) - mean(report)
-    @test var(gap) ≈ var(onset) + var(report)
+
+    # A cdf point on the Difference of two composite (Convolved) totals. This is
+    # the path ConvolvedDistributions #45 fixed: cdf on a Difference whose
+    # members are themselves composites previously threw a _primal(::Tuple)
+    # MethodError, so #122 asserted an additive-variance relation as a stand-in.
+    # With 0.2 pinned the real cdf point holds; cross-check it against the
+    # Monte-Carlo empirical cdf of the sampled gap.
+    rng = MersenneTwister(20240201)
+    N = 40000
+    gaps = rand(rng, observed_distribution(onset), N) .-
+           rand(rng, observed_distribution(report), N)
+    @test cdf(gap, 0.5) ≈ count(<=(0.5), gaps) / N atol = 0.01
 end
