@@ -30,13 +30,23 @@ end
 
 # --- the wrap boundary ------------------------------------------------------
 
+# Mooncake's whole-program rule derivation needs a rule for the branch below
+# even though it is never taken on the passing path; interpolating
+# `collect(names)` recurses into Base's `show`/string-indexing machinery,
+# which it has no rule for. Hoisted into its own `@noinline` function (see
+# `logdensity.jl`'s analogous helpers) and shielded from Mooncake in the
+# `ComposedDistributionsMooncakeExt` extension.
+@noinline function _throw_as_named_dimmismatch(names, v)
+    throw(DimensionMismatch(
+        "labelled output has $(length(v)) values but $(length(names)) " *
+        "names $(collect(names))"))
+end
+
 # Wrap a vector-valued output `v` into a `NamedTuple` keyed by `names`. The
 # lengths must agree (an internal invariant; a mismatch is a bug in the name
 # derivation). A result that is already a `NamedTuple` passes through unchanged.
 function _as_named(names::Tuple, v::AbstractVector)
-    length(names) == length(v) || throw(DimensionMismatch(
-        "labelled output has $(length(v)) values but $(length(names)) names " *
-        "$(collect(names))"))
+    length(names) == length(v) || _throw_as_named_dimmismatch(names, v)
     return NamedTuple{names}(Tuple(v))
 end
 _as_named(::Tuple, v::NamedTuple) = v

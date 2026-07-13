@@ -1,5 +1,19 @@
 ## Unreleased
 
+- **fix:** `logdensity`/`unflatten` (`src/composers/logdensity.jl`) now
+  differentiate under Mooncake, both forward and reverse. `unflatten` calls
+  the `Symbol` path-splitter `_split_edge` unconditionally on every row, and
+  the codec's length guards build their `DimensionMismatch` message by
+  interpolating the tree object; both recurse into Base's UTF-8
+  string-indexing continuation machinery, for which Mooncake's whole-program
+  rule derivation has no rule (a `sub_ptr` intrinsic hit), on every call for
+  `_split_edge`, and on any reachable branch for the guards' messages,
+  regardless of whether it is taken. `_split_edge` and the four
+  `DimensionMismatch`-throwing call sites (`logdensity.jl`,
+  `named_outputs.jl`, `Parallel.jl`, `Sequential.jl`) are shielded from
+  Mooncake with `@zero_derivative` in `ComposedDistributionsMooncakeExt`
+  (#146).
+
 - **feat:** `to_constrained(prob, z)` completes the PPL-neutral codec's HMC
   surface: given an assembled `ComposedLogDensity` and an unconstrained flat
   vector, it returns the constrained ESTIMATED parameters and the

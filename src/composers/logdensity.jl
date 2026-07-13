@@ -37,6 +37,28 @@ function _reject_varying(d, what)
     return nothing
 end
 
+# The length guards below (`unflatten`, `logdensity`) interpolate the tree
+# `d`/`prob.dist` into their error message via `show`, which recurses into
+# Base's UTF-8 string-indexing continuation machinery. Mooncake's whole-
+# program rule derivation needs a rule for that machinery even on the
+# passing path, where the branch is never taken, and has none (a `sub_ptr`
+# pointer-arithmetic intrinsic). Hoisting the message construction into its
+# own `@noinline` function keeps that call out of the differentiated
+# function's own IR; the `ComposedDistributionsMooncakeExt` extension
+# shields these helpers from Mooncake with `@zero_derivative` so the `show`
+# call is never traced, even when the branch does throw under AD.
+@noinline function _throw_unflatten_dimmismatch(x, est, d)
+    throw(DimensionMismatch(
+        "flat vector has length $(length(x)) but $d has " *
+        "$(length(est)) estimated parameters"))
+end
+
+@noinline function _throw_logdensity_dimmismatch(x, fp, dist)
+    throw(DimensionMismatch(
+        "flat parameter vector has length $(length(x)) but " *
+        "$dist has $(length(fp)) estimated parameters"))
+end
+
 # The estimated rows of a params table: those whose `prior` column carries an
 # uncertain spec. Under uncertain-first these are the free (estimated)
 # parameters; a fixed leaf's rows hold `nothing` and are excluded, so a tree
@@ -172,9 +194,7 @@ function unflatten(d::AbstractComposedDistribution, x::AbstractVector)
     values = Tables.getcolumn(table, :value)
     priors = Tables.getcolumn(table, :prior)
     est = _estimated_rows(table)
-    length(x) == length(est) || throw(DimensionMismatch(
-        "flat vector has length $(length(x)) but $d has " *
-        "$(length(est)) estimated parameters"))
+    length(x) == length(est) || _throw_unflatten_dimmismatch(x, est, d)
     tree = Dict{Symbol, Any}()
     j = 0
     for i in eachindex(edges)
@@ -358,9 +378,7 @@ ComposedDistributions.logdensity(prob, [2.0])
 "
 function logdensity(prob::ComposedLogDensity, x::AbstractVector)
     fp = prob.flat_priors
-    length(x) == length(fp) || throw(DimensionMismatch(
-        "flat parameter vector has length $(length(x)) but " *
-        "$(prob.dist) has $(length(fp)) estimated parameters"))
+    length(x) == length(fp) || _throw_logdensity_dimmismatch(x, fp, prob.dist)
     # The fixed per-row priors (hyperparameters, non-centred latents, ordinary
     # uncertain parameters). A centred pooled parameter's row carries a
     # `CentredPoolPrior` marker instead — its prior is the population at the
