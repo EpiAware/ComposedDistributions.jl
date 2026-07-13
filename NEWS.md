@@ -1,5 +1,20 @@
 ## Unreleased
 
+- **feat:** a `LoweredDistributions` weak-dependency extension lowers a
+  composed distribution to a backend-agnostic dynamical-systems
+  representation, so `lower(compose(...))` yields a phase-type or
+  continuous-time Markov chain for the whole delay structure that a Catalyst /
+  ODE / Petri / Jump backend can consume (#149). The scalar composers lower
+  exactly, since composition of phase-types is closed. `Sequential` convolves
+  its steps into a series phase-type, `Resolve` mixes its outcomes into a
+  hyper-phase-type weighted by the branch probabilities, `Compete` races its
+  causes through the competing-risks Kronecker sum, and `Shared` lowers its
+  wrapped leaf. The vector composers lower to a joint `CTMC`, `Parallel`
+  through the Kronecker sum of its independent branches and `Choose` through
+  the block-diagonal union of its selector alternatives. Nesting a `Parallel`
+  or `Choose` inside a scalar composer raises a clear error rather than a
+  silent misrepresentation.
+
 - **fix:** `logdensity`/`unflatten` (`src/composers/logdensity.jl`) now
   differentiate under Mooncake, both forward and reverse. `unflatten` calls
   the `Symbol` path-splitter `_split_edge` unconditionally on every row, and

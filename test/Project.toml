@@ -18,6 +18,8 @@ FlexiChains = "4a37a8b9-6e57-4b92-8664-298d46e639f7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LoweredDistributions = "8539b7eb-0b85-40d0-a8a6-65093c3d0137"
 ModifiedDistributions = "664e6f8c-d74f-44d3-9f37-f82699103046"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
@@ -46,6 +48,8 @@ FlexiChains = "0.4, 0.5, 0.6"
 ForwardDiff = "0.10, 1"
 JET = "0.9, 0.10"
 JuliaFormatter = "2"
+LinearAlgebra = "1"
+LoweredDistributions = "0.1"
 Pkg = "1"
 Random = "1"
 Statistics = "1"
@@ -56,6 +60,10 @@ Turing = "0.42, 0.43, 0.44, 0.45"
 
 [sources]
 ComposedDistributions = {path = ".."}
+# LoweredDistributions backs the `lower` bridge weakdep extension (#149) and is
+# not yet registered; pin its scaffold branch here (the test env is where the
+# extension loads). Drop this pin once LoweredDistributions registers a release.
+LoweredDistributions = {url = "https://github.com/EpiAware/LoweredDistributions.jl", rev = "init/lowereddistributions-scaffold"}
 ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit
