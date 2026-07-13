@@ -86,3 +86,38 @@ end
     @test gradient(fcompete, enzyme, θ0) ≈
           gradient(fcompete, AutoForwardDiff(), θ0)
 end
+
+# `logdensity`/`unflatten` (`src/composers/logdensity.jl`) must differentiate
+# under Mooncake, both reverse and forward: `unflatten` calls `_split_edge`
+# unconditionally on every row, and `_split_edge`/the length guards'
+# `DimensionMismatch` messages both recurse into Base's UTF-8
+# string-indexing continuation machinery, for which Mooncake's whole-program
+# rule derivation has no rule (a `sub_ptr` intrinsic), fixing issue #146.
+# This tree has no shared/pooled parameters, so it does not touch the separate
+# Mooncake-reverse wrong-gradient issue on pooled reconstructions (#99).
+@testitem "Mooncake differentiates logdensity/unflatten past the length guard (#146)" tags=[
+    :ad, :mooncake, :mooncake_reverse] begin
+    using ADTypes: AutoMooncake, AutoMooncakeForward, AutoForwardDiff
+    using ComposedDistributions
+    using ComposedDistributions: as_logdensity, logdensity
+    using DifferentiationInterface: gradient
+    using Distributions: Gamma, LogNormal
+    using ForwardDiff, Mooncake
+
+    tree = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)),
+        admit_death = LogNormal(0.5, 0.4)))
+    data = [[0.5, 2.0], [1.0, 3.0]]
+    prob = as_logdensity(tree, data)
+    f(x) = logdensity(prob, x)
+    θ0 = [2.0]
+
+    gref = gradient(f, AutoForwardDiff(), θ0)
+
+    grev = gradient(f, AutoMooncake(config = nothing), θ0)
+    @test grev ≈ gref
+
+    gfwd = gradient(f, AutoMooncakeForward(), θ0)
+    @test gfwd ≈ gref
+end

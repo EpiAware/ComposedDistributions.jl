@@ -174,8 +174,7 @@ Log probability density of a branch-value vector, summed over branches.
 See also: [`Parallel`](@ref)
 "
 function logpdf(d::Parallel, x::AbstractVector)
-    length(x) == length(d) || throw(DimensionMismatch(
-        "expected $(length(d)) branch values, got $(length(x))"))
+    length(x) == length(d) || _throw_logpdf_dimmismatch(d, x, "branch")
     return _composite_logpdf(d.components, x)
 end
 
