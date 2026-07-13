@@ -14,6 +14,20 @@
   Mooncake with `@zero_derivative` in `ComposedDistributionsMooncakeExt`
   (#146).
 
+
+- **feat:** `compose` gains a varargs-pairs spelling,
+  `compose(:a => d1, :b => d2, ...)` (#145), a thin convenience over the
+  primary `NamedTuple` form so call sites migrating from
+  CensoredDistributions' pairs-based `compose` keep working unmodified. See
+  the FAQ for the migration note.
+
+- **feat:** `_uncertain_specs` and `_leaf_detail_lines` are now `public`
+  (#142), sanctioning the leaf-introspection recursion a leaf-wrapper package
+  extends alongside `free_leaf`/`rewrap_leaf`. Without extending
+  `_uncertain_specs`, an uncertain prior attached to a wrapped leaf was
+  silently dropped by `build_priors`; without `_leaf_detail_lines`, a wrapped
+  leaf's `inspect` detail fell back to its raw struct dump.
+
 - **feat:** `to_constrained(prob, z)` completes the PPL-neutral codec's HMC
   surface: given an assembled `ComposedLogDensity` and an unconstrained flat
   vector, it returns the constrained ESTIMATED parameters and the

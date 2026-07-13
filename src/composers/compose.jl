@@ -27,6 +27,11 @@ composers, not a new tree type.
   a one-row matrix is a [`Parallel`](@ref)-of-one wrapping a [`Sequential`](@ref)
   of the row's columns.
 
+A varargs-pairs spelling, `compose(:a => d1, :b => d2, ...)`, is also
+available as a convenience over the NamedTuple form (see the
+`compose(pairs::Pair{Symbol}...)` method below); the NamedTuple form above
+stays primary.
+
 # Contract
 
 `compose` ALWAYS returns a composer, never a bare univariate leaf.
@@ -91,6 +96,45 @@ function compose(origin::Union{UnivariateDistribution, Sequential, Parallel,
     nt = NamedTuple(branches)
     tails = map(_compose_child, Tuple(nt))
     return Sequential((_compose_child(origin), Parallel(tails, keys(nt))))
+end
+
+# --- Pairs front-end ---------------------------------------------------
+# `compose(:a => d1, :b => d2, ...)` is the varargs-pairs spelling of the
+# NamedTuple front-end, a thin convenience so CensoredDistributions-style call
+# sites (whose `compose` took varargs pairs) still work unmodified against
+# this package's NamedTuple-primary `compose`. It just lowers to
+# `NamedTuple(pairs)` and forwards, so it inherits the NamedTuple method's
+# recursive lowering (a `Pair` value that is itself a `NamedTuple`, vector, or
+# tuple nests exactly as it would if written positionally).
+
+@doc "
+
+Varargs-pairs spelling of the [`compose`](@ref) NamedTuple front-end.
+
+`compose(:a => d1, :b => d2, ...)` lowers to `compose((a = d1, b = d2, ...))`
+and returns exactly the same stack; this is a convenience spelling for
+data-driven or computed branch names, and for callers migrating from
+CensoredDistributions' pairs-based `compose`. The NamedTuple form stays the
+primary spelling (see the FAQ for the migration note).
+
+# Arguments
+- `pairs`: one or more `name => dist_or_composer` pairs, `name` a `Symbol`.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+compose(:onset_admit => Gamma(2.0, 1.0), :admit_death => LogNormal(0.5, 0.4)) ==
+    compose((onset_admit = Gamma(2.0, 1.0), admit_death = LogNormal(0.5, 0.4)))
+```
+
+# See also
+- [`compose`](@ref): the primary NamedTuple/table/matrix front-end.
+"
+function compose(pairs::Pair{Symbol}...)
+    isempty(pairs) &&
+        throw(ArgumentError("compose(pairs::Pair{Symbol}...) needs ≥1 pair"))
+    return compose(NamedTuple(pairs))
 end
 
 # A NamedTuple is treated as a column table when it has `name` and `dist`
