@@ -2,18 +2,25 @@
     ADFixtures
 
 Shared AD gradient scenarios and backend metadata for ComposedDistributions.
-Used by `test/ad/runtests.jl`. Covers the composed `logpdf` of a `Sequential`
-chain, a `Resolve` mixture marginal (differentiating through a covariate branch
-probability), a `Compete` racing-hazard marginal (differentiating through the
-survival product), a `Resolve` whose branch-probability simplex is uncertain
-(differentiating through the stick-breaking reconstruction), and a partially
-pooled parameter (differentiating through the non-centred `exp(mu + tau*z)`
-reconstruction), across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
-backend matrix.
+Used by `test/ad/runtests.jl`. Two categories:
 
-The composed value `logpdf` is a sum over flat leaf slices, so the gradient
-flows through each leaf's own `logpdf`; the reference is computed with
-`ForwardDiff` and matched by the reverse backends to ~1e-6.
+`:marginal` covers the composed `logpdf` of a `Sequential` chain, a `Resolve`
+mixture marginal (differentiating through a covariate branch probability), a
+`Compete` racing-hazard marginal (differentiating through the survival
+product), a `Resolve` whose branch-probability simplex is uncertain
+(differentiating through the stick-breaking reconstruction), a partially pooled
+parameter (differentiating through the non-centred `exp(mu + tau*z)`
+reconstruction), and a `Choose` scored at a selected alternative
+(differentiating through the picked branch's own `logpdf`).
+
+`:latent` covers the full `as_logdensity`/`logdensity` codec path: an
+uncertain-leaf tree (differentiating the flat-vector -> nested-NamedTuple
+codec, `unflatten`/`update`, into the data likelihood) and a centred pool
+(differentiating the `_pool_centred_logprior` term against the population).
+
+All scenarios run across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
+backend matrix. The reference is computed with `ForwardDiff` and matched by the
+reverse backends to ~1e-6.
 """
 module ADFixtures
 
@@ -66,10 +73,24 @@ broken_scenario_names() = String[]
 # but Mooncake returns a wrong gradient for this pattern (the shared
 # hyperparameters' reverse contributions through the Gamma `loggamma`/`digamma`
 # path are mis-accumulated). Marked broken on Mooncake pending an upstream fix.
+#
+# The `:latent` "Uncertain-leaf logdensity codec" scenario differentiates the
+# full `as_logdensity`/`logdensity` path, whose `unflatten` rebuilds a nested
+# `NamedTuple` mixing the active flat parameter with the fixed leaf's constant
+# template values on the heap. Enzyme reverse cannot compile that reconstruction
+# — its cache-store type reasoning hits `Taking the type of an opaque pointer is
+# illegal` (an Enzyme/LLVM internal limitation with type-unstable heap-building,
+# the same family as the map-vs-generator `IllegalTypeAnalysisException`, finding
+# C8) — so it is marked broken on Enzyme reverse. The gradient itself is correct:
+# ForwardDiff, ReverseDiff and Mooncake reverse all agree on this scenario, and
+# the sibling centred-pool codec scenario differentiates on Enzyme fine.
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
-    return Dict("Mooncake reverse" =>
-        Set(["Pool non-centred reconstruction logpdf"]))
+    return Dict(
+        "Mooncake reverse" =>
+            Set(["Pool non-centred reconstruction logpdf"]),
+        "Enzyme reverse" =>
+            Set(["Uncertain-leaf logdensity codec"]))
 end
 
 "Per-backend scenario names too unstable to run at all."
@@ -79,9 +100,9 @@ backend_skip_scenarios() = Dict{String, Set{String}}()
     scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
 
 The AD gradient scenarios. Each is a `DIT.Scenario{:gradient, :out}` whose
-`res1` carries a ForwardDiff reference when `with_reference = true`. All
-scenarios sit in one group, so `category` is accepted for the harness contract
-but unused.
+`res1` carries a ForwardDiff reference when `with_reference = true`. `category`
+selects the group: `:marginal` (default) returns the composed-`logpdf`
+scenarios; `:latent` returns the `logdensity` codec scenarios.
 """
 function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     obs = [0.5, 1.2, 2.5, 3.8, 5.1]
@@ -98,6 +119,43 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
             DIT.Scenario{:gradient, :out}(
                 f, θ₀, contexts...;
                 res1 = res1, prep_args = prep_args, name = name))
+    end
+
+    # --- latent category: the full as_logdensity/logdensity codec path -------
+    if category == :latent
+        # Uncertain-leaf codec: differentiate `logdensity(prob, θ)` for a tree
+        # with an ordinary uncertain leaf, so the gradient flows through the
+        # flat-vector -> nested-NamedTuple codec (`unflatten`/`update`) into the
+        # data likelihood. This is the systematic (all-backend) companion to the
+        # bespoke Mooncake-only #146 item in `scenarios.jl`.
+        codec_tree = compose((
+            onset_admit = uncertain(Gamma(2.0, 1.0);
+                shape = LogNormal(log(2.0), 0.2)),
+            admit_death = LogNormal(0.5, 0.4)))
+        codec_prob = ComposedDistributions.as_logdensity(
+            codec_tree, [[0.5, 2.0], [1.0, 3.0]])
+        _push!("Uncertain-leaf logdensity codec",
+            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
+            [2.0], (Constant(codec_prob),))
+
+        # Centred pool: two members pool a `shape` centred against a fixed
+        # `Gamma` population, so the gradient flows through
+        # `_pool_centred_logprior` (the population-scored latent term) as well as
+        # each member's own Gamma likelihood. The centred reconstruction is the
+        # identity (the latent IS the parameter), so this exercises the centred
+        # scoring path distinct from the non-centred reconstruction.
+        pool_tree = compose((
+            north = uncertain(Gamma(2.0, 1.0);
+                shape = pool(:district, Gamma(2.0, 1.0); noncentred = false)),
+            south = uncertain(Gamma(2.0, 1.0);
+                shape = pool(:district, Gamma(2.0, 1.0); noncentred = false))))
+        pool_prob = ComposedDistributions.as_logdensity(
+            pool_tree, [[0.5, 2.0], [1.0, 3.0]])
+        _push!("Pool centred logdensity",
+            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
+            [2.0, 3.0], (Constant(pool_prob),))
+
+        return out
     end
 
     # Sequential chain: the composed value `logpdf` is a sum over the flat leaf
@@ -167,6 +225,19 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
                 obs)
         end,
         [0.2, 0.5, 0.3, -0.4], (Constant(obs),))
+
+    # Choose selected-branch marginal: a `Choose` scored at the named `:index`
+    # alternative routes through the type-stable `_pick`/`_select_logpdf` to that
+    # branch's own `logpdf`, so the gradient flows through the selected Gamma's
+    # shape/scale. The `kind` selector is discrete (held constant), so only the
+    # scored branch is a gradient path.
+    _push!("Choose selected-branch logpdf",
+        (θ,
+            obs) -> sum(
+            x -> logpdf(
+                choose(:index => Gamma(θ[1], θ[2]),
+                    :sourced => Gamma(4.0, 1.5)), x; kind = :index), obs),
+        [2.0, 1.0], (Constant(obs),))
 
     return out
 end
