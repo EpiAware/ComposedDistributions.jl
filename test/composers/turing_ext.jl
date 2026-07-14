@@ -86,18 +86,27 @@ end
     @test sum(p) ≈ 1.0
 end
 
-@testitem "as_turing rejects a centred-pool tree" begin
+@testitem "as_turing rejects a pooled tree" begin
     using ComposedDistributions, Distributions
 
-    # A general (non-location-scale) pooled population takes the centred path:
-    # its member's prior is hyperparameter-dependent, so it has no fixed `~`
-    # prior and `as_turing` refuses it, pointing to the codec + AD path.
+    data = [[0.5, 2.0], [1.0, 3.0]]
+
+    # A centred pool (a general, non-location-scale population) has a
+    # hyperparameter-dependent member prior, so no fixed `~` prior at all.
     centred = compose((
         north = uncertain(Gamma(2.0, 1.0);
             shape = pool(:district, Gamma(2.0, 1.0); noncentred = false)),
         south = uncertain(Gamma(2.0, 1.0);
             shape = pool(:district, Gamma(2.0, 1.0); noncentred = false))))
-    data = [[0.5, 2.0], [1.0, 3.0]]
-
     @test_throws ArgumentError as_turing(centred, data)
+
+    # A non-centred (location-scale) pool samples correctly, but the readback
+    # does not yet consume a pooled chain, so it too is rejected for now rather
+    # than returning a model whose fit will not round-trip.
+    noncentred = compose((
+        north = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:district, Normal(0.7, 0.3))),
+        south = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:district, Normal(0.7, 0.3)))))
+    @test_throws ArgumentError as_turing(noncentred, data)
 end

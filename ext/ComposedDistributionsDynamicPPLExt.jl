@@ -40,20 +40,24 @@ function _dotted_varname(prefix::Symbol, segs::Tuple)
     return VarName{prefix}(optic)
 end
 
-# Reject a centred-pool parameter (a general, non-location-scale pooled
-# population): its population prior is hyperparameter-dependent, so it carries a
-# `CentredPoolPrior` marker rather than a fixed `~` prior, and cannot be a named
-# prior site. Point to the codec + LogDensityProblemsAD path, which scores the
-# centred population term directly.
-function _reject_centred_pools(prob::ComposedLogDensity)
-    any(p -> p isa ComposedDistributions.CentredPoolPrior, prob.flat_priors) &&
-        throw(ArgumentError(
-            "as_turing does not support centred-pool parameters (a general, " *
-            "non-location-scale pooled population); the population prior is " *
-            "hyperparameter-dependent and has no fixed `~` prior. Sample the " *
-            "tree with `as_logdensity(dist, data)` + LogDensityProblemsAD " *
-            "(the LogDensityProblems extension), or use a location-scale " *
-            "(Normal/LogNormal) pooled population for the non-centred form."))
+# Reject a pooled tree: as_turing does not yet support pooling. A centred pool
+# (a general, non-location-scale population) has a hyperparameter-dependent
+# member prior and so no fixed `~` prior at all; a non-centred (location-scale)
+# pool samples correctly, but the inference readback does not yet consume a
+# pooled chain, so `update(dist, chain)` on a pooled fit would fail. Reject both
+# and point to the codec + LogDensityProblemsAD path, which scores either pool
+# form directly. `_collect_pools!` is the same tree-walk `as_logdensity`'s pool
+# validation uses.
+function _reject_pools(dist)
+    acc = Dict{Symbol, ComposedDistributions.Pool}()
+    ComposedDistributions._collect_pools!(acc, dist)
+    isempty(acc) || throw(ArgumentError(
+        "as_turing does not yet support pooled trees (groups " *
+        "$(sort(collect(keys(acc))))): a centred pool has no fixed `~` prior, " *
+        "and the inference readback does not yet consume a pooled chain, so " *
+        "`update(dist, chain)` would fail. Sample a pooled tree with " *
+        "`as_logdensity(dist, data)` + LogDensityProblemsAD (the " *
+        "LogDensityProblems extension) instead."))
     return nothing
 end
 
@@ -83,8 +87,8 @@ end
 
 function as_turing(dist::AbstractComposedDistribution, data;
         prefix::Symbol = :d, loglik = ComposedDistributions._default_loglik)
+    _reject_pools(dist)
     prob = as_logdensity(dist, data; loglik = loglik)
-    _reject_centred_pools(prob)
     # The estimated rows' `(path, param)` keys, in the same table order as
     # `prob.flat_priors`, so `vns[i]` names the site scored by `fp[i]`.
     layout = ComposedDistributions._flat_layout(params_table(dist))

@@ -28,13 +28,14 @@ uncertain node's branch probabilities are their stick coordinates
 under its tag. So a chain from `sample(as_turing(dist, data), ...)` reads back
 through [`chain_to_params`](@ref) / [`update`](@ref)`(dist, chain)` unchanged.
 
-Supports estimated rows with a concrete prior: ordinary uncertain leaves,
-stick-breaking node branch probabilities, and non-centred (location-scale)
-pooling (see [`pool`](@ref)). A centred-pool parameter (a general,
-non-location-scale pooled population) has no fixed `~` prior, since its
-population is hyperparameter-dependent, so it is rejected with an
-`ArgumentError` pointing to the [`as_logdensity`](@ref) +
-`LogDensityProblemsAD` path.
+Supports estimated rows with a concrete prior: ordinary uncertain leaves and
+stick-breaking node branch probabilities. A pooled tree (see [`pool`](@ref)) is
+rejected with an `ArgumentError`: a centred pool has no fixed `~` prior (its
+population is hyperparameter-dependent), and the inference readback does not yet
+consume a pooled chain, so a fitted pooled tree would not round-trip through
+[`update`](@ref)`(dist, chain)`. Sample a pooled tree with
+[`as_logdensity`](@ref) + `LogDensityProblemsAD` (the `LogDensityProblems`
+extension) instead.
 
 This method is available only when `DynamicPPL` is loaded (the model lives in a
 package extension).

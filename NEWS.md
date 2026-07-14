@@ -11,8 +11,9 @@
   (`d.onset_admit.shape`, an uncertain node's `d.<edge>.branch_probs.stick_k`,
   a shared leaf once under its tag), so a fitted chain reads back through
   `chain_to_params` / `update(dist, chain)` unchanged. Supported rows carry a
-  concrete prior (ordinary uncertain leaves, stick-breaking branch
-  probabilities, non-centred pooling); a centred-pool tree is rejected with a
+  concrete prior (ordinary uncertain leaves and stick-breaking branch
+  probabilities); a pooled tree is rejected for now (a centred pool has no
+  fixed prior, and the readback does not yet consume a pooled chain), with a
   pointer to the `as_logdensity` + LogDensityProblemsAD path. The model lives
   in a new `ComposedDistributionsDynamicPPLExt` extension triggered by
   `DynamicPPL` alone.
