@@ -1,5 +1,17 @@
 ## Unreleased
 
+- **test:** extend the AD gradient scenarios (`test/ADFixtures`) across the
+  ForwardDiff / ReverseDiff / Enzyme / Mooncake matrix. A new `:latent`
+  category differentiates the full `as_logdensity`/`logdensity` codec over an
+  uncertain-leaf tree (the flat-vector to nested-NamedTuple `unflatten`/
+  `update` path) and a centred pool (the `_pool_centred_logprior` population
+  term), and the `:marginal` group gains a `Choose` scored at a selected
+  alternative. The centred pool and the `Choose` differentiate on all four
+  backends; the uncertain-leaf codec differentiates on ForwardDiff, ReverseDiff
+  and Mooncake reverse but is marked broken on Enzyme reverse, which cannot
+  compile its mixed fixed/active heap reconstruction (an opaque-pointer LLVM
+  error).
+
 - **feat:** `as_turing(dist, data; prefix, loglik)` builds a `DynamicPPL`
   model over a composed distribution's estimated parameters, so a composed
   posterior is sampleable with `sample(as_turing(dist, data), NUTS(), ...)`
