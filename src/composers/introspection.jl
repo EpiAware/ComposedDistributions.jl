@@ -425,10 +425,34 @@ end
 
 # --- parameter-name introspection for leaves -------------------------------
 
-# Best-effort scalar parameter names for a leaf distribution, matched
-# positionally to `params(leaf)`. Distributions.jl exposes parameter values via
-# `params` but not their names generically, so common families are mapped
-# explicitly; anything else falls back to `:param_1, :param_2, ...`.
+@doc raw"
+
+The scalar parameter names of a leaf distribution, matched positionally to
+`params(leaf)`.
+
+Distributions.jl exposes parameter values through `params` but not their names,
+so the common families are mapped explicitly here; anything unmapped falls back
+to `:param_1, :param_2, ...`.
+
+A leaf type whose free parameters are not the native family's overrides this, in
+step with [`_leaf_ctor`](@ref): the two together fix the coordinates that
+`params_table`, `uncertain`, `build_priors` and the flat codec work in. A
+moment-parameterised wrapper naming a mean and a standard deviation, rather than
+a shape and a scale, is the motivating case.
+
+# Arguments
+- the leaf distribution whose parameter names are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions._param_names(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`_leaf_ctor`](@ref): the matching rebuild.
+"
 _param_names(::Distributions.Normal) = (:mu, :sigma)
 _param_names(::Distributions.LogNormal) = (:mu, :sigma)
 _param_names(::Distributions.Gamma) = (:shape, :scale)
