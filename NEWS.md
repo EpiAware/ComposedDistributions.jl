@@ -1,5 +1,22 @@
 ## Unreleased
 
+- **feat:** `as_turing(dist, data; prefix, loglik)` builds a `DynamicPPL`
+  model over a composed distribution's estimated parameters, so a composed
+  posterior is sampleable with `sample(as_turing(dist, data), NUTS(), ...)`
+  (#9). It is a light wrapper on the `as_logdensity` codec. Each estimated
+  parameter is a named `~` site drawn from its own prior and the data
+  likelihood is added with `@addlogprob!` from the codec's reconstruction, so
+  the model's total log-density equals `logdensity(as_logdensity(dist, data),
+  x)` by construction. The `~` site names match the inference readback exactly
+  (`d.onset_admit.shape`, an uncertain node's `d.<edge>.branch_probs.stick_k`,
+  a shared leaf once under its tag), so a fitted chain reads back through
+  `chain_to_params` / `update(dist, chain)` unchanged. Supported rows carry a
+  concrete prior (ordinary uncertain leaves, stick-breaking branch
+  probabilities, non-centred pooling); a centred-pool tree is rejected with a
+  pointer to the `as_logdensity` + LogDensityProblemsAD path. The model lives
+  in a new `ComposedDistributionsDynamicPPLExt` extension triggered by
+  `DynamicPPL` alone.
+
 - **feat:** a `LogDensityProblems` weak-dependency extension exposes a
   `ComposedLogDensity` (from `as_logdensity`) as a standard
   `LogDensityProblems` problem, so a composed distribution's posterior over its
