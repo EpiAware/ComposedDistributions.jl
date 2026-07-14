@@ -137,6 +137,11 @@ export prune, splice
 # methods live in `ext/ComposedDistributionsFlexiChainsExt.jl`.
 export chain_to_params, param_draws, strip_prefix
 
+# A DynamicPPL model over a composed distribution's estimated parameters, built
+# as a light wrapper on the `as_logdensity` codec. No method until `DynamicPPL`
+# is loaded; the model lives in `ext/ComposedDistributionsDynamicPPLExt.jl`.
+export as_turing
+
 export observed_distribution
 
 # Re-exported ConvolvedDistributions surface, so downstream packages reach
@@ -169,6 +174,11 @@ include("composers/introspection.jl")
 # `ext/ComposedDistributionsFlexiChainsExt.jl`), so this package stays
 # Turing-free until that extension is triggered.
 include("composers/readback.jl")
+# `as_turing` stub: a DynamicPPL model over a tree's estimated parameters,
+# built on the `as_logdensity` codec. No method until `DynamicPPL` is loaded
+# (see `ext/ComposedDistributionsDynamicPPLExt.jl`), so the core stays
+# Turing-free.
+include("composers/turing.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.

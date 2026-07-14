@@ -25,6 +25,7 @@ Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [extensions]
 ComposedDistributionsBijectorsExt = "Bijectors"
+ComposedDistributionsDynamicPPLExt = "DynamicPPL"
 ComposedDistributionsFlexiChainsExt = ["DynamicPPL", "FlexiChains"]
 ComposedDistributionsLogDensityProblemsExt = "LogDensityProblems"
 ComposedDistributionsLoweredDistributionsExt = "LoweredDistributions"
