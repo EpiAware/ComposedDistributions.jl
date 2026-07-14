@@ -174,7 +174,7 @@ end
 _population_template(pop::UnivariateDistribution) = pop
 _population_template(pop::Uncertain) = pop.template
 function _population_family(pop::UnivariateDistribution)
-    return Base.typename(typeof(free_leaf(_population_template(pop)))).wrapper
+    return _leaf_ctor(_population_template(pop))
 end
 
 # A location-scale family reparameterises non-centred (a standard-normal latent

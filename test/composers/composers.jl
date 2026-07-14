@@ -644,3 +644,67 @@ end
               for _ in 1:n]
     @test mean(totals) ≈ mean(s) atol = 0.05
 end
+
+@testitem "_leaf_ctor: a leaf whose params are not its native ctor args" begin
+    using Distributions
+    using ComposedDistributions
+
+    # A moment-parameterised leaf: it reports a mean and a standard deviation as
+    # its parameters and evaluates through the LogNormal those moments imply. Its
+    # family is a type parameter, so the bare `MomentLeaf` UnionAll cannot be
+    # called positionally — this is exactly the leaf shape that the hard-coded
+    # `Base.typename(typeof(inner)).wrapper` reconstruction could not rebuild.
+    struct MomentLeaf{D} <: ContinuousUnivariateDistribution
+        vals::Tuple{Float64, Float64}
+    end
+
+    function native(d::MomentLeaf{LogNormal})
+        mean, sd = d.vals
+        s2 = log1p((sd / mean)^2)
+        return LogNormal(log(mean) - s2 / 2, sqrt(s2))
+    end
+
+    Distributions.params(d::MomentLeaf) = d.vals
+    Distributions.logpdf(d::MomentLeaf, x::Real) = logpdf(native(d), x)
+    Base.minimum(::MomentLeaf) = 0.0
+    Base.maximum(::MomentLeaf) = Inf
+
+    # The two coordinate hooks: the moments are the free parameters, and the
+    # rebuild closes over the family the value tuple does not carry.
+    ComposedDistributions._param_names(::MomentLeaf) = (:mean, :sd)
+    function ComposedDistributions._leaf_ctor(::MomentLeaf{D}) where {D}
+        return (vals...) -> MomentLeaf{D}((vals[1], vals[2]))
+    end
+
+    # The default hook is unchanged for a native family.
+    @test ComposedDistributions._leaf_ctor(Gamma(2.0, 1.0)) === Gamma
+
+    # Why the hook is needed: the UnionAll is not positionally callable.
+    @test_throws MethodError MomentLeaf(8.0, 2.0)
+
+    leaf = MomentLeaf{LogNormal}((8.0, 2.0))
+    tree = sequential(:onset_admit => leaf, :admit_death => Gamma(2.0, 1.0))
+
+    # params_table reports the moments, not the LogNormal's native (mu, sigma).
+    tbl = params_table(tree)
+    @test :mean in tbl.param
+    @test :sd in tbl.param
+    @test :mu ∉ tbl.param
+    @test :sigma ∉ tbl.param
+
+    # Reconstruction round-trips through the hook (this MethodError'd before):
+    # the moment leaf is rebuilt from moment coordinates, the native leaf from
+    # its own.
+    bumped = update(tree, (onset_admit = (mean = 10.0, sd = 3.0),
+        admit_death = (shape = 2.0, scale = 1.0)))
+    @test params(bumped).onset_admit == (10.0, 3.0)
+    @test logpdf(bumped, [2.0, 1.5]) ≈
+          logpdf(MomentLeaf{LogNormal}((10.0, 3.0)), 2.0) +
+          logpdf(Gamma(2.0, 1.0), 1.5)
+
+    # A prior can be placed on a moment, which is the whole point.
+    u = uncertain(leaf; mean = LogNormal(2.0, 0.2))
+    @test keys(u.specs) == (:mean,)
+    # And a native parameter of the implied LogNormal is not a parameter here.
+    @test_throws ArgumentError uncertain(leaf; sigma = LogNormal(2.0, 0.2))
+end

@@ -325,6 +325,42 @@ end
 
 @doc raw"
 
+The constructor that rebuilds a leaf's free delay from a positional tuple of
+parameter values, in `_leaf_param_names` order.
+
+Reconstruction is how an updated parameter vector becomes a distribution again:
+`update`, the `unflatten` then `update` posterior read-back, `uncertain`'s
+pinning path, a tied leaf's signature, and a pooled population's template all
+rebuild a leaf this way. The base identity returns the inner delay's type
+constructor, which is right for a Distributions.jl family whose `params` are
+its constructor arguments.
+
+A leaf type whose free parameters are not its native constructor arguments
+overrides this. A moment-parameterised wrapper is the motivating case: it
+reports moments (a mean and a standard deviation) as its parameters, and it
+carries its family in a type parameter, so the bare UnionAll cannot be called
+positionally. Such a type returns a callable that supplies whatever the value
+tuple alone does not carry.
+
+# Arguments
+- `leaf`: the leaf whose free delay is rebuilt.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ctor = ComposedDistributions._leaf_ctor(Gamma(2.0, 1.0))
+ctor(3.0, 1.5)
+```
+
+# See also
+- [`free_leaf`](@ref): peel to the inner free delay.
+- [`rewrap_leaf`](@ref): re-apply the fixed structure around a rebuilt delay.
+"
+_leaf_ctor(leaf) = Base.typename(typeof(free_leaf(leaf))).wrapper
+
+@doc raw"
+
 Leaf-level distribution-valued parameter specs, or `nothing` for a fixed leaf.
 
 The uncertain-spec protocol: a `NamedTuple` of a leaf's distribution-valued
@@ -704,8 +740,7 @@ _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 # `_reconstruct_leaf` but is Turing-free; argument checks are kept on (this is
 # building a concrete distribution, not a gradient hot path).
 function _update_leaf(leaf, vals::Tuple)
-    inner = free_leaf(leaf)
-    ctor = Base.typename(typeof(inner)).wrapper
+    ctor = _leaf_ctor(leaf)
     # A thinned leaf's last value is the `:thin` factor (the trailing row the
     # walker emits): rebuild the inner delay from the leading params, then
     # re-attach the updated factor. Inert with no thinning modifier attached.
