@@ -1,5 +1,17 @@
 ## Unreleased
 
+- **feat:** `@uncertain expr` reads a distribution-valued constructor argument
+  as that parameter's prior, so an uncertain composed tree reads naturally
+  (#155). It rewrites syntax only, leaving the type sorting to the runtime
+  positional `uncertain(D, args...)` method: each call `D(pos_args...)` whose
+  head is a distribution type and one of whose positional arguments is a
+  distribution literal becomes `uncertain(D, pos_args...)`, so
+  `@uncertain Gamma(Normal(0.7, 0.2), 1.0)` makes `shape` uncertain and fixes
+  `scale`. The walk is recursive, so it composes with `compose`, the verbs and
+  the ModifiedDistributions wrappers (a modifier wraps the rewritten uncertain
+  leaf); an all-literal constructor and a keyword-carrying or qualified call are
+  left unchanged. Pure `Expr` rewriting, so no new dependency.
+
 - **test:** extend the AD gradient scenarios (`test/ADFixtures`) across the
   ForwardDiff / ReverseDiff / Enzyme / Mooncake matrix. A new `:latent`
   category differentiates the full `as_logdensity`/`logdensity` codec over an

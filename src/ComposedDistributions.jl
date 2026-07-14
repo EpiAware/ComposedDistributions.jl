@@ -99,7 +99,7 @@ export Shared, shared, tie
 # uncertain leaf to its concrete template. `has_uncertain` flags a tree that
 # still holds one, for a scoring/fitting loop to guard against a forgotten
 # `update` (the rest of the surface silently reports the template's values).
-export Uncertain, uncertain, has_uncertain
+export Uncertain, uncertain, has_uncertain, @uncertain
 
 # Partial pooling: a parameter drawn, across the leaves of a group, from one
 # shared population distribution whose free parameters are the estimated
@@ -191,6 +191,9 @@ include("composers/Shared.jl")
 # `_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
 # the tag wrapper).
 include("composers/Uncertain.jl")
+# The `@uncertain` syntax front-end over the positional `uncertain` family
+# form: pure `Expr` rewriting, so it loads right after the constructor it emits.
+include("composers/uncertain_macro.jl")
 # Partial pooling (a parameter pooled, across a group of leaves, through one
 # estimated population). After Uncertain (a `Pool` rides an uncertain leaf's
 # specs) and introspection (it reuses `_node_children`/`_split_edge`/`_join_path`
