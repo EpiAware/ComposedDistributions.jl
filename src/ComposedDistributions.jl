@@ -101,6 +101,13 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
+# Event-skeleton topology: `@events` declares an event tree's STRUCTURE (named
+# holes joined by → / | / & operators) with no distributions attached;
+# `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
+# composed tree through the existing verbs (a `|` node becomes a `Resolve` or
+# `Compete` decided by the fill value type).
+export EventSkeleton, @events
+
 # Partial pooling: a parameter drawn, across the leaves of a group, from one
 # shared population distribution whose free parameters are the estimated
 # hyperparameters. `pool(:group, population)` is a spec inside `uncertain`; a
@@ -183,6 +190,12 @@ include("composers/turing.jl")
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.
 include("composers/structural_edits.jl")
+# Event-skeleton topology + the `@events` macro. After introspection (the fill
+# adds an `update(::EventSkeleton; ...)` method to the `update` generic) and the
+# composer verbs (`sequential` / `parallel` / `resolve` / `compete`) it lowers
+# to. The macro file loads after the spec types it references.
+include("composers/events.jl")
+include("composers/events_macro.jl")
 # Shared (name-tagged tied leaf): after introspection so it can extend
 # `free_leaf`/`rewrap_leaf`, and after the structural edits (reuses `_edit_at`).
 include("composers/Shared.jl")
