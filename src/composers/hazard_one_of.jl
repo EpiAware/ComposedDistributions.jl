@@ -217,30 +217,17 @@ function logcdf(c::Compete, t::Real)
     return log1mexp(_hazard_logsurvival(c, t))
 end
 
-@doc "
-
-Sample a [`Compete`](@ref) node, returning the full named event record of the
-cause that won the race.
-
-A latent time is drawn per cause and the `argmin` cause wins; the result is a
-`NamedTuple` keyed by [`event_names`](@ref) (a positional origin slot then one
-slot per cause) with the winning cause's time present and the others `missing`.
-This is the same self-describing record the in-tree path produces, so a
-standalone draw identifies which cause won and feeds straight back into
-[`logpdf`](@ref). The compact `(name, time)` pair view is
-[`rand_outcome`](@ref); the marginal any-event time `min_k D_k` alone is its
-second element.
-
-See also: [`event_names`](@ref), [`rand_outcome`](@ref).
-"
-Base.rand(rng::AbstractRNG, c::Compete) = _one_of_event_record(rng, c)
-Base.rand(c::Compete) = rand(default_rng(), c)
+# A bare `rand(c::Compete)` draws the full named event record of the cause that
+# won the race, and `rand(c::Compete; outcome = true)` the compact `(name,
+# time)` pair; both go through the shared `Base.rand(::AbstractRNG,
+# ::AbstractOneOf; outcome)` method in `Resolve.jl`, so this file only supplies
+# the `Compete` record/outcome samplers those route into.
 
 # The scalar marginal draw of a terminal Compete (its racing any-event time
 # `min_k D_k`, discarding which cause won). Used by the plain flat value path
 # (`child_rand!`), where a Compete child is one value slot, and wherever the
 # marginal time alone is wanted.
-_one_of_marginal_rand(rng::AbstractRNG, c::Compete) = rand_outcome(rng, c)[2]
+_one_of_marginal_rand(rng::AbstractRNG, c::Compete) = _rand_outcome(rng, c)[2]
 
 @doc "
 
@@ -268,12 +255,10 @@ function logpdf(c::Compete, x::NamedTuple)
     return _hazard_cause_logpdf(c, obs_i, y - o)
 end
 
-# Racing-hazard form of `rand_outcome`; documented on the umbrella docstring
-# `@doc` on `function rand_outcome end` in `Resolve.jl` (see
-# `rand_outcome(rng, c::Compete)` there) so the bare `[`rand_outcome`](@ref)`
-# used throughout the docs resolves to one binding rather than being split
-# across per-method docstrings.
-function rand_outcome(rng::AbstractRNG, c::Compete)
+# Racing-hazard form of `_rand_outcome`; documented on the internal umbrella
+# comment on `function _rand_outcome end` in `Resolve.jl`. Draws a latent time
+# per cause and returns the `argmin` cause name with its `min` time.
+function _rand_outcome(rng::AbstractRNG, c::Compete)
     n = _n_branches(c)
     best_i = 1
     best_t = rand(rng, c.delays[1])
@@ -286,7 +271,7 @@ function rand_outcome(rng::AbstractRNG, c::Compete)
     end
     return c.names[best_i], best_t
 end
-rand_outcome(c::Compete) = rand_outcome(default_rng(), c)
+_rand_outcome(c::Compete) = _rand_outcome(default_rng(), c)
 
 @doc "
 

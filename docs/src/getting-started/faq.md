@@ -22,10 +22,10 @@ node = resolve(:death => (Gamma(1.5, 1.0), 0.3), :recover => Gamma(2.0, 1.5))
 rand(Xoshiro(1), node)
 ```
 
-For the compact `(outcome, time)` pair use [`rand_outcome`](@ref) (public but not exported, so module-qualified); for the marginal time to resolution alone (discarding which outcome fired) sample [`as_mixture`](@ref)`(node)`.
+For the compact `(outcome, time)` pair pass [`rand`](@ref)`(node; outcome = true)`; for the marginal time to resolution alone (discarding which outcome fired) sample [`as_mixture`](@ref)`(node)`.
 
 ```@example faq
-ComposedDistributions.rand_outcome(Xoshiro(1), node),
+rand(Xoshiro(1), node; outcome = true),
 rand(Xoshiro(1), as_mixture(node))
 ```
 
