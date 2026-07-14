@@ -666,6 +666,8 @@ end
 
     Distributions.params(d::MomentLeaf) = d.vals
     Distributions.logpdf(d::MomentLeaf, x::Real) = logpdf(native(d), x)
+    Distributions.cdf(d::MomentLeaf, x::Real) = cdf(native(d), x)
+    Distributions.quantile(d::MomentLeaf, q::Real) = quantile(native(d), q)
     Base.minimum(::MomentLeaf) = 0.0
     Base.maximum(::MomentLeaf) = Inf
 
@@ -707,4 +709,32 @@ end
     @test keys(u.specs) == (:mean,)
     # And a native parameter of the implied LogNormal is not a parameter here.
     @test_throws ArgumentError uncertain(leaf; sigma = LogNormal(2.0, 0.2))
+
+    # The hook must be transparent through a wrapper, or the override is
+    # bypassed for exactly the leaves that matter: an `uncertain` leaf carrying
+    # the prior, and a truncated one. `free_leaf` peels to the moment leaf, so
+    # `_leaf_ctor` must recurse rather than read the peeled type directly.
+    for wrapped in (truncated(leaf; upper = 30.0), u, shared(:m, leaf))
+        @test ComposedDistributions._leaf_ctor(wrapped) ===
+              ComposedDistributions._leaf_ctor(leaf)
+    end
+
+    # And reconstruction really works through those wrappers.
+    trunc_tree = sequential(:onset_admit => truncated(leaf; upper = 30.0),
+        :admit_death => Gamma(2.0, 1.0))
+    bumped_trunc = update(trunc_tree,
+        (onset_admit = (mean = 10.0, sd = 3.0),
+            admit_death = (shape = 2.0, scale = 1.0)))
+    # A truncated leaf reports its inner params followed by its bounds: the
+    # moments were rebuilt, and the truncation was re-applied around them.
+    @test params(bumped_trunc).onset_admit == (10.0, 3.0, nothing, 30.0)
+    @test params(ComposedDistributions.free_leaf(
+        event(bumped_trunc, :onset_admit))) == (10.0, 3.0)
+
+    # Collapsing the uncertain leaf to a concrete one goes through the same
+    # rebuild, in moment coordinates.
+    u_tree = sequential(:onset_admit => u, :admit_death => Gamma(2.0, 1.0))
+    collapsed = update(u_tree, (onset_admit = (mean = 9.0, sd = 2.5),
+        admit_death = (shape = 2.0, scale = 1.0)))
+    @test params(collapsed).onset_admit == (9.0, 2.5)
 end

@@ -171,10 +171,17 @@ end
 # The population's template (an `uncertain` population's concrete template, or
 # the population itself for a plain distribution) and its family. The family
 # drives the link and the location-scale (non-centred) eligibility.
+#
+# This asks which family the population is, not how to rebuild it, so it reads
+# the peeled type directly rather than going through `_leaf_ctor`. The two are
+# the same for a leaf whose params are its constructor arguments, but a leaf that
+# overrides `_leaf_ctor` returns a callable that is not a family: routing this
+# through the hook would make `_is_location_scale` false for such a leaf and
+# silently demote a non-centred pool to a centred one.
 _population_template(pop::UnivariateDistribution) = pop
 _population_template(pop::Uncertain) = pop.template
 function _population_family(pop::UnivariateDistribution)
-    return _leaf_ctor(_population_template(pop))
+    return Base.typename(typeof(free_leaf(_population_template(pop)))).wrapper
 end
 
 # A location-scale family reparameterises non-centred (a standard-normal latent
