@@ -69,15 +69,8 @@ const INDEX_STRIP_SECTIONS = String[]
 const BENCHMARK_PAGE = true
 
 # Benchmark suites to render on the history page (allowlist; empty shows all).
-# This also works around a kit history-parsing bug that otherwise blocks the
-# docs deploy (EpiAwarePackageTools#204): benchpkgtable writes `table.md` as two
-# stacked pipe tables (timings then allocations), and the kit's parser flattens
-# every `|`-row into one list, so the second table's header row (an empty
-# leading name cell) leaks in as a phantom empty-named suite. The reshaped
-# detail then emits a bare `### ` heading for it, which DocumenterVitepress's
-# inventory writer turns into an anchored header with an empty anchor id,
-# aborting the deploy with an "ArgumentError: name must have non-zero length".
-# Naming the real suites drops the phantom group from both the overall summary
-# and the per-suite detail. Update this list if the benchmark suite gains a new
-# top-level suite; remove it once the kit fixes the two-table parse upstream.
-const HISTORY_SUITES = ["AD gradients", "Composition", "time_to_load"]
+# The kit now parses the stacked timing and allocation history tables without
+# leaking a phantom empty-named suite (EpiAwarePackageTools#227/#233) and guards
+# the inventory against an empty anchor id (#238), so the earlier allowlist
+# workaround is no longer needed and every suite renders.
+const HISTORY_SUITES = String[]
