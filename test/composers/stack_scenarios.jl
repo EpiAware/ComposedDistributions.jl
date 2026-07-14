@@ -142,7 +142,6 @@ end
 @testitem "Scenario: death-vs-discharge case-fatality Resolve" tags = [:scenarios] begin
     using Distributions, Random, Statistics
     using ForwardDiff
-    import ComposedDistributions: rand_outcome
 
     # Story: an admitted case resolves to exactly one outcome — death with the
     # case-fatality probability, discharge otherwise — cause independent of
@@ -175,7 +174,7 @@ end
     # Monte-Carlo winning frequency matches probs; the marginal-time moments
     # match the mixture.
     N = 40000
-    outcomes = [rand_outcome(rng, res) for _ in 1:N]
+    outcomes = [rand(rng, res; outcome = true) for _ in 1:N]
     times = [o[2] for o in outcomes]
     @test count(o -> o[1] == :death, outcomes) / N ≈
           probs(res).death atol = 0.02   # 0.30
@@ -215,7 +214,6 @@ end
 @testitem "Scenario: competing causes racing hazard (Compete)" tags = [:scenarios] begin
     using Distributions, Random, Statistics
     using ForwardDiff
-    import ComposedDistributions: rand_outcome
 
     # Story: two causes race for the first event — death vs recovery — the
     # winner and time coupled through the hazards (min of the cause delays); the
@@ -240,7 +238,7 @@ end
     # Monte-Carlo the race: the empirical winner frequency matches the DERIVED
     # probs, and the marginal min-time moments match the quadrature values.
     N = 40000
-    outcomes = [rand_outcome(rng, comp) for _ in 1:N]
+    outcomes = [rand(rng, comp; outcome = true) for _ in 1:N]
     mins = [o[2] for o in outcomes]
     @test count(o -> o[1] == :death, outcomes) / N ≈
           wp.death atol = 0.02                     # 0.525

@@ -206,10 +206,13 @@
   constructing a `Resolve` / `Compete` inside a differentiated function is
   Enzyme-safe (no `collect_to!` `Array` temporary Enzyme's type analysis rejects).
 
-- `rand_outcome` is now a documented `public` binding (previously an undocumented
-  internal), matching CensoredDistributions. It stays unexported — the
-  record-returning `rand` is the exported entry point — so reach it
-  module-qualified as `ComposedDistributions.rand_outcome`.
+- **Behaviour change:** the standalone `(name, time)` view of a one_of draw is
+  now a keyword on `rand`, `rand(node; outcome = true)`, rather than the
+  separate public `rand_outcome` verb (now removed). A keyword-free `rand(node)`
+  is unchanged (it still returns the full named event record), so only call
+  sites that reached for the compact pair need updating from
+  `ComposedDistributions.rand_outcome(rng, node)` to
+  `rand(rng, node; outcome = true)`.
 
 - **Breaking:** `rand` of a standalone `Resolve` or `Compete` node now returns
   the named event record of the outcome that fired — a `NamedTuple` keyed by
@@ -218,8 +221,9 @@
   marginal time-to-resolution (#96, syncing to CensoredDistributions' #639). The
   record names which outcome occurred, so `logpdf(node, rand(node))` round-trips
   and identifies the outcome. To recover the old scalar draw, sample the
-  marginal `rand(as_mixture(node))`; the `(outcome, time)` pair view stays
-  `rand_outcome`. A one_of node nested inside a `Sequential` / `Parallel` is
+  marginal `rand(as_mixture(node))`; the `(outcome, time)` pair view is
+  `rand(node; outcome = true)`. A one_of node nested inside a `Sequential` /
+  `Parallel` is
   unchanged (it stays one scalar value slot, its marginal); a new
   `logpdf(node, ::NamedTuple)` scores a standalone record.
 

@@ -95,7 +95,7 @@ end
     rng = MersenneTwister(42)
     wins = zeros(Int, 2)
     for _ in 1:20000
-        name, _ = ComposedDistributions.rand_outcome(rng, c)
+        name, _ = rand(rng, c; outcome = true)
         wins[name == :death ? 1 : 2] += 1
     end
     @test wins[1] / 20000 ≈ wp.death atol = 0.02
@@ -131,14 +131,14 @@ end
     @test insupport(c, t)
     @test pdf(c, t) > 0
     # The derived winning split must match the Monte-Carlo winning
-    # frequencies from `rand_outcome` (an inverted floor biases the
-    # quadrature lower bound used by `probs`, dropping the mass where
+    # frequencies from `rand(c; outcome = true)` (an inverted floor biases
+    # the quadrature lower bound used by `probs`, dropping the mass where
     # `:early` wins before `:late`'s clock even starts).
     rng = MersenneTwister(1)
     wins = zeros(Int, 2)
     n = 20000
     for _ in 1:n
-        name, _ = ComposedDistributions.rand_outcome(rng, c)
+        name, _ = rand(rng, c; outcome = true)
         wins[name == :early ? 1 : 2] += 1
     end
     wp = probs(c)
@@ -492,18 +492,27 @@ end
           logpdf(Gamma(2.0, 1.0), 1.5)
 end
 
-@testitem "rand_outcome(::Resolve): resolved name and delay, or missing" begin
+@testitem "rand(::Resolve; outcome): resolved name and delay, or missing" begin
     using Distributions, Random
 
     r = resolve(:event => (Gamma(1.5, 1.0), 0.4), :none => (NoEvent(), 0.6))
     rng = MersenneTwister(3)
     seen = Set{Symbol}()
     for _ in 1:200
-        name, time = ComposedDistributions.rand_outcome(rng, r)
+        name, time = rand(rng, r; outcome = true)
         push!(seen, name)
         name == :none ? (@test time === missing) : (@test time isa Real)
     end
     @test seen == Set([:event, :none])
+    # The keyword-free draw still returns the full named event record, not the
+    # compact pair.
+    rec = rand(rng, r)
+    @test rec isa NamedTuple
+    @test keys(rec) == (:event_1, :event, :none)
+    # The default-RNG keyword form returns the same `(name, time)` pair shape.
+    pair = rand(r; outcome = true)
+    @test pair isa Tuple && pair[1] isa Symbol
+    @test pair[2] isa Real || pair[2] === missing
 end
 
 @testitem "one_of rand returns a named event record (#639)" begin

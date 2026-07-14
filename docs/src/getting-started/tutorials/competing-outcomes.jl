@@ -23,8 +23,6 @@
 using ComposedDistributions
 using Distributions
 using Random
-# `rand_outcome` is public but not exported (the record-returning `rand` is the
-# exported entry point), so it is used module-qualified below.
 
 # ## Fixed-probability resolution
 #
@@ -47,15 +45,15 @@ mean(outcome)
 
 rand(Xoshiro(1), outcome)
 
-# [`rand_outcome`](@ref) is the compact `(outcome, time)` pair view of the same
-# draw, so a standalone draw tells you which outcome won.
+# [`rand`](@ref)`(node; outcome = true)` is the compact `(outcome, time)` pair
+# view of the same draw, so a standalone draw tells you which outcome won.
 
-ComposedDistributions.rand_outcome(Xoshiro(1), outcome)
+rand(Xoshiro(1), outcome; outcome = true)
 
 # Over many draws the outcome frequencies match the fixed split.
 
 rng = Xoshiro(42)
-draws = [first(ComposedDistributions.rand_outcome(rng, outcome)) for _ in 1:5000]
+draws = [first(rand(rng, outcome; outcome = true)) for _ in 1:5000]
 count(==(:death), draws) / length(draws)     # ≈ cfr
 
 # ## An outcome that only sometimes occurs
@@ -68,7 +66,7 @@ with_survivors = resolve(:death => (Gamma(1.5, 1.0), 0.2),
 
 # A no-event draw returns a `missing` time.
 
-ComposedDistributions.rand_outcome(Xoshiro(4), with_survivors)
+rand(Xoshiro(4), with_survivors; outcome = true)
 
 # ## Racing hazards
 #
@@ -88,7 +86,7 @@ t = 3.0
 # of the hazards rather than a set parameter.
 
 race_rng = Xoshiro(2024)
-races = [first(ComposedDistributions.rand_outcome(race_rng, racing))
+races = [first(rand(race_rng, racing; outcome = true))
          for _ in 1:5000]
 count(==(:death), races) / length(races)
 
@@ -120,8 +118,9 @@ rand(Xoshiro(1), history)
 #   [`NoEvent`](@ref) branch carries cases that never resolve.
 # - [`compete`](@ref) derives the split from racing hazards, coupling which
 #   outcome occurs to when.
-# - [`rand_outcome`](@ref) reads the sampled outcome and time; the marginal
-#   `logpdf` and `mean` treat the node as one time-to-resolution distribution.
+# - [`rand`](@ref)`(node; outcome = true)` reads the sampled outcome and time;
+#   the marginal `logpdf` and `mean` treat the node as one time-to-resolution
+#   distribution.
 # - A one_of node nests as a step in a larger composed tree.
 #
 # ## Where next

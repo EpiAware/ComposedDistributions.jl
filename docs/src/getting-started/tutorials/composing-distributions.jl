@@ -235,10 +235,11 @@ record = rand(Xoshiro(7), tree)
 
 logpdf(resolution, 3.0)
 
-# [`rand_outcome`](@ref) draws which outcome occurs and its time as a compact
-# `(outcome, time)` pair, so a standalone draw tells you which outcome won.
+# [`rand`](@ref)`(node; outcome = true)` draws which outcome occurs and its time
+# as a compact `(outcome, time)` pair, so a standalone draw tells you which
+# outcome won.
 
-ComposedDistributions.rand_outcome(Xoshiro(7), resolution)
+rand(Xoshiro(7), resolution; outcome = true)
 
 # ## Combining whole delays
 #

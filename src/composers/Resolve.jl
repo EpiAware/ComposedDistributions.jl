@@ -761,23 +761,45 @@ end
 
 @doc "
 
-Sample a [`Resolve`](@ref) node, returning the full named event record of the
-outcome that fired.
+Sample a one_of node ([`Resolve`](@ref) / [`Compete`](@ref)).
 
-The draw resolves to a single outcome (sampled from the branch probabilities)
-and the result is a `NamedTuple` keyed by [`event_names`](@ref): a positional
-origin slot then one slot per outcome, with the fired outcome's time present and
-the others `missing`. This is the same self-describing record the in-tree path
-produces (a `Resolve` nested in a `compose(...)` tree), so a standalone draw
-identifies which outcome won and feeds straight back into [`logpdf`](@ref).
+By default (`outcome = false`) the draw returns the full named event record of
+the outcome that fired: a `NamedTuple` keyed by [`event_names`](@ref), a
+positional origin slot then one slot per outcome, with the fired outcome's time
+present and the others `missing`. This is the same self-describing record the
+in-tree path produces (the node nested in a `compose(...)` tree), so a
+standalone draw identifies which outcome won and feeds straight back into
+[`logpdf`](@ref).
+
+With `outcome = true` the draw instead returns the compact `(name, time)` pair
+of the outcome that fired, so a standalone draw tells you which outcome/cause
+won without reading the sparse record. For a [`Resolve`](@ref) the outcome is
+drawn from the branch probabilities and the time from that outcome's own delay;
+for a [`Compete`](@ref) a latent time is drawn per cause and the `argmin` cause
+with its `min` time is returned (the marginal any-event time `min_k D_k` alone
+is the pair's second element). A no-event win yields a `missing` time.
 
 To recover the marginal time-to-resolution alone (the mixture over outcomes,
 discarding which fired) sample [`as_mixture`](@ref)`(c)` instead.
 
-See also: [`event_names`](@ref), [`as_mixture`](@ref), [`rand_outcome`](@ref)
+# Examples
+```@example
+using ComposedDistributions, Distributions, Random
+
+node = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+    :disch => (Gamma(2.0, 1.5), 0.7))
+rand(MersenneTwister(1), node)                      # the named event record
+rand(MersenneTwister(1), node; outcome = true)      # the (name, time) pair
+```
+
+See also: [`event_names`](@ref), [`as_mixture`](@ref)
 "
-Base.rand(rng::AbstractRNG, c::Resolve) = _one_of_event_record(rng, c)
-Base.rand(c::Resolve) = rand(default_rng(), c)
+function Base.rand(rng::AbstractRNG, c::AbstractOneOf; outcome::Bool = false)
+    return outcome ? _rand_outcome(rng, c) : _one_of_event_record(rng, c)
+end
+function Base.rand(c::AbstractOneOf; outcome::Bool = false)
+    return rand(default_rng(), c; outcome)
+end
 
 # The scalar marginal draw of a terminal Resolve (its branch-prob-weighted
 # mixture time-to-resolution, discarding which outcome fired). Used by the plain
@@ -785,65 +807,24 @@ Base.rand(c::Resolve) = rand(default_rng(), c)
 # wherever the marginal time alone is wanted.
 _one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 
-@doc "
+# Internal: sample a one_of outcome AND its time, returning `(name, time)`. This
+# is the compact pair view backing `rand(c; outcome = true)`; it retains WHICH
+# outcome/cause occurred, unlike the univariate marginal draw (the time only,
+# which discards which outcome/cause won). Dispatches on the composer:
+#
+# - a `Resolve` node (below): draws the resolved outcome from the branch
+#   probabilities and the time from that outcome's own delay;
+# - a `Compete` node (in `hazard_one_of.jl`): draws a racing-hazard outcome, a
+#   latent time per cause with the `argmin` cause and its `min` time returned.
+#   That is the generative dual of the `Compete` `logpdf` (`f_j ∏_{k≠j} S_k`)
+#   and of the forward `convolve_series` stream, so the Monte Carlo
+#   winning-cause frequencies match the derived `Distributions.probs` split.
+#
+# The no-`rng` method uses the global default. Both are private (the user entry
+# point is `rand(c; outcome = true)`).
+function _rand_outcome end
 
-Sample a composed-distribution outcome AND its time, returning `(name, time)`.
-
-`rand_outcome` retains WHICH outcome/cause occurred, unlike the univariate
-[`rand`](@ref) (the marginal time only, which discards which outcome/cause
-won). Dispatches on the composer:
-
-- a [`Resolve`](@ref) node (below): draws the resolved outcome from the branch
-  probabilities and the time from that outcome's own delay;
-- a [`Compete`](@ref) node (below, in `hazard_one_of.jl`): draws a
-  racing-hazard outcome, a latent time per cause with the `argmin` cause and
-  its `min` time returned.
-
-# `rand_outcome(rng, c::Resolve)`
-
-Used by the full-path tree simulation, where a `Resolve` node resolves to a
-single named outcome, so the chosen outcome is retained rather than discarded.
-
-## Arguments
-- `rng`: random number generator (the no-`rng` method uses the global default).
-- `c`: the [`Resolve`](@ref) node to sample an outcome from.
-
-## Examples
-```@example
-using ComposedDistributions, Distributions, Random
-
-node = Resolve(:death => (Gamma(1.5, 1.0), 0.3),
-    :disch => (Gamma(2.0, 1.5), 0.7))
-name, time = rand_outcome(MersenneTwister(1), node)
-```
-
-# `rand_outcome(rng, c::Compete)`
-
-This is the generative dual of the [`logpdf`](@ref) (`f_j ∏_{k≠j} S_k`) and of
-the forward `convolve_series` stream: the Monte Carlo winning-cause
-frequencies match the derived `Distributions.probs` split and the forward
-per-outcome stream masses.
-
-## Arguments
-- `rng`: random number generator (the no-`rng` method uses the global default).
-- `c`: the [`Compete`](@ref) node to sample a winning cause from.
-
-## Examples
-```@example
-using ComposedDistributions, Distributions, Random
-
-node = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
-name, time = rand_outcome(MersenneTwister(1), node)
-```
-
-# See also
-- [`Resolve`](@ref), [`Compete`](@ref): the composer nodes
-- [`rand`](@ref): the marginal time-only draw
-- `Distributions.probs`
-"
-function rand_outcome end
-
-function rand_outcome(rng::AbstractRNG, c::Resolve)
+function _rand_outcome(rng::AbstractRNG, c::Resolve)
     i = _sample_branch(rng, c.branch_probs)
     # A no-event win yields `missing` (no event time recorded); a real outcome
     # draws its own delay.
@@ -851,7 +832,7 @@ function rand_outcome(rng::AbstractRNG, c::Resolve)
     return c.names[i], rand(rng, c.delays[i])
 end
 
-rand_outcome(c::Resolve) = rand_outcome(default_rng(), c)
+_rand_outcome(c::Resolve) = _rand_outcome(default_rng(), c)
 
 # ----------------------------------------------------------------------------
 # Standalone one_of event records: the shape a bare `rand(::Resolve)` /
@@ -870,7 +851,7 @@ rand_outcome(c::Resolve) = rand_outcome(default_rng(), c)
 # errors with the same guidance the scalar marginal methods give.
 function _one_of_event_record(rng::AbstractRNG, c::AbstractOneOf)
     _is_nonterminal(c) && _nonterminal_marginal_error("rand")
-    name, time = rand_outcome(rng, c)
+    name, time = _rand_outcome(rng, c)
     T = float(_one_of_record_eltype(c))
     out = Vector{Union{Missing, T}}(missing, _event_child_nleaves(c) + 1)
     out[1] = zero(T)
