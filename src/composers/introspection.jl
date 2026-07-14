@@ -325,6 +325,60 @@ end
 
 @doc raw"
 
+The constructor that rebuilds a leaf's free delay from a positional tuple of
+parameter values, in `_leaf_param_names` order (excluding a trailing `:thin`,
+which `_update_leaf` strips and re-attaches around the rebuild).
+
+Reconstruction is how an updated parameter vector becomes a distribution again:
+`update`, the `unflatten` then `update` posterior read-back, `uncertain`'s
+pinning path, a tied leaf's signature, and a pooled population's template all
+rebuild a leaf this way. The base identity returns the inner delay's type
+constructor, which is right for a Distributions.jl family whose `params` are
+its constructor arguments.
+
+A leaf type whose free parameters are not its native constructor arguments
+overrides this. A moment-parameterised wrapper is the motivating case: it
+reports moments (a mean and a standard deviation) as its parameters, and it
+carries its family in a type parameter, so the bare UnionAll cannot be called
+positionally. Such a type returns a callable that supplies whatever the value
+tuple alone does not carry.
+
+An override must return an **egal-stable** callable: two structurally identical
+leaves must return `===` constructors, since `_tie_signature` groups tied leaves
+by this value. A callable closing over a type parameter is egal-stable; one
+closing over a runtime *value* is not, and would make `tie` wrongly reject two
+compatible leaves. Prefer a callable struct over an anonymous closure.
+
+# Arguments
+- `leaf`: the leaf whose free delay is rebuilt.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ctor = ComposedDistributions._leaf_ctor(Gamma(2.0, 1.0))
+ctor(3.0, 1.5)
+```
+
+# See also
+- [`free_leaf`](@ref): peel to the inner free delay.
+- [`rewrap_leaf`](@ref): re-apply the fixed structure around a rebuilt delay.
+"
+function _leaf_ctor(leaf)
+    inner = free_leaf(leaf)
+    # A bare leaf: its own type constructor rebuilds it. Reached only when no
+    # override applies, since an override is the more specific method.
+    inner === leaf && return Base.typename(typeof(leaf)).wrapper
+    # A wrapper (`Truncated`, `Uncertain`, `Shared`, a censored or modified
+    # leaf): recurse rather than read the peeled type directly, so an inner
+    # leaf's override is honoured through the wrapper. `_leaf_param_names` peels
+    # and then dispatches `_param_names` for the same reason; the two must agree
+    # or a wrapped leaf would report one set of names and rebuild from another.
+    return _leaf_ctor(inner)
+end
+
+@doc raw"
+
 Leaf-level distribution-valued parameter specs, or `nothing` for a fixed leaf.
 
 The uncertain-spec protocol: a `NamedTuple` of a leaf's distribution-valued
@@ -389,10 +443,34 @@ end
 
 # --- parameter-name introspection for leaves -------------------------------
 
-# Best-effort scalar parameter names for a leaf distribution, matched
-# positionally to `params(leaf)`. Distributions.jl exposes parameter values via
-# `params` but not their names generically, so common families are mapped
-# explicitly; anything else falls back to `:param_1, :param_2, ...`.
+@doc raw"
+
+The scalar parameter names of a leaf distribution, matched positionally to
+`params(leaf)`.
+
+Distributions.jl exposes parameter values through `params` but not their names,
+so the common families are mapped explicitly here; anything unmapped falls back
+to `:param_1, :param_2, ...`.
+
+A leaf type whose free parameters are not the native family's overrides this, in
+step with [`_leaf_ctor`](@ref): the two together fix the coordinates that
+`params_table`, `uncertain`, `build_priors` and the flat codec work in. A
+moment-parameterised wrapper naming a mean and a standard deviation, rather than
+a shape and a scale, is the motivating case.
+
+# Arguments
+- the leaf distribution whose parameter names are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions._param_names(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`_leaf_ctor`](@ref): the matching rebuild.
+"
 _param_names(::Distributions.Normal) = (:mu, :sigma)
 _param_names(::Distributions.LogNormal) = (:mu, :sigma)
 _param_names(::Distributions.Gamma) = (:shape, :scale)
@@ -704,8 +782,7 @@ _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 # `_reconstruct_leaf` but is Turing-free; argument checks are kept on (this is
 # building a concrete distribution, not a gradient hot path).
 function _update_leaf(leaf, vals::Tuple)
-    inner = free_leaf(leaf)
-    ctor = Base.typename(typeof(inner)).wrapper
+    ctor = _leaf_ctor(leaf)
     # A thinned leaf's last value is the `:thin` factor (the trailing row the
     # walker emits): rebuild the inner delay from the leading params, then
     # re-attach the updated factor. Inert with no thinning modifier attached.
