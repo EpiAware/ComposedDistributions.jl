@@ -52,7 +52,7 @@ package extension).
   default [`as_logdensity`](@ref) uses.
 
 # Examples
-```julia
+```@example
 using ComposedDistributions, Distributions, Turing
 
 tree = compose((
