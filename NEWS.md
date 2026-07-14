@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **docs:** a "Fitting a composed distribution" guide walks the inference
+  tooling in one place: the `as_logdensity` log-density over a tree's estimated
+  parameters, sampling it through the `LogDensityProblems` interface with
+  LogDensityProblemsAD, sampling with Turing through `as_turing`, and reading a
+  fitted chain back onto the tree with `chain_to_params` / `update`.
+
 - **feat:** `@uncertain expr` reads a distribution-valued constructor argument
   as that parameter's prior, so an uncertain composed tree reads naturally
   (#155). It rewrites syntax only, leaving the type sorting to the runtime
