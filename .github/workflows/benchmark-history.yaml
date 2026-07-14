@@ -9,9 +9,14 @@ name: Benchmark history
 # `benchmark.yaml` (push/tags here vs pull_request there), so the two
 # never run on the same event.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
+  # Parked to workflow_dispatch-only until the deps register (#41). The
+  # timeline benchmarks HEAD via benchpkg in its own temp project, and the kit
+  # scratch-registry bootstrap (kit#229) does not yet register our chained
+  # unregistered deps there: it registers EpiAwareADTools but ConvolvedDistributions
+  # 0.2 (which itself depends on the unregistered EpiAwareADTools) stays
+  # unsatisfiable, so a push/tag run fails. Restore the push/tags triggers once
+  # ConvolvedDistributions and EpiAwareADTools register (or the kit bootstrap
+  # handles the transitive chain). Re-park after every template-sync until then.
   workflow_dispatch:
 
 # `contents: write` lets JamesIves/github-pages-deploy-action push the
