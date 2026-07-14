@@ -1,5 +1,21 @@
 ## Unreleased
 
+- **feat:** `@events` declares an event-tree TOPOLOGY as a readable operator
+  diagram, structure only with no distributions attached (#156). `→` (`\to`)
+  chains events into a `Sequential`, `|` branches into a one_of outcome, `&`
+  runs branches in `Parallel`, and parentheses group for precedence; a bare
+  identifier is an event name and becomes a named hole. `update(skeleton;
+  name = dist, ...)` fills the holes and builds the concrete composed tree
+  through the existing verbs, so one delay topology is reused across pathogens
+  or settings. Whether a `|` node becomes a fixed-probability `Resolve` or a
+  racing-hazard `Compete` is decided at fill time by the fill value type
+  (`(dist, prob)` tuples versus bare distributions, the last branch alone free
+  to take the residual), so `|` stays one syntax. A fill value is any valid
+  leaf, including an `uncertain` / `@uncertain` leaf or a ModifiedDistributions
+  modifier leaf, which composes through the existing extension with no
+  MD-specific code in `@events`. The fill validates that every hole is filled
+  and no unknown key is passed.
+
 - **docs:** a "Fitting a composed distribution" guide walks the inference
   tooling in one place: the `as_logdensity` log-density over a tree's estimated
   parameters, sampling it through the `LogDensityProblems` interface with
