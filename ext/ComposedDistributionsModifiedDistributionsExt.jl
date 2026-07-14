@@ -15,6 +15,11 @@
 # ComposedDistributions for `free_leaf`/`rewrap_leaf`/`_shared_tag`/
 # `_thin_factor`/`_set_thin_factor`, ModifiedDistributions for `get_dist` —
 # plus at least one type at the seam, so no piracy).
+#
+# The modifier payloads are read through ModifiedDistributions' public
+# accessors (`get_dist`/`get_scale`/`get_shift`/`get_weight`/`get_effect`/
+# `get_link`/`get_op`/`get_factor`, ModifiedDistributions#61) rather than
+# struct fields, so a field rename upstream cannot silently break this seam.
 module ComposedDistributionsModifiedDistributionsExt
 
 import ComposedDistributions: free_leaf, rewrap_leaf, _shared_tag,
@@ -24,36 +29,40 @@ using ComposedDistributions: Shared, AbstractContext
 using Distributions: mean, var
 import ModifiedDistributions: get_dist
 using ModifiedDistributions: Affine, Weighted, Transformed, Modified,
-                             ThinOp, affine, modify
+                             ThinOp, affine, modify, get_scale, get_shift,
+                             get_weight, get_effect, get_link, get_op,
+                             get_factor
 
 # --- free_leaf: reach the inner free delay through a modifier ---------------
 
-free_leaf(d::Affine) = free_leaf(d.dist)
-free_leaf(d::Weighted) = free_leaf(d.dist)
-free_leaf(d::Transformed) = free_leaf(d.dist)
-free_leaf(d::Modified) = free_leaf(d.dist)
+free_leaf(d::Affine) = free_leaf(get_dist(d))
+free_leaf(d::Weighted) = free_leaf(get_dist(d))
+free_leaf(d::Transformed) = free_leaf(get_dist(d))
+free_leaf(d::Modified) = free_leaf(get_dist(d))
 
 # --- rewrap_leaf: rebuild the modifier around a new inner delay --------------
 
 function rewrap_leaf(d::Affine, inner)
-    return affine(rewrap_leaf(d.dist, inner); scale = d.scale, shift = d.shift)
+    return affine(rewrap_leaf(get_dist(d), inner);
+        scale = get_scale(d), shift = get_shift(d))
 end
 function rewrap_leaf(d::Weighted, inner)
-    return Weighted(rewrap_leaf(d.dist, inner), d.weight)
+    return Weighted(rewrap_leaf(get_dist(d), inner), get_weight(d))
 end
 function rewrap_leaf(d::Transformed, inner)
-    return Transformed(rewrap_leaf(d.dist, inner), d.op)
+    return Transformed(rewrap_leaf(get_dist(d), inner), get_op(d))
 end
 function rewrap_leaf(d::Modified, inner)
-    return modify(rewrap_leaf(d.dist, inner), d.effect; link = d.link)
+    return modify(rewrap_leaf(get_dist(d), inner), get_effect(d);
+        link = get_link(d))
 end
 
 # --- _shared_tag: see a shared tag through a modifier -----------------------
 
-_shared_tag(d::Affine) = _shared_tag(d.dist)
-_shared_tag(d::Weighted) = _shared_tag(d.dist)
-_shared_tag(d::Transformed) = _shared_tag(d.dist)
-_shared_tag(d::Modified) = _shared_tag(d.dist)
+_shared_tag(d::Affine) = _shared_tag(get_dist(d))
+_shared_tag(d::Weighted) = _shared_tag(get_dist(d))
+_shared_tag(d::Transformed) = _shared_tag(get_dist(d))
+_shared_tag(d::Modified) = _shared_tag(get_dist(d))
 
 # --- _uncertain_specs: see uncertain parameters through a modifier ----------
 #
@@ -61,10 +70,10 @@ _shared_tag(d::Modified) = _shared_tag(d.dist)
 # parameter specs, so `params_table`'s prior column and the marginal `rand`
 # see through the modifier exactly like the tag protocol does.
 
-_uncertain_specs(d::Affine) = _uncertain_specs(d.dist)
-_uncertain_specs(d::Weighted) = _uncertain_specs(d.dist)
-_uncertain_specs(d::Transformed) = _uncertain_specs(d.dist)
-_uncertain_specs(d::Modified) = _uncertain_specs(d.dist)
+_uncertain_specs(d::Affine) = _uncertain_specs(get_dist(d))
+_uncertain_specs(d::Weighted) = _uncertain_specs(get_dist(d))
+_uncertain_specs(d::Transformed) = _uncertain_specs(get_dist(d))
+_uncertain_specs(d::Modified) = _uncertain_specs(get_dist(d))
 
 # --- overall moments: use the modifier's own moment, not the free leaf's -----
 #
@@ -112,25 +121,29 @@ end
 # `Modified`) forward to their inner delay so a thinned leaf still reports its
 # factor underneath any of them.
 
-_thin_factor(d::Affine) = _thin_factor(d.dist)
-_thin_factor(d::Weighted) = _thin_factor(d.dist)
-_thin_factor(d::Modified) = _thin_factor(d.dist)
+_thin_factor(d::Affine) = _thin_factor(get_dist(d))
+_thin_factor(d::Weighted) = _thin_factor(get_dist(d))
+_thin_factor(d::Modified) = _thin_factor(get_dist(d))
 function _thin_factor(d::Transformed)
-    return d.op isa ThinOp ? d.op.factor : _thin_factor(d.dist)
+    op = get_op(d)
+    return op isa ThinOp ? get_factor(op) : _thin_factor(get_dist(d))
 end
 
 function _set_thin_factor(d::Affine, p)
-    return affine(_set_thin_factor(d.dist, p); scale = d.scale, shift = d.shift)
+    return affine(_set_thin_factor(get_dist(d), p);
+        scale = get_scale(d), shift = get_shift(d))
 end
 function _set_thin_factor(d::Weighted, p)
-    return Weighted(_set_thin_factor(d.dist, p), d.weight)
+    return Weighted(_set_thin_factor(get_dist(d), p), get_weight(d))
 end
 function _set_thin_factor(d::Modified, p)
-    return modify(_set_thin_factor(d.dist, p), d.effect; link = d.link)
+    return modify(_set_thin_factor(get_dist(d), p), get_effect(d);
+        link = get_link(d))
 end
 function _set_thin_factor(d::Transformed, p)
-    return d.op isa ThinOp ? Transformed(d.dist, ThinOp(p)) :
-           Transformed(_set_thin_factor(d.dist, p), d.op)
+    op = get_op(d)
+    return op isa ThinOp ? Transformed(get_dist(d), ThinOp(p)) :
+           Transformed(_set_thin_factor(get_dist(d), p), op)
 end
 
 # --- get_dist: the composed `Shared` tag is transparent to the unwrap protocol
@@ -146,23 +159,22 @@ get_dist(d::Shared) = d.dist
 # never fires. Mirrors the `Shared` descent.
 
 function instantiate(d::Affine, ctx::AbstractContext)
-    affine(
-        instantiate(d.dist, ctx); scale = d.scale, shift = d.shift)
+    affine(instantiate(get_dist(d), ctx);
+        scale = get_scale(d), shift = get_shift(d))
 end
 function instantiate(d::Weighted, ctx::AbstractContext)
-    Weighted(instantiate(d.dist, ctx), d.weight)
+    Weighted(instantiate(get_dist(d), ctx), get_weight(d))
 end
 function instantiate(d::Transformed, ctx::AbstractContext)
-    Transformed(instantiate(d.dist, ctx), d.op)
+    Transformed(instantiate(get_dist(d), ctx), get_op(d))
 end
 function instantiate(d::Modified, ctx::AbstractContext)
-    modify(
-        instantiate(d.dist, ctx), d.effect; link = d.link)
+    modify(instantiate(get_dist(d), ctx), get_effect(d); link = get_link(d))
 end
 
-has_varying(d::Affine) = has_varying(d.dist)
-has_varying(d::Weighted) = has_varying(d.dist)
-has_varying(d::Transformed) = has_varying(d.dist)
-has_varying(d::Modified) = has_varying(d.dist)
+has_varying(d::Affine) = has_varying(get_dist(d))
+has_varying(d::Weighted) = has_varying(get_dist(d))
+has_varying(d::Transformed) = has_varying(get_dist(d))
+has_varying(d::Modified) = has_varying(get_dist(d))
 
 end # module
