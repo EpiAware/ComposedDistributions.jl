@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **fix:** `minimum` and `maximum` on a `Parallel` now return a per-branch
+  NamedTuple of support bounds, matching how `mean` / `var` report per-endpoint
+  moments, and the other composed types raise a clear `ArgumentError` naming the
+  generic instead of the opaque `MethodError` about `iterate`. Also tightens the
+  `Parallel` `event_names` test so it genuinely asserts the event tuple.
+
 - **feat:** `@events` declares an event-tree TOPOLOGY as a readable operator
   diagram, structure only with no distributions attached (#156). `→` (`\to`)
   chains events into a `Sequential`, `|` branches into a one_of outcome, `&`
