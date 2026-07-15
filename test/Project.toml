@@ -65,9 +65,9 @@ Turing = "0.42, 0.43, 0.44, 0.45"
 [sources]
 ComposedDistributions = {path = ".."}
 # LoweredDistributions backs the `lower` bridge weakdep extension (#149) and is
-# not yet registered; pin its scaffold branch here (the test env is where the
+# not yet registered; pin its main branch here (the test env is where the
 # extension loads). Drop this pin once LoweredDistributions registers a release.
-LoweredDistributions = {url = "https://github.com/EpiAware/LoweredDistributions.jl", rev = "init/lowereddistributions-scaffold"}
+LoweredDistributions = {url = "https://github.com/EpiAware/LoweredDistributions.jl", rev = "main"}
 ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit
