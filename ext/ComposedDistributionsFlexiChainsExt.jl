@@ -10,8 +10,8 @@ module ComposedDistributionsFlexiChainsExt
 
 using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                              Resolve, Compete, Choose, component_names,
-                             _shared_tag, _leaf_param_names, _collect_shared,
-                             _uncertain_specs, free_leaf
+                             shared_tag, leaf_param_names, _collect_shared,
+                             uncertain_specs, free_leaf
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
 using Distributions: params
@@ -168,11 +168,12 @@ end
 # chain entry, and the nested NamedTuple keys the group once at the top level
 # under its tag (read back by `update`).
 function _node_params(leaf, lookup, prefix, path)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     keypath = tag === nothing ? path : (tag,)
-    pnames = _leaf_param_names(leaf)
-    specs = _uncertain_specs(leaf)
+    pnames = leaf_param_names(leaf)
+    specs = uncertain_specs(leaf)
     tvals = params(free_leaf(leaf))
+    extras = ComposedDistributions.extra_leaf_params(leaf)
     vals = ntuple(length(pnames)) do i
         p = pnames[i]
         key = _dotted(prefix, (keypath..., p))
@@ -181,8 +182,12 @@ function _node_params(leaf, lookup, prefix, path)
             v
         elseif specs !== nothing && haskey(specs, p)
             throw(ArgumentError("leaf parameter $key not found in chain"))
-        else
+        elseif i <= length(tvals)
             tvals[i]
+        else
+            # A modifier-owned extra parameter (e.g. `:thin`) reads its current
+            # value from the extra map; `tvals` holds only the native params.
+            extras[p].value
         end
     end
     return NamedTuple{pnames}(Tuple(vals))

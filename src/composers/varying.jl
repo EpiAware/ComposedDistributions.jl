@@ -244,6 +244,7 @@ function rewrap_leaf(d::Varying, inner)
     return Varying(d.f, d.covariate, rewrap_leaf(d.reference, inner))
 end
 _shared_tag(d::Varying) = _shared_tag(d.reference)
+extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 
 function Base.show(io::IO, d::Varying)
     print(io, "Varying(", d.covariate, " -> ", d.reference, ")")

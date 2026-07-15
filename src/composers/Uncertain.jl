@@ -224,8 +224,19 @@ function uncertain(template::UnivariateDistribution; kwargs...)
         template
     else
         tvals = params(free_leaf(template))
+        extras = extra_leaf_params(template)
         newvals = ntuple(length(pnames)) do i
-            pnames[i] in fixed_keys ? nt[pnames[i]] : tvals[i]
+            p = pnames[i]
+            # A native parameter reads its current value positionally from
+            # `tvals`; an extra (modifier-owned) parameter reads its current
+            # value from the extra map, since `tvals` holds only native params.
+            if p in fixed_keys
+                nt[p]
+            elseif i <= length(tvals)
+                tvals[i]
+            else
+                extras[p].value
+            end
         end
         _update_leaf(template, newvals)
     end
@@ -288,6 +299,12 @@ end
 free_leaf(d::Uncertain) = free_leaf(d.template)
 rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
+# A modifier-owned extra parameter (e.g. a thinned template's `:thin` factor)
+# survives an uncertain leaf, so `params_table` still surfaces it. There is no
+# `set_extra_leaf_params(::Uncertain)`: `rewrap_leaf` strips the uncertainty, so
+# the setter always runs on the rebuilt concrete leaf, not on the `Uncertain`.
+extra_leaf_params(d::Uncertain) = extra_leaf_params(d.template)
+
 # A shared tag survives an uncertain leaf (a `shared(:inc, uncertain(...))`
 # is tagged outside, but forward for robustness when nested the other way).
 _shared_tag(d::Uncertain) = _shared_tag(d.template)
@@ -324,11 +341,21 @@ function _merge_leaf(leaf, updates::NamedTuple)
     pnames = _leaf_param_names(leaf)
     _check_merge_keys(updates, pnames, nameof(typeof(leaf)))
     tvals = params(free_leaf(leaf))
+    extras = extra_leaf_params(leaf)
     existing = _uncertain_specs(leaf)
     # Re-pin the fixed value at any `Real` update; keep the current value else.
+    # A native parameter's current value comes from `tvals` positionally; an
+    # extra (modifier-owned) parameter's from the extra map (`tvals` holds only
+    # native params, so an extra index would overrun it).
     new_vals = ntuple(length(pnames)) do i
         p = pnames[i]
-        (haskey(updates, p) && updates[p] isa Real) ? updates[p] : tvals[i]
+        if haskey(updates, p) && updates[p] isa Real
+            updates[p]
+        elseif i <= length(tvals)
+            tvals[i]
+        else
+            extras[p].value
+        end
     end
     new_template = _update_leaf(leaf, new_vals)
     # The new specs: a distribution update wins, a `Real` drops the spec, else
@@ -402,8 +429,19 @@ end
 function _uncertain_leaf(template, drawn::NamedTuple)
     pnames = _leaf_param_names(template)
     tvals = params(free_leaf(template))
+    extras = extra_leaf_params(template)
+    # A native parameter's fallback is its current value in `tvals`; an extra
+    # (modifier-owned) parameter's is its stored value in the extra map, since
+    # `tvals` holds only the native params and would overrun on an extra index.
     newvals = ntuple(length(pnames)) do i
-        haskey(drawn, pnames[i]) ? drawn[pnames[i]] : tvals[i]
+        p = pnames[i]
+        if haskey(drawn, p)
+            drawn[p]
+        elseif i <= length(tvals)
+            tvals[i]
+        else
+            extras[p].value
+        end
     end
     return _update_leaf(template, newvals)
 end

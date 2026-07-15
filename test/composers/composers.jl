@@ -574,16 +574,17 @@ end
 
 @testitem "params_table is a 5-column superset with a thin hook (#96)" begin
     using Distributions
-    import ComposedDistributions: _thin_factor, _leaf_param_names
+    import ComposedDistributions: extra_leaf_params, leaf_param_names
 
     d = compose((onset = Gamma(2.0, 1.0), report = LogNormal(0.5, 0.4)))
     tbl = params_table(d)
     @test Tuple(propertynames(tbl)) == (:edge, :param, :value, :support, :prior)
-    # No thinning modifier exists here, so the thin hook is a no-op and no
-    # `:thin` row appears (the table matches the plain per-param inventory).
+    # No modifier owns an extra parameter here, so the extra-parameter hook is
+    # empty and no `:thin` row appears (the table matches the plain per-param
+    # inventory).
     leaf = Gamma(2.0, 1.0)
-    @test _thin_factor(leaf) === nothing
-    @test :thin ∉ _leaf_param_names(leaf)
+    @test extra_leaf_params(leaf) == (;)
+    @test :thin ∉ leaf_param_names(leaf)
     @test :thin ∉ tbl.param
 end
 

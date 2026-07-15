@@ -18,24 +18,17 @@ const QA_CONFIG = (
 
     # ExplicitImports `ignore`: symbols imported non-publicly.
     # (`logccdf_ad_safe` is a public EpiAwareADTools export the racing-hazard node
-    # reuses and extends, so it needs no ignore. `_uncertain_specs` and
-    # `_leaf_detail_lines` are `public` (#142), so they need no ignore either.)
-    # `_shared_tag`, `_thin_factor` and `_set_thin_factor` are the internal
-    # tag/thin-factor protocols, and `_leaf_mean`/`_leaf_var` the internal
-    # per-leaf moment hooks, that the ModifiedDistributions extension extends
-    # so a modified leaf peels its shared tag and uncertain parameter specs, a
-    # `thin` reporting probability round-trips through `params_table`/`update`,
-    # and a `thin(...)`/`affine(...)` leaf honours its analytic moment, inside
-    # a composed tree; `_leaf_param_names` and `_collect_shared` are the
-    # internal leaf-naming and shared-group lookups the FlexiChains extension
-    # reuses to read a fitted chain back onto a composed tree;
-    # `CentredPoolPrior` and `_population_template` are the internal pooling
-    # marker type and population-family lookup the Bijectors extension reuses
-    # to read a centred-pooled row's constraint off its population instead of
-    # a fixed prior.
-    ei_ignore = (:_shared_tag, :_thin_factor,
-        :_set_thin_factor, :_leaf_mean, :_leaf_var, :_leaf_param_names,
-        :_collect_shared, :CentredPoolPrior, :_population_template),
+    # reuses and extends, so it needs no ignore. The published leaf protocol —
+    # `uncertain_specs`, `leaf_detail_lines`, `shared_tag`, `leaf_param_names`,
+    # `leaf_mean`, `leaf_var`, `extra_leaf_params`, `set_extra_leaf_params` — is
+    # `public` (#170), so the ModifiedDistributions and FlexiChains extensions
+    # that extend or reuse it need no ignore.) `_collect_shared` is the internal
+    # shared-group lookup the FlexiChains extension reuses to read a fitted chain
+    # back onto a composed tree; `CentredPoolPrior` and `_population_template`
+    # are the internal pooling marker type and population-family lookup the
+    # Bijectors extension reuses to read a centred-pooled row's constraint off
+    # its population instead of a fixed prior.
+    ei_ignore = (:_collect_shared, :CentredPoolPrior, :_population_template),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface
