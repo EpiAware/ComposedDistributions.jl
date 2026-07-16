@@ -230,9 +230,9 @@ function _pool_params(template, lookup, prefix)
     acc = Dict{Symbol, Pool}()
     _collect_pools!(acc, template)
     isempty(acc) && return NamedTuple()
-    entries = map(collect(acc)) do (group, p)
-        group => _pool_hyper_params(p, lookup, prefix, group)
-    end
+    entries = [group => _pool_hyper_params(p, lookup, prefix, group)
+               for (group, p) in acc
+               if _uncertain_specs(p.population) !== nothing]
     return NamedTuple(entries)
 end
 
