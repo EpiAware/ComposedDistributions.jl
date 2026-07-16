@@ -293,6 +293,56 @@ end
             b = (shape = (z = 0.2,), scale = 1.0)))
 end
 
+@testitem "pool/shared: rejects a name shared across roles" begin
+    using Distributions
+    using ComposedDistributions: as_logdensity
+
+    # A pool group and a shared tag with the same name silently clobber each
+    # other in the readback merge (#177); the log-density gate rejects it.
+    pool_vs_shared = compose((
+        a = shared(:g, Gamma(2.0, 1.0)),
+        b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
+    @test_throws ArgumentError as_logdensity(pool_vs_shared, [1.0])
+
+    # A pool group colliding with a sibling root-level edge name collides at
+    # the same root-lifted level (#178 risk list).
+    pool_vs_edge = compose((
+        g = Gamma(2.0, 1.0),
+        b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
+    @test_throws ArgumentError as_logdensity(pool_vs_edge, [1.0])
+
+    # A shared tag colliding with a sibling root-level edge name, same guard.
+    shared_vs_edge = compose((
+        g = Gamma(2.0, 1.0),
+        b = shared(:g, LogNormal(0.5, 0.4))))
+    @test_throws ArgumentError as_logdensity(shared_vs_edge, [1.0])
+end
+
+@testitem "pool/shared: legitimate tying is not a false positive" begin
+    using Distributions
+    using ComposedDistributions: as_logdensity
+
+    # The same shared tag tying a parameter across two branches is the
+    # intended feature, not a collision, so it must still compose and gate
+    # cleanly. The tag name (`:inc`) is distinct from both root edge names
+    # (`:a`, `:b`) and any pool group, so no guard fires.
+    inc = shared(:inc, Gamma(2.0, 1.0))
+    tied = compose((
+        a = inc,
+        b = compose((src = LogNormal(0.5, 0.4), inc = inc))))
+    prob = as_logdensity(tied, [1.0])
+    @test prob isa ComposedDistributions.ComposedLogDensity
+
+    # Two distinct pool groups and a distinct shared tag, none colliding with
+    # each other or with the root edge names, also gate cleanly.
+    clean = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+        b = uncertain(Gamma(3.0, 1.0); shape = pool(:region)),
+        c = shared(:tag1, LogNormal(0.5, 0.4))))
+    prob2 = as_logdensity(clean, [1.0])
+    @test prob2 isa ComposedDistributions.ComposedLogDensity
+end
+
 @testitem "pool: rand draws a single-parameter marginal" begin
     using Distributions, Random
 
