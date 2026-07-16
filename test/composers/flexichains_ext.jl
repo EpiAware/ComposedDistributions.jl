@@ -457,3 +457,49 @@ end
     @test event(fitted, :north) == event(fitted, :south)
     @test params(event(fitted, :north))[1] ≈ exp(mu + sigma * z)
 end
+
+@testitem "chain_to_params rejects a pool/root-edge name collision (#177)" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+
+    # A bare template handed straight to `chain_to_params`/`update(template,
+    # chain)` need never have passed `as_logdensity`'s gate, so the same
+    # `:g` pool-group-vs-root-edge collision as the `as_logdensity` test in
+    # pooling.jl must be caught here too: without the guard, the root-lifted
+    # `merge` silently overwrites the fixed leaf `g`'s readback entry with the
+    # pool group's `mu`/`sigma` hyperparameters instead of erroring.
+    colliding = compose((
+        g = Gamma(2.0, 1.0),
+        b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
+
+    @model function g_model()
+        mu ~ Normal(0.0, 1.0)
+        sigma ~ truncated(Normal(0.0, 1.0); lower = 0.0)
+        return (mu = mu, sigma = sigma)
+    end
+    @model function shape_z_model()
+        z ~ Normal(0.0, 1.0)
+        return (z = z,)
+    end
+    @model function b_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function tree_model()
+        g ~ to_submodel(g_model())
+        b ~ to_submodel(b_model())
+        return (g = g, b = b)
+    end
+    @model function full_model()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(177)
+    chain = sample(full_model(), Prior(), 10; chain_type = VNChain,
+        progress = false)
+
+    @test_throws ArgumentError chain_to_params(colliding, chain)
+    @test_throws ArgumentError update(colliding, chain)
+    @test_throws ArgumentError param_draws(colliding, chain)
+end

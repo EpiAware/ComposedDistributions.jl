@@ -147,6 +147,10 @@ end
 
 _n_alternatives(::Choose{N}) where {N} = N
 
+# The alternative names, filling the `AbstractComposedDistribution` interface
+# gap `Choose` was missing (`component_names(c)` — the child names).
+component_names(d::Choose) = d.names
+
 # --- Type-stable selection -------------------------------------------------
 #
 # `_pick(d, kind)` returns the alternative distribution whose name `=== kind`,

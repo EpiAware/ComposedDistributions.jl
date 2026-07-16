@@ -465,14 +465,9 @@ function _validate_tree_names(d)
 end
 
 # The direct child names at the root of a composer tree, the level the
-# readback merge (`chain_to_params`) lifts pool/shared entries onto.
-# `component_names` already covers Sequential/Parallel/AbstractOneOf; `Choose`
-# has no `component_names` method (its alternatives are not a params_table
-# edge set), so its own `names` field is read directly here.
-function _root_edge_names(d::Union{Sequential, Parallel, AbstractOneOf})
-    return component_names(d)
-end
-_root_edge_names(d::Choose) = d.names
+# readback merge (`chain_to_params`) lifts pool/shared entries onto. Every
+# `AbstractComposedDistribution` subtype implements `component_names`.
+_root_edge_names(d) = component_names(d)
 
 # A `Pool` value in an `update` NamedTuple makes that parameter pooled (a spec),
 # like a distribution value makes it uncertain, so an update carrying only a

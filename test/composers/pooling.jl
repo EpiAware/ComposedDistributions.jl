@@ -341,6 +341,16 @@ end
         c = shared(:tag1, LogNormal(0.5, 0.4))))
     prob2 = as_logdensity(clean, [1.0])
     @test prob2 isa ComposedDistributions.ComposedLogDensity
+
+    # A pool group name equal to a NESTED (non-root) edge name is not a
+    # collision: the guard only checks the tree's own ROOT edge names
+    # (`:a`, `:branch` here), not `:g` two levels down inside `:branch`.
+    nested_reuse = compose((
+        a = Gamma(2.0, 1.0),
+        branch = compose((g = Gamma(2.0, 1.0),
+            b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))))
+    prob3 = as_logdensity(nested_reuse, [1.0])
+    @test prob3 isa ComposedDistributions.ComposedLogDensity
 end
 
 @testitem "pool: rand draws a single-parameter marginal" begin
