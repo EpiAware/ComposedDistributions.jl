@@ -1057,7 +1057,7 @@ function update(leaf, params::NamedTuple)
 end
 
 function update(d::AbstractComposedDistribution,
-        x::AbstractVector{<:Real})
+        x::AbstractVector)
     return update(d, unflatten(d, x))
 end
 

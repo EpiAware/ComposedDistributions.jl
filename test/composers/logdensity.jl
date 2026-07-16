@@ -219,3 +219,18 @@ end
     # Wrong dimension should error.
     @test_throws DimensionMismatch update(tree, [1.0, 2.0])
 end
+
+@testitem "update: flat vector accepts duck-typed containers" begin
+    using Distributions
+    using ComposedDistributions: unflatten
+
+    tree = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    # Duck-typed containers should work and be equivalent to regular vectors.
+    result_vec = update(tree, [3.0])
+    result_any = update(tree, Any[3.0])
+    @test result_vec == result_any
+end
