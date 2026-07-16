@@ -10,6 +10,7 @@
 
 @testitem "Modified extension: free_leaf / rewrap_leaf / shared_tag" begin
     using Distributions
+    using ModifiedDistributions
     using ModifiedDistributions: affine, weight, thin, modify, get_dist
 
     # The extension loads once ModifiedDistributions is present.
