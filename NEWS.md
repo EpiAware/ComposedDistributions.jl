@@ -1,5 +1,9 @@
 ## Unreleased
 
+- **feat:** `update(d, x::AbstractVector)` is a flat-vector shorthand for
+  `update(d, unflatten(d, x))`, collapsing an uncertain tree at a sampler draw
+  in a single call (#178).
+
 - **feat:** the composer leaf protocol is now published as considered public API
   (#170). The downstream contract a leaf-wrapper package implements is
   de-underscored and documented as the stable surface: `uncertain_specs`,
