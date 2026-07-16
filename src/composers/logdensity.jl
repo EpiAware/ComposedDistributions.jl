@@ -336,6 +336,9 @@ function as_logdensity(dist::AbstractComposedDistribution, priors, data;
     # Gate the pooling groups' consistency once here (not per gradient
     # evaluation): every member of a group must share one population.
     _validate_pool_groups(dist)
+    # Gate the pool/shared/root-edge name namespaces once here too (#177):
+    # a pool group, a shared tag, and a root edge name must not collide.
+    _validate_tree_names(dist)
     return ComposedLogDensity(dist, priors, data, loglik)
 end
 
