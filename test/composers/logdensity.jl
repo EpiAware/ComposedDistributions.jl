@@ -186,3 +186,36 @@ end
     @test length(g) == flat_dimension(tree)
     @test all(isfinite, g)
 end
+
+@testitem "update: flat vector shorthand equals unflatten then update" begin
+    using Distributions
+    using ComposedDistributions: unflatten
+
+    tree = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    # The two-step path via unflatten.
+    x = [3.0]
+    nt = unflatten(tree, x)
+    result_unflatten = update(tree, nt)
+
+    # The direct vector arm should give the same result.
+    result_vector = update(tree, x)
+    @test result_vector == result_unflatten
+    @test event(result_vector, :onset_admit) == Gamma(3.0, 1.0)
+end
+
+@testitem "update: flat vector dimension mismatch throws like unflatten" begin
+    using Distributions
+    using ComposedDistributions: unflatten
+
+    tree = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    # Wrong dimension should error.
+    @test_throws DimensionMismatch update(tree, [1.0, 2.0])
+end
