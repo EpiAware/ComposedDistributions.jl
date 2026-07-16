@@ -333,8 +333,8 @@ _uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
 # (see the parameterisation note above).
 
 # Shared stays outermost: peel the tag, merge the inner leaf, re-apply the tag.
-function _merge_leaf(leaf::Shared, updates::NamedTuple)
-    Shared(leaf.tag, _merge_leaf(leaf.dist, updates))
+function _merge_leaf(leaf::Shared{tag}, updates::NamedTuple) where {tag}
+    Shared{tag}(_merge_leaf(leaf.dist, updates))
 end
 
 function _merge_leaf(leaf, updates::NamedTuple)

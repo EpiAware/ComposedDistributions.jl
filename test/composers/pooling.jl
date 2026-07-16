@@ -8,23 +8,25 @@
 @testitem "pool: constructor and validation" begin
     using Distributions
 
+    using ComposedDistributions: pool_group, pool_noncentred
+
     # Default: an estimated-LogNormal population, reparameterised non-centred.
     p = pool(:district)
     @test p isa Pool
-    @test p.group === :district
-    @test p.noncentred
+    @test pool_group(p) === :district
+    @test pool_noncentred(p)
     @test p.population isa Uncertain
 
     # An explicit location-scale population stays non-centred.
     q = pool(:region,
         uncertain(Normal(0.0, 1.0);
             mu = Normal(0.5, 0.3), sigma = truncated(Normal(0.0, 0.2); lower = 0)))
-    @test q.noncentred
+    @test pool_noncentred(q)
 
     # A general population takes the centred path.
     r = pool(:g, uncertain(Gamma(2.0, 1.0);
         shape = truncated(Normal(2, 1); lower = 0)))
-    @test !r.noncentred
+    @test !pool_noncentred(r)
 
     # A fixed (non-uncertain) population is allowed (no hyperparameters).
     @test pool(:g, LogNormal(0.5, 0.3)).population == LogNormal(0.5, 0.3)
@@ -37,7 +39,7 @@
     # Non-centred cannot be forced on a general population.
     @test_throws ArgumentError pool(:g, Gamma(2.0, 1.0); noncentred = true)
     # But it can be forced off on a location-scale one (centred LogNormal).
-    @test !pool(:g, LogNormal(0.0, 1.0); noncentred = false).noncentred
+    @test !pool_noncentred(pool(:g, LogNormal(0.0, 1.0); noncentred = false))
 end
 
 @testitem "pool: rides an uncertain leaf and is seen as uncertain" begin

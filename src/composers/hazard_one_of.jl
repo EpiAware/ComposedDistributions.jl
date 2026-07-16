@@ -24,7 +24,8 @@ ships against plain `Distributions.ccdf`/`logccdf`, so any stock univariate
 leaf races without a package-specific interface.
 
 # Fields
-- `names`: tuple of the one_of outcome names (`Symbol`s).
+- the one_of outcome names (`Symbol`s) live in the `names` type parameter
+  (read with [`component_names`](@ref)).
 - `delays`: tuple of the cause-specific delay distributions.
 
 # See also
@@ -33,13 +34,11 @@ leaf races without a package-specific interface.
 - `Distributions.probs`: the derived per-cause winning probabilities.
 - [`convolved`](@ref): the sum dual (events in series).
 "
-struct Compete{C <: Tuple, D <: Tuple} <: AbstractOneOf
-    "Tuple of the one_of outcome names (`Symbol`s)."
-    names::C
+struct Compete{names, D <: Tuple} <: AbstractOneOf
     "Tuple of the cause-specific delay distributions."
     delays::D
 
-    function Compete(names::C, delays::D) where {C <: Tuple, D <: Tuple}
+    function Compete{names}(delays::D) where {names, D <: Tuple}
         length(names) >= 2 ||
             throw(ArgumentError("Compete needs at least two outcomes"))
         length(names) == length(delays) || throw(ArgumentError(
@@ -53,9 +52,18 @@ struct Compete{C <: Tuple, D <: Tuple} <: AbstractOneOf
             "a racing-hazard one_of node has no no-event branch: the " *
             "no-event probability is DERIVED as the survival ∏ S_k(horizon). " *
             "Use the fixed-probability `Resolve` for an explicit no-event mass"))
-        return new{C, D}(names, delays)
+        return new{names, D}(delays)
     end
 end
+
+# The names live in the `names` type parameter (like `NamedTuple{names}`); this
+# instantiates it directly from the runtime tuple `compete`/`compose` pass, with
+# no call-site change from the field-based constructor.
+function Compete(names::C, delays::D) where {C <: Tuple, D <: Tuple}
+    return Compete{names}(delays)
+end
+
+component_names(::Compete{names}) where {names} = names
 
 @doc "
 
@@ -269,7 +277,7 @@ function _rand_outcome(rng::AbstractRNG, c::Compete)
             best_i = k
         end
     end
-    return c.names[best_i], best_t
+    return component_names(c)[best_i], best_t
 end
 _rand_outcome(c::Compete) = _rand_outcome(default_rng(), c)
 
@@ -324,7 +332,7 @@ function probs(c::Compete)
     # vector in that case, leaving a genuine sub-one defective deficit intact.
     total = sum(winning)
     winning = total > one(total) ? winning ./ total : winning
-    return NamedTuple{c.names}(winning)
+    return NamedTuple{component_names(c)}(winning)
 end
 
 # A finite quadrature window for a cause with unbounded support: a high quantile
@@ -415,7 +423,8 @@ function Base.show(io::IO, ::MIME"text/plain", c::Compete)
 end
 
 function Base.show(io::IO, c::Compete)
-    parts = ["$(c.names[k])~$(c.delays[k])" for k in 1:_n_branches(c)]
+    names = component_names(c)
+    parts = ["$(names[k])~$(c.delays[k])" for k in 1:_n_branches(c)]
     print(io, "Compete(", join(parts, " | "), ")")
     return nothing
 end

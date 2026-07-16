@@ -21,24 +21,21 @@ censored specialisation layered on top elsewhere, not part of this type.
 # Fields
 - `components`: tuple of the branch distributions (each univariate or a nested
   composer).
-- `names`: tuple of the branch names (`Symbol`s), one per component; the
-  `compose` front-ends thread the user's names through, positional construction
-  assigns `:branch_1, :branch_2, ...`.
+- the branch names (`Symbol`s), one per component, live in the `names` type
+  parameter (read with [`component_names`](@ref)); the `compose` front-ends
+  thread the user's names through, positional construction assigns
+  `:branch_1, :branch_2, ...`.
 
 # See also
 - [`Sequential`](@ref): a chain of additive steps
 - [`Resolve`](@ref): exactly one of several outcomes
 "
-struct Parallel{C <: Tuple, N <: Tuple} <:
+struct Parallel{names, C <: Tuple} <:
        AbstractMultiChild{Continuous}
     "Tuple of the branch distributions (each univariate or a nested composer)."
     components::C
-    "Tuple of the branch names (`Symbol`s), one per component. The `compose`
-    NamedTuple/table front-ends use the user's keys; positional construction
-    assigns `:branch_1, :branch_2, ...`."
-    names::N
 
-    function Parallel(components::C, names::N) where {C <: Tuple, N <: Tuple}
+    function Parallel{names}(components::C) where {names, C <: Tuple}
         length(components) >= 1 ||
             throw(ArgumentError("Parallel needs at least one branch"))
         all(_is_composable, components) ||
@@ -52,8 +49,16 @@ struct Parallel{C <: Tuple, N <: Tuple} <:
             throw(ArgumentError("every Parallel name must be a Symbol"))
         allunique(names) ||
             throw(ArgumentError("Parallel branch names must be unique"))
-        new{C, N}(components, names)
+        new{names, C}(components)
     end
+end
+
+# The names live in the `names` type parameter (like `NamedTuple{names}`); this
+# instantiates it directly from the runtime tuple `compose`/`parallel` pass,
+# with no call-site change from the field-based constructor.
+function Parallel(components::C, names::NTuple{N, Symbol}) where {
+        C <: Tuple, N}
+    return Parallel{names}(components)
 end
 
 # Positional construction assigns default `:branch_i` names.
@@ -146,12 +151,12 @@ parallel(branches::NamedTuple) = parallel(_nt_pairs(branches)...)
 # Total number of leaf values in a realisation (sum over nested children).
 Base.length(d::Parallel) = _nleaves(d.components)
 
-function Base.eltype(::Type{<:Parallel{C}}) where {C <: Tuple}
+function Base.eltype(::Type{<:Parallel{names, C}}) where {names, C <: Tuple}
     return mapreduce(eltype, promote_type, fieldtypes(C))
 end
 
 # Branch names, one per component.
-component_names(d::Parallel) = d.names
+component_names(::Parallel{names}) where {names} = names
 
 @doc "
 

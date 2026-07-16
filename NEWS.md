@@ -1,5 +1,20 @@
 ## Unreleased
 
+- **refactor!:** the composer/wrapper structs carry their layout-affecting
+  names and tags in TYPE parameters rather than runtime fields, lifting
+  `Sequential`/`Parallel`/`Choose`/`Resolve`/`Compete`'s outcome/step/branch
+  names, `Shared`'s tag, and `Pool`'s group/non-centred flag into the type
+  domain (part of #178, PR 1 of the type-domain codec design). The public
+  constructors (`Sequential(components, names)`, `shared(tag, dist)`,
+  `pool(group, population; noncentred)`, ...) are UNCHANGED, and every
+  consumer that already read through the accessors
+  (`component_names`/`shared_tag`, plus the new `pool_group`/
+  `pool_noncentred`) needs no change. This is breaking only for code that
+  constructed these structs directly and read the moved fields by name (e.g.
+  `d.names`, `shared_leaf.tag`, `pool_spec.group`); such code should switch to
+  the accessors. This groundwork is a step towards a generated, allocation-free
+  flat-vector codec that fixes #162.
+
 - **feat:** the composer leaf protocol is now published as considered public API
   (#170). The downstream contract a leaf-wrapper package implements is
   de-underscored and documented as the stable surface: `uncertain_specs`,

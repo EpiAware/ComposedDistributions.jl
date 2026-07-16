@@ -29,9 +29,10 @@ r isa ComposedDistributions.AbstractOneOf
 abstract type AbstractOneOf <:
               AbstractComposedDistribution{Univariate, Continuous} end
 
-# Outcome names, one per one_of outcome. Both concrete types store `names`.
-component_names(c::AbstractOneOf) = c.names
-_n_branches(c::AbstractOneOf) = length(c.names)
+# Outcome names, one per one_of outcome. Both concrete types carry `names` as a
+# type parameter (see the per-type `component_names` methods below and in
+# `hazard_one_of.jl`).
+_n_branches(c::AbstractOneOf) = length(component_names(c))
 
 @doc "
 
@@ -117,7 +118,8 @@ probabilities are recovered from any draw (via [`update`](@ref) /
 `Distributions.probs`). See [`update`](@ref) for the full story.
 
 # Fields
-- `names`: tuple of the one_of outcome names (`Symbol`s).
+- the one_of outcome names (`Symbol`s) live in the `names` type parameter
+  (read with [`component_names`](@ref)).
 - `delays`: tuple of the one_of outcome delay distributions.
 - `branch_probs`: tuple of the branch probabilities, summing to one.
 - `branch_prob_prior`: the attached `Dirichlet` prior when the branch
@@ -129,9 +131,7 @@ probabilities are recovered from any draw (via [`update`](@ref) /
 - [`Sequential`](@ref): a chain of additive steps
 - [`Parallel`](@ref): independent branches
 "
-struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
-    "Tuple of the one_of outcome names (`Symbol`s)."
-    names::C
+struct Resolve{names, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     "Tuple of the one_of outcome delay distributions."
     delays::D
     "Tuple of the branch probabilities, summing to one."
@@ -158,8 +158,8 @@ struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     # scorer handles an unnormalised weight set), so the sum-to-one requirement
     # is enforced at the user-facing `Pair...` constructor and at `as_mixture`
     # (which does need a normalised `Categorical`), not here.
-    function Resolve(names::C, delays::D, branch_probs::P,
-            branch_prob_prior::S) where {C <: Tuple, D <: Tuple, P <: Tuple, S}
+    function Resolve{names}(delays::D, branch_probs::P,
+            branch_prob_prior::S) where {names, D <: Tuple, P <: Tuple, S}
         length(names) >= 2 ||
             throw(ArgumentError("Resolve needs at least two outcomes"))
         (length(names) == length(delays) == length(branch_probs)) ||
@@ -171,9 +171,19 @@ struct Resolve{C <: Tuple, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
             throw(ArgumentError("Resolve outcome names must be unique"))
         _validate_branch_prob_bounds(branch_probs)
         _validate_branch_prob_prior(branch_prob_prior, length(names))
-        return new{C, D, P, S}(names, delays, branch_probs, branch_prob_prior)
+        return new{names, D, P, S}(delays, branch_probs, branch_prob_prior)
     end
 end
+
+# The names live in the `names` type parameter (like `NamedTuple{names}`); this
+# instantiates it directly from the runtime tuple `resolve`/`compose` pass, with
+# no call-site change from the field-based constructor.
+function Resolve(names::C, delays::D, branch_probs::P,
+        branch_prob_prior::S) where {C <: Tuple, D <: Tuple, P <: Tuple, S}
+    return Resolve{names}(delays, branch_probs, branch_prob_prior)
+end
+
+component_names(::Resolve{names}) where {names} = names
 
 # A `Resolve` with no attached prior is fixed structure; this three-argument
 # form keeps every existing construction path (the `Pair...` constructor,
@@ -580,19 +590,20 @@ end
 # probability of a two-outcome node (`(p, 1 - p)`). The element type is preserved
 # so a `logistic(Xβ)` `Dual` flows through.
 function _coerce_branch_probs(c::Resolve, bp::NamedTuple)
-    Set(keys(bp)) == Set(c.names) || throw(ArgumentError(
+    names = component_names(c)
+    Set(keys(bp)) == Set(names) || throw(ArgumentError(
         "per-record branch_probs must name exactly the outcomes " *
-        "$(collect(c.names)); got $(collect(keys(bp)))"))
-    probs = map(n -> bp[n], c.names)
+        "$(collect(names)); got $(collect(keys(bp)))"))
+    probs = map(n -> bp[n], names)
     _validate_record_probs(probs)
     return probs
 end
 
 function _coerce_branch_probs(c::Resolve, p::Real)
-    length(c.names) == 2 || throw(ArgumentError(
+    length(component_names(c)) == 2 || throw(ArgumentError(
         "a scalar per-record branch_probs is only defined for a two-outcome " *
         "Resolve (the first outcome's probability); node has " *
-        "$(length(c.names)) outcomes, pass a NamedTuple instead"))
+        "$(length(component_names(c))) outcomes, pass a NamedTuple instead"))
     probs = (p, one(p) - p)
     _validate_record_probs(probs)
     return probs
@@ -826,10 +837,11 @@ function _rand_outcome end
 
 function _rand_outcome(rng::AbstractRNG, c::Resolve)
     i = _sample_branch(rng, c.branch_probs)
+    names = component_names(c)
     # A no-event win yields `missing` (no event time recorded); a real outcome
     # draws its own delay.
-    _is_no_event(c.delays[i]) && return c.names[i], missing
-    return c.names[i], rand(rng, c.delays[i])
+    _is_no_event(c.delays[i]) && return names[i], missing
+    return names[i], rand(rng, c.delays[i])
 end
 
 _rand_outcome(c::Resolve) = _rand_outcome(default_rng(), c)
@@ -841,7 +853,7 @@ _rand_outcome(c::Resolve) = _rand_outcome(default_rng(), c)
 #
 # A standalone one_of node (sampled on its own, not nested in a `compose(...)`
 # tree) draws the full named event record of the outcome that fired: a
-# `NamedTuple` keyed by `_flat_event_names(c) = (:event_1, c.names...)`, a
+# `NamedTuple` keyed by `_flat_event_names(c) = (:event_1, component_names(c)...)`, a
 # positional origin slot (anchored at zero) then one slot per outcome, with the
 # fired outcome's time present and the others `missing`. This is the same
 # self-describing record the in-tree path produces, so a standalone draw
@@ -858,7 +870,7 @@ function _one_of_event_record(rng::AbstractRNG, c::AbstractOneOf)
     # A no-event win records no time (every outcome slot stays `missing`); a
     # real outcome fills its slot (outcome `i` at slot `i + 1`; origin at 1).
     if time !== missing
-        i = something(findfirst(==(name), c.names))
+        i = something(findfirst(==(name), component_names(c)))
         out[i + 1] = convert(T, time)
     end
     return NamedTuple{_flat_event_names(c)}(Tuple(out))
@@ -892,11 +904,12 @@ end
 # `i + 1`.
 function _observed_one_of_outcome(c::AbstractOneOf, events)
     obs_i = 0
+    names = component_names(c)
     @inbounds for i in 1:_n_branches(c)
         events[i + 1] === missing && continue
         obs_i == 0 || throw(ArgumentError(
             "a standalone one_of record may observe at most one outcome; got " *
-            "outcomes $(c.names[obs_i]) and $(c.names[i])"))
+            "outcomes $(names[obs_i]) and $(names[i])"))
         obs_i = i
     end
     return obs_i
@@ -954,7 +967,8 @@ function Base.show(io::IO, ::MIME"text/plain", c::Resolve)
 end
 
 function Base.show(io::IO, c::Resolve)
-    parts = ["$(c.names[k])@$(c.branch_probs[k])" for k in 1:_n_branches(c)]
+    names = component_names(c)
+    parts = ["$(names[k])@$(c.branch_probs[k])" for k in 1:_n_branches(c)]
     print(io, "Resolve(", join(parts, " | "), ")")
     return nothing
 end
@@ -992,7 +1006,7 @@ probs(node)
 See also: [`occurrence_probability`](@ref)
 "
 function probs(c::Resolve)
-    return NamedTuple{c.names}(c.branch_probs)
+    return NamedTuple{component_names(c)}(c.branch_probs)
 end
 
 @doc "

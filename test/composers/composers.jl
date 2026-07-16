@@ -489,7 +489,7 @@ end
         :disch => (Gamma(2.0, 1.5), 0.5), :transfer => (Gamma(1.0, 1.0), 0.2))
     pruned = event(prune(compose((res = node,)), :res, :transfer), :res)
     @test sum(pruned.branch_probs) ≈ 1.0
-    @test length(pruned.names) == 2
+    @test length(ComposedDistributions.component_names(pruned)) == 2
     # Splice inserts an after step.
     sp = splice(tree, :admit_death; after = :report => Gamma(1.0, 2.0))
     @test event(sp, :admit_death) isa Sequential
@@ -509,7 +509,7 @@ end
 
     # prune descends through the Compete into a nested Resolve cause.
     pruned = event(prune(tree, :path, :delayed, :c), :path, :delayed)
-    @test length(pruned.names) == 2
+    @test length(ComposedDistributions.component_names(pruned)) == 2
     @test sum(pruned.branch_probs) ≈ 1.0
 
     # tie descends through the Compete to tag a leaf as shared.

@@ -40,7 +40,7 @@ scalar composer raises a clear error rather than a silent misrepresentation.
 module ComposedDistributionsLoweredDistributionsExt
 
 using ComposedDistributions: Sequential, Parallel, Resolve, Compete, Choose,
-                             Shared, NoEvent
+                             Shared, NoEvent, component_names
 import LoweredDistributions: lower
 using LoweredDistributions: AbstractLowering, AbstractChainTrick, PhaseType,
                             CTMC
@@ -189,7 +189,7 @@ generator is the Kronecker sum of the branch generators over the product state
 space. The branches evolve independently, each reaching its own absorbing state.
 """
 function lower(d::Parallel)
-    blocks = map(_full_block, d.components, d.names)
+    blocks = map(_full_block, d.components, component_names(d))
     return _kron_sum_ctmc(blocks)
 end
 
@@ -203,7 +203,7 @@ unions the alternative generators. Exactly one alternative is active, chosen
 externally by the selector, so the alternatives share no transitions.
 """
 function lower(d::Choose)
-    blocks = map(_full_block, d.alternatives, d.names)
+    blocks = map(_full_block, d.alternatives, component_names(d))
     return _blockdiag_ctmc(blocks)
 end
 
