@@ -1010,10 +1010,39 @@ parameters were sampled under (default `:d`).
   predicate over the iteration index); `nothing` uses every draw.
 - `draw`: a single iteration index to read (overrides `summary`/`draws`).
 
+# `update(d, x::AbstractVector)` — set from flat vector
+
+`update(d, x)` is a shorthand for `update(d, unflatten(d, x))`: rebuild the
+distribution with parameters read from the flat estimated vector `x`. Each
+estimated parameter (an [`uncertain`](@ref) spec in [`params_table`](@ref))
+takes its value from the vector, each fixed parameter its template value. This
+collapses the tree at the draw and is commonly used to rebuild a distribution
+from a sampler output after reading it into the flat coordinate system.
+
+## Arguments
+- `d`: the composed distribution to update.
+- `x`: a flat vector of estimated parameters, of length [`flat_dimension`](@ref)
+  `(d)`.
+
+## Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
+    shape = LogNormal(log(2.0), 0.2)),
+    admit_death = LogNormal(0.5, 0.4)))
+# The one estimated parameter is onset_admit.shape; the vector is length 1.
+# This is equivalent to
+# update(tree, ComposedDistributions.unflatten(tree, [3.0])).
+result = update(tree, [3.0])
+event(result, :onset_admit)
+```
+
 # See also
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
 - [`param_priors`](@ref): default priors for the promote path
 - [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
+- [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
 function update end
@@ -1025,6 +1054,11 @@ end
 
 function update(leaf, params::NamedTuple)
     return _update(leaf, params, params, _has_distribution_value(params))
+end
+
+function update(d::AbstractComposedDistribution,
+        x::AbstractVector)
+    return update(d, unflatten(d, x))
 end
 
 # Whether an `update` NamedTuple carries any distribution-valued parameter,
