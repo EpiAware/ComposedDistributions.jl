@@ -24,18 +24,19 @@ constrained `x` by construction.
 The `~` sites are named to match the inference readback exactly: an estimated
 leaf parameter is `<prefix>.<edge...>.<param>` (e.g. `d.onset_admit.shape`), an
 uncertain node's branch probabilities are their stick coordinates
-`<prefix>.<edge>.branch_probs.stick_k`, and a shared-tagged leaf is sampled once
-under its tag. So a chain from `sample(as_turing(dist, data), ...)` reads back
-through [`chain_to_params`](@ref) / [`update`](@ref)`(dist, chain)` unchanged.
+`<prefix>.<edge>.branch_probs.stick_k`, a shared-tagged leaf is sampled once
+under its tag, and a non-centred pooled parameter (see [`pool`](@ref)) is
+sampled as its own `<prefix>.<edge...>.<param>.z` latent alongside the
+population's hyperparameters `<prefix>.<group>.<hyperparam>`. So a chain from
+`sample(as_turing(dist, data), ...)` reads back through
+[`chain_to_params`](@ref) / [`update`](@ref)`(dist, chain)` unchanged.
 
-Supports estimated rows with a concrete prior: ordinary uncertain leaves and
-stick-breaking node branch probabilities. A pooled tree (see [`pool`](@ref)) is
-rejected with an `ArgumentError`: a centred pool has no fixed `~` prior (its
-population is hyperparameter-dependent), and the inference readback does not yet
-consume a pooled chain, so a fitted pooled tree would not round-trip through
-[`update`](@ref)`(dist, chain)`. Sample a pooled tree with
-[`as_logdensity`](@ref) + `LogDensityProblemsAD` (the `LogDensityProblems`
-extension) instead.
+Supports estimated rows with a concrete prior: ordinary uncertain leaves,
+stick-breaking node branch probabilities, and non-centred pooled parameters.
+A CENTRED pooled tree is rejected with an `ArgumentError`: its population is
+hyperparameter-dependent, so it has no fixed `~` prior, and its sampling path
+does not exist yet. Sample a centred pooled tree with [`as_logdensity`](@ref)
++ `LogDensityProblemsAD` (the `LogDensityProblems` extension) instead.
 
 This method is available only when `DynamicPPL` is loaded (the model lives in a
 package extension).

@@ -210,3 +210,250 @@ end
     @test p[1] ≈ v1
     @test p[2] ≈ 1 - v1
 end
+
+@testitem "chain_to_params reads a non-centred pooled tree (fixed population)" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+    using Statistics: mean
+
+    # A fixed (non-`uncertain`) location-scale population contributes no
+    # hyperparameter rows: only each member's `z` latent is estimated.
+    template = compose((
+        north = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:district, Normal(0.7, 0.3))),
+        south = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:district, Normal(0.7, 0.3)))))
+
+    @model function shape_z_model()
+        z ~ Normal(0.0, 1.0)
+        return (z = z,)
+    end
+    @model function north_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function south_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function tree_model()
+        north ~ to_submodel(north_model())
+        south ~ to_submodel(south_model())
+        return (north = north, south = south)
+    end
+    @model function full_model()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(97)
+    chain = sample(full_model(), Prior(), 30; chain_type = VNChain,
+        progress = false)
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.north.shape.z" in vns
+    @test "d.south.shape.z" in vns
+
+    nt = chain_to_params(template, chain)
+    @test keys(nt.north.shape) == (:z,)
+
+    fitted = update(template, chain)
+    @test !has_uncertain(fitted)
+    z_north_vn = only(filter(v -> string(v) == "d.north.shape.z",
+        collect(FlexiChains.parameters(chain))))
+    z_north = mean(vec(chain[z_north_vn]))
+    @test params(event(fitted, :north))[1] ≈ 0.7 + 0.3 * z_north
+end
+
+@testitem "chain_to_params reads pooled hyperparameters once per group" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+
+    # The default pool population is an estimated LogNormal, so its `mu`,
+    # `sigma` hyperparameters are read once under the `district` group and
+    # threaded to every member's non-centred reconstruction.
+    template = compose((
+        north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+        south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+
+    @model function district_model()
+        mu ~ Normal(0.0, 1.0)
+        sigma ~ truncated(Normal(0.0, 1.0); lower = 0.0)
+        return (mu = mu, sigma = sigma)
+    end
+    @model function shape_z_model()
+        z ~ Normal(0.0, 1.0)
+        return (z = z,)
+    end
+    @model function north_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function south_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function tree_model()
+        district ~ to_submodel(district_model())
+        north ~ to_submodel(north_model())
+        south ~ to_submodel(south_model())
+        return (district = district, north = north, south = south)
+    end
+    @model function full_model()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(98)
+    chain = sample(full_model(), Prior(), 30; chain_type = VNChain,
+        progress = false)
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.district.mu" in vns
+    @test "d.district.sigma" in vns
+
+    nt = chain_to_params(template, chain)
+    @test keys(nt.district) == (:mu, :sigma)
+
+    fitted = update(template, chain)
+    @test !has_uncertain(fitted)
+    mu, sigma = nt.district.mu, nt.district.sigma
+    zn = nt.north.shape.z
+    @test params(event(fitted, :north))[1] ≈ exp(mu + sigma * zn)
+end
+
+@testitem "chain_to_params reads two distinct pooling groups in one tree" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+    using Statistics: mean
+
+    # `district` has an estimated (LogNormal) population, `region` a fixed
+    # (Normal) one, so `_pool_params`'s walk over the tree's pooling groups
+    # must keep each group's hyperparameters (or absence of them) separate.
+    template = compose((
+        north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+        south = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+        east = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:region, Normal(0.4, 0.2))),
+        west = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:region, Normal(0.4, 0.2)))))
+
+    @model function district_model()
+        mu ~ Normal(0.0, 1.0)
+        sigma ~ truncated(Normal(0.0, 1.0); lower = 0.0)
+        return (mu = mu, sigma = sigma)
+    end
+    @model function shape_z_model()
+        z ~ Normal(0.0, 1.0)
+        return (z = z,)
+    end
+    @model function leaf_shape_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function tree_model()
+        district ~ to_submodel(district_model())
+        north ~ to_submodel(leaf_shape_model())
+        south ~ to_submodel(leaf_shape_model())
+        east ~ to_submodel(leaf_shape_model())
+        west ~ to_submodel(leaf_shape_model())
+        return (district = district, north = north, south = south,
+            east = east, west = west)
+    end
+    @model function full_model()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(101)
+    chain = sample(full_model(), Prior(), 30; chain_type = VNChain,
+        progress = false)
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.district.mu" in vns
+    @test "d.district.sigma" in vns
+    @test "d.east.shape.z" in vns
+    @test "d.west.shape.z" in vns
+    @test !("d.region.mu" in vns)
+
+    nt = chain_to_params(template, chain)
+    @test keys(nt.district) == (:mu, :sigma)
+    @test !haskey(nt, :region)
+
+    fitted = update(template, chain)
+    @test !has_uncertain(fitted)
+
+    # Hand-compute each expected value straight from the raw chain draws,
+    # independent of `chain_to_params`'s own reduction.
+    vn(name) = only(filter(v -> string(v) == name,
+        collect(FlexiChains.parameters(chain))))
+    mu = mean(vec(chain[vn("d.district.mu")]))
+    sigma = mean(vec(chain[vn("d.district.sigma")]))
+    z_north = mean(vec(chain[vn("d.north.shape.z")]))
+    z_south = mean(vec(chain[vn("d.south.shape.z")]))
+    z_east = mean(vec(chain[vn("d.east.shape.z")]))
+    z_west = mean(vec(chain[vn("d.west.shape.z")]))
+
+    @test params(event(fitted, :north))[1] ≈ exp(mu + sigma * z_north)
+    @test params(event(fitted, :south))[1] ≈ exp(mu + sigma * z_south)
+    @test params(event(fitted, :east))[1] ≈ 0.4 + 0.2 * z_east
+    @test params(event(fitted, :west))[1] ≈ 0.4 + 0.2 * z_west
+end
+
+@testitem "chain_to_params reads a pooled parameter inside a shared leaf" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+    using Statistics: mean
+
+    # A `shared`-tagged leaf is inventoried once under its tag (see
+    # `_walk_rows!`, introspection.jl): a pooled parameter inside it lowers its
+    # `z` latent row to `<tag>.<param>.z`, not `<branch>.<param>.z`, and
+    # `update` reads the one tagged entry back into every occurrence.
+    leaf = shared(:tied, uncertain(Gamma(2.0, 1.0); shape = pool(:district)))
+    template = compose((north = leaf, south = leaf))
+
+    @model function district_model()
+        mu ~ Normal(0.0, 1.0)
+        sigma ~ truncated(Normal(0.0, 1.0); lower = 0.0)
+        return (mu = mu, sigma = sigma)
+    end
+    @model function shape_z_model()
+        z ~ Normal(0.0, 1.0)
+        return (z = z,)
+    end
+    @model function tied_model()
+        shape ~ to_submodel(shape_z_model())
+        return (shape = shape,)
+    end
+    @model function tree_model()
+        district ~ to_submodel(district_model())
+        tied ~ to_submodel(tied_model())
+        return (district = district, tied = tied)
+    end
+    @model function full_model()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(103)
+    chain = sample(full_model(), Prior(), 30; chain_type = VNChain,
+        progress = false)
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.tied.shape.z" in vns
+    @test !("d.north.shape.z" in vns)
+    @test !("d.south.shape.z" in vns)
+
+    nt = chain_to_params(template, chain)
+    @test keys(nt.district) == (:mu, :sigma)
+    @test keys(nt.tied.shape) == (:z,)
+
+    fitted = update(template, chain)
+    @test !has_uncertain(fitted)
+
+    vn(name) = only(filter(v -> string(v) == name,
+        collect(FlexiChains.parameters(chain))))
+    mu = mean(vec(chain[vn("d.district.mu")]))
+    sigma = mean(vec(chain[vn("d.district.sigma")]))
+    z = mean(vec(chain[vn("d.tied.shape.z")]))
+
+    # Tied, so both occurrences collapse to the SAME reconstructed value.
+    @test event(fitted, :north) == event(fitted, :south)
+    @test params(event(fitted, :north))[1] ≈ exp(mu + sigma * z)
+end
