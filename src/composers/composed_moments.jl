@@ -94,6 +94,38 @@ function var(d::Parallel)
 end
 std(d::Parallel) = map(sqrt, var(d))
 
+# `minimum`/`maximum` of a `Parallel` are per-endpoint too, mirroring `mean`:
+# one support bound per branch endpoint keyed by `_endpoint_names`. A leaf branch
+# contributes its own bound; a `Sequential` branch contributes the summed bound
+# of its steps (the support of the convolved total); a nested `Parallel`
+# flattens its endpoints in. Reusing `_endpoint_moment_vector` keeps the layout
+# identical to `mean(d::Parallel)`.
+function Base.minimum(d::Parallel)
+    return _as_named(_endpoint_names(d), _endpoint_moment_vector(d, minimum))
+end
+function Base.maximum(d::Parallel)
+    return _as_named(_endpoint_names(d), _endpoint_moment_vector(d, maximum))
+end
+
+# A generic `minimum`/`maximum` over any other composed node would otherwise
+# fall through to the `Distributions` fallback, which tries to `iterate` the
+# node and throws an opaque `MethodError`. Give the univariate-collapsible
+# composers (a `Sequential` chain, a `Choose`) a clear error instead. The
+# per-branch `Parallel` methods above and the marginal `Compete` / `Resolve`
+# methods are more specific and still win.
+function Base.minimum(d::AbstractComposedDistribution)
+    throw(ArgumentError(
+        "minimum(::$(nameof(typeof(d)))) is not defined for this composed " *
+        "distribution; take it per-branch (`minimum(event(d, name))`), " *
+        "per-step, or on the collapsed `observed_distribution(d)`"))
+end
+function Base.maximum(d::AbstractComposedDistribution)
+    throw(ArgumentError(
+        "maximum(::$(nameof(typeof(d)))) is not defined for this composed " *
+        "distribution; take it per-branch (`maximum(event(d, name))`), " *
+        "per-step, or on the collapsed `observed_distribution(d)`"))
+end
+
 # `Resolve` already defines the scalar univariate moment (the marginal
 # time-to-resolution, `mean(as_mixture(c))`) in `Resolve.jl`, matching the
 # overall semantics; no override needed here.

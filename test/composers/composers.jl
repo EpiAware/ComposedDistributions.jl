@@ -27,7 +27,7 @@ end
 
     p = parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
     @test length(p) == 2
-    @test event_names(p) == (:event_1, :admit, :notif) || true
+    @test event_names(p) == (:event_1, :event_2, :event_3)
     x = [1.2, 2.3]
     @test logpdf(p, x) ≈ logpdf(Gamma(2.0, 1.0), 1.2) +
                          logpdf(LogNormal(1.0, 0.5), 2.3)
@@ -37,6 +37,33 @@ end
     @test m.notif ≈ mean(LogNormal(1.0, 0.5))
     v = var(p)
     @test v.admit ≈ var(Gamma(2.0, 1.0))
+end
+
+@testitem "Parallel minimum/maximum are per-endpoint NamedTuples" begin
+    using Distributions
+
+    p = parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
+    lo = minimum(p)
+    hi = maximum(p)
+    @test lo isa NamedTuple
+    @test hi isa NamedTuple
+    @test lo == (admit = 0.0, notif = 0.0)
+    @test hi == (admit = Inf, notif = Inf)
+end
+
+@testitem "minimum/maximum on a collapsible composer error clearly" begin
+    using Distributions
+
+    # A `Sequential` (and a `Choose`) have no whole-node support bound; the
+    # generic must raise an ArgumentError, not the opaque MethodError about
+    # `iterate` the `Distributions` fallback used to surface.
+    s = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_death => LogNormal(0.5, 0.4))
+    @test_throws ArgumentError minimum(s)
+    @test_throws ArgumentError maximum(s)
+    d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+    @test_throws ArgumentError minimum(d)
+    @test_throws ArgumentError maximum(d)
 end
 
 @testitem "Sequential overall moments are additive" begin
