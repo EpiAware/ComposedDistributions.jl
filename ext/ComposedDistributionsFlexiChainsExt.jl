@@ -11,7 +11,8 @@ module ComposedDistributionsFlexiChainsExt
 using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                              Resolve, Compete, Choose, component_names,
                              _shared_tag, _leaf_param_names, _collect_shared,
-                             _uncertain_specs, free_leaf
+                             _uncertain_specs, free_leaf, Pool, _pool_specs,
+                             _collect_pools!, _population_template
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
 using Distributions: params
@@ -167,25 +168,89 @@ end
 # bare tag (ignoring its branch path); every occurrence then maps to the one
 # chain entry, and the nested NamedTuple keys the group once at the top level
 # under its tag (read back by `update`).
+#
+# A pooled parameter (`pool(...)`, see `Pool.jl`) is not sampled at its own
+# `<param>` key: a non-centred one is sampled as a per-member `Normal(0, 1)`
+# latent at `<param>.z`, read and wrapped as a `(z = ...,)` entry so `update`'s
+# pooled reconstruction (`_pool_z`) finds it; a centred one is sampled at the
+# ordinary `<param>` key, exactly like an unpooled uncertain parameter, so it
+# takes the same read as any other spec'd row.
 function _node_params(leaf, lookup, prefix, path)
     tag = _shared_tag(leaf)
     keypath = tag === nothing ? path : (tag,)
     pnames = _leaf_param_names(leaf)
     specs = _uncertain_specs(leaf)
+    pooled = _pool_specs(leaf)
     tvals = params(free_leaf(leaf))
     vals = ntuple(length(pnames)) do i
         p = pnames[i]
-        key = _dotted(prefix, (keypath..., p))
-        v = _read_value(lookup, key)
-        if v !== nothing
-            v
-        elseif specs !== nothing && haskey(specs, p)
-            throw(ArgumentError("leaf parameter $key not found in chain"))
+        if pooled !== nothing && haskey(pooled, p)
+            _pool_param_value(pooled[p], lookup, prefix, keypath, p)
         else
-            tvals[i]
+            key = _dotted(prefix, (keypath..., p))
+            v = _read_value(lookup, key)
+            if v !== nothing
+                v
+            elseif specs !== nothing && haskey(specs, p)
+                throw(ArgumentError("leaf parameter $key not found in chain"))
+            else
+                tvals[i]
+            end
         end
     end
     return NamedTuple{pnames}(Tuple(vals))
+end
+
+# A pooled leaf parameter's readback value: the non-centred latent wrapped as
+# `(z = ...,)`, or the centred value read directly. Both read a scalar that
+# must be present (a pooled parameter is always estimated), so a miss errors
+# rather than silently falling back to the template.
+function _pool_param_value(spec::Pool, lookup, prefix, keypath, pname)
+    if spec.noncentred
+        key = _dotted(prefix, (keypath..., pname, :z))
+        v = _read_value(lookup, key)
+        v === nothing && throw(ArgumentError(
+            "pooled parameter $key not found in chain"))
+        return (z = v,)
+    end
+    key = _dotted(prefix, (keypath..., pname))
+    v = _read_value(lookup, key)
+    v === nothing && throw(ArgumentError(
+        "pooled parameter $key not found in chain"))
+    return v
+end
+
+# Read every pooling group's hyperparameters once into a top-level
+# `group => (mu = ..., sigma = ...)` entry, mirroring `_shared_params` for a
+# `shared` tag: `update`'s pooled reconstruction (`_pool_hyper`) reads a
+# non-centred member's population hyperparameters from this same top-level
+# entry. A population with no estimated hyperparameters (fully fixed)
+# contributes no entry, and only its spec'd (estimated) parameters are read.
+function _pool_params(template, lookup, prefix)
+    acc = Dict{Symbol, Pool}()
+    _collect_pools!(acc, template)
+    isempty(acc) && return NamedTuple()
+    entries = [group => _pool_hyper_params(p, lookup, prefix, group)
+               for (group, p) in acc
+               if _uncertain_specs(p.population) !== nothing]
+    return NamedTuple(entries)
+end
+
+function _pool_hyper_params(p::Pool, lookup, prefix, group)
+    specs = _uncertain_specs(p.population)
+    specs === nothing && return NamedTuple()
+    tmpl = _population_template(p.population)
+    pnames = _leaf_param_names(tmpl)
+    ks = filter(pn -> haskey(specs, pn), pnames)
+    vals = map(ks) do pname
+        key = _dotted(prefix, (group, pname))
+        v = _read_value(lookup, key)
+        v === nothing && throw(ArgumentError(
+            "pool group $(repr(group)) hyperparameter $key not found in " *
+            "chain"))
+        v
+    end
+    return NamedTuple{ks}(Tuple(vals))
 end
 
 # Read every shared group once from the chain into a top-level `tag => values`
@@ -206,9 +271,13 @@ function chain_to_params(template, chain; prefix::Symbol = :d, draw = nothing,
     lookup = _value_lookup(chain, draw, draws, summary)
     tree = _node_params(template, lookup, prefix, ())
     # A shared-tagged leaf is sampled once under its tag, so add a top-level
-    # `tag` entry for each shared group; the core `update` reads each
-    # occurrence from it (per-occurrence entries in `tree` are tolerated).
-    return merge(tree, _shared_params(template, lookup, prefix))
+    # `tag` entry for each shared group; a pooling group likewise adds a
+    # top-level `group` entry with its hyperparameters. The core `update`
+    # reads each occurrence from these (per-occurrence entries in `tree` are
+    # tolerated).
+    extras = merge(_shared_params(template, lookup, prefix),
+        _pool_params(template, lookup, prefix))
+    return merge(tree, extras)
 end
 
 # The total number of draws in the chain (length of any parameter's draw

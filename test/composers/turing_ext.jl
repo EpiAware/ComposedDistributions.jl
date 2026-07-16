@@ -4,8 +4,10 @@
 # alone is present. These tests prove (a) the model's `~` site names match the
 # FlexiChains readback exactly, so a fitted chain reads back through
 # `chain_to_params` / `update(dist, chain)` unchanged; (b) the model's total
-# log-density equals the codec's `logdensity` by construction; and (c) a
-# centred-pool tree is rejected with a clear pointer to the codec path.
+# log-density equals the codec's `logdensity` by construction; (c) a
+# non-centred pooled tree samples and reads back through `update(dist, chain)`
+# like any other tree; and (d) a centred-pool tree is rejected with a clear
+# pointer to the codec path.
 
 @testitem "as_turing extension loads under DynamicPPL alone" begin
     using ComposedDistributions, DynamicPPL
@@ -86,27 +88,49 @@ end
     @test sum(p) ≈ 1.0
 end
 
-@testitem "as_turing rejects a pooled tree" begin
+@testitem "as_turing rejects a centred pooled tree" begin
     using ComposedDistributions, Distributions
 
     data = [[0.5, 2.0], [1.0, 3.0]]
 
     # A centred pool (a general, non-location-scale population) has a
-    # hyperparameter-dependent member prior, so no fixed `~` prior at all.
+    # hyperparameter-dependent member prior, so no fixed `~` prior at all; its
+    # sampling path does not exist yet, so it stays rejected.
     centred = compose((
         north = uncertain(Gamma(2.0, 1.0);
             shape = pool(:district, Gamma(2.0, 1.0); noncentred = false)),
         south = uncertain(Gamma(2.0, 1.0);
             shape = pool(:district, Gamma(2.0, 1.0); noncentred = false))))
     @test_throws ArgumentError as_turing(centred, data)
+end
 
-    # A non-centred (location-scale) pool samples correctly, but the readback
-    # does not yet consume a pooled chain, so it too is rejected for now rather
-    # than returning a model whose fit will not round-trip.
-    noncentred = compose((
-        north = uncertain(Gamma(2.0, 1.0);
-            shape = pool(:district, Normal(0.7, 0.3))),
-        south = uncertain(Gamma(2.0, 1.0);
-            shape = pool(:district, Normal(0.7, 0.3)))))
-    @test_throws ArgumentError as_turing(noncentred, data)
+@testitem "as_turing round-trip: non-centred pooled tree" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+
+    # A non-centred (location-scale) pool samples correctly and the readback
+    # now consumes its pooled chain, so it round-trips through
+    # `update(tree, chain)` like an ordinary uncertain tree.
+    tree = compose((
+        north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+        south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+    data = [[0.5, 2.0], [1.0, 3.0]]
+
+    model = as_turing(tree, data)
+
+    Random.seed!(13)
+    chain = sample(model, NUTS(), 200; chain_type = VNChain, progress = false)
+
+    # The hyperparameters and each member's latent are sampled at the
+    # readback's dotted names.
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.district.mu" in vns
+    @test "d.district.sigma" in vns
+    @test "d.north.shape.z" in vns
+    @test "d.south.shape.z" in vns
+
+    fitted = update(tree, chain)
+    @test !has_uncertain(fitted)
+    @test event(fitted, :north) isa Gamma
+    @test event(fitted, :south) isa Gamma
 end

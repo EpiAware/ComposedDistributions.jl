@@ -29,6 +29,12 @@ leaf collapses it to a concrete leaf at the read values (the same collapse
 [`Varying`](@ref) leaf keeps varying — only its `reference`'s fixed values are
 updated, so [`has_varying`](@ref) is unchanged.
 
+A non-centred pooled parameter (see [`pool`](@ref)) reads its group's
+population hyperparameters once (`<prefix>.<group>.<hyperparam>`) and its own
+`<prefix>.<edge...>.<param>.z` latent, so `update` reconstructs the member's
+value from both. A centred pool is not yet supported (its sampling path does
+not exist yet).
+
 This method is available only when both `DynamicPPL` and `FlexiChains` are
 loaded (the method lives in a package extension).
 
