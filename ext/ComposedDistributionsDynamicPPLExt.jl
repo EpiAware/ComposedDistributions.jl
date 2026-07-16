@@ -40,24 +40,23 @@ function _dotted_varname(prefix::Symbol, segs::Tuple)
     return VarName{prefix}(optic)
 end
 
-# Reject a pooled tree: as_turing does not yet support pooling. A centred pool
-# (a general, non-location-scale population) has a hyperparameter-dependent
-# member prior and so no fixed `~` prior at all; a non-centred (location-scale)
-# pool samples correctly, but the inference readback does not yet consume a
-# pooled chain, so `update(dist, chain)` on a pooled fit would fail. Reject both
-# and point to the codec + LogDensityProblemsAD path, which scores either pool
-# form directly. `_collect_pools!` is the same tree-walk `as_logdensity`'s pool
-# validation uses.
+# Reject a CENTRED pooled tree: a centred pool (a general, non-location-scale
+# population) has a hyperparameter-dependent member prior and so no fixed `~`
+# prior at all, and its sampling path does not exist yet. A non-centred
+# (location-scale) pool samples correctly and the FlexiChains readback now
+# consumes its pooled chain (group hyperparameters plus each member's `z`
+# latent), so it is allowed through. `_collect_pools!` is the same tree-walk
+# `as_logdensity`'s pool validation uses.
 function _reject_pools(dist)
     acc = Dict{Symbol, ComposedDistributions.Pool}()
     ComposedDistributions._collect_pools!(acc, dist)
-    isempty(acc) || throw(ArgumentError(
-        "as_turing does not yet support pooled trees (groups " *
-        "$(sort(collect(keys(acc))))): a centred pool has no fixed `~` prior, " *
-        "and the inference readback does not yet consume a pooled chain, so " *
-        "`update(dist, chain)` would fail. Sample a pooled tree with " *
-        "`as_logdensity(dist, data)` + LogDensityProblemsAD (the " *
-        "LogDensityProblems extension) instead."))
+    centred = sort([g for (g, p) in acc if !p.noncentred])
+    isempty(centred) || throw(ArgumentError(
+        "as_turing does not yet support centred pooled trees (groups " *
+        "$centred): a centred pool has no fixed `~` prior (its population is " *
+        "hyperparameter-dependent) and its sampling path does not exist yet. " *
+        "Sample a pooled tree with `as_logdensity(dist, data)` + " *
+        "LogDensityProblemsAD (the LogDensityProblems extension) instead."))
     return nothing
 end
 
