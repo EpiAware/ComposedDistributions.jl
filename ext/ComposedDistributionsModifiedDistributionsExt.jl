@@ -9,12 +9,13 @@
 # `Transformed`'s `ThinOp` is the one exception: `thin`'s reporting
 # probability is a FREE parameter (CensoredDistributions'
 # `forward_transform.jl` precedent), so it also plugs into the core's
-# `_thin_factor`/`_set_thin_factor` hooks, surfacing as a `:thin` row in
-# `params_table` and round-tripping through `update`. This seam needs both
-# packages' types, so it lives here (the function owner —
-# ComposedDistributions for `free_leaf`/`rewrap_leaf`/`_shared_tag`/
-# `_thin_factor`/`_set_thin_factor`, ModifiedDistributions for `get_dist` —
-# plus at least one type at the seam, so no piracy).
+# `extra_leaf_params`/`set_extra_leaf_params` hooks as a `:thin` entry,
+# surfacing as a `:thin` row in `params_table` and round-tripping through
+# `update`. This seam needs both packages' types, so it lives here (the
+# function owner — ComposedDistributions for `free_leaf`/`rewrap_leaf`/
+# `shared_tag`/`extra_leaf_params`/`set_extra_leaf_params`,
+# ModifiedDistributions for `get_dist` — plus at least one type at the seam,
+# so no piracy).
 #
 # The modifier payloads are read through ModifiedDistributions' public
 # accessors (`get_dist`/`get_scale`/`get_shift`/`get_weight`/`get_effect`/
@@ -22,9 +23,10 @@
 # struct fields, so a field rename upstream cannot silently break this seam.
 module ComposedDistributionsModifiedDistributionsExt
 
-import ComposedDistributions: free_leaf, rewrap_leaf, _shared_tag,
-                              _uncertain_specs, _thin_factor, _set_thin_factor,
-                              _leaf_mean, _leaf_var, instantiate, has_varying
+import ComposedDistributions: free_leaf, rewrap_leaf, shared_tag,
+                              uncertain_specs, extra_leaf_params,
+                              set_extra_leaf_params, leaf_mean, leaf_var,
+                              instantiate, has_varying
 using ComposedDistributions: Shared, AbstractContext
 using Distributions: mean, var
 import ModifiedDistributions: get_dist
@@ -59,10 +61,10 @@ end
 
 # --- _shared_tag: see a shared tag through a modifier -----------------------
 
-_shared_tag(d::Affine) = _shared_tag(get_dist(d))
-_shared_tag(d::Weighted) = _shared_tag(get_dist(d))
-_shared_tag(d::Transformed) = _shared_tag(get_dist(d))
-_shared_tag(d::Modified) = _shared_tag(get_dist(d))
+shared_tag(d::Affine) = shared_tag(get_dist(d))
+shared_tag(d::Weighted) = shared_tag(get_dist(d))
+shared_tag(d::Transformed) = shared_tag(get_dist(d))
+shared_tag(d::Modified) = shared_tag(get_dist(d))
 
 # --- _uncertain_specs: see uncertain parameters through a modifier ----------
 #
@@ -70,10 +72,10 @@ _shared_tag(d::Modified) = _shared_tag(get_dist(d))
 # parameter specs, so `params_table`'s prior column and the marginal `rand`
 # see through the modifier exactly like the tag protocol does.
 
-_uncertain_specs(d::Affine) = _uncertain_specs(get_dist(d))
-_uncertain_specs(d::Weighted) = _uncertain_specs(get_dist(d))
-_uncertain_specs(d::Transformed) = _uncertain_specs(get_dist(d))
-_uncertain_specs(d::Modified) = _uncertain_specs(get_dist(d))
+uncertain_specs(d::Affine) = uncertain_specs(get_dist(d))
+uncertain_specs(d::Weighted) = uncertain_specs(get_dist(d))
+uncertain_specs(d::Transformed) = uncertain_specs(get_dist(d))
+uncertain_specs(d::Modified) = uncertain_specs(get_dist(d))
 
 # --- overall moments: use the modifier's own moment, not the free leaf's -----
 #
@@ -85,8 +87,8 @@ _uncertain_specs(d::Modified) = _uncertain_specs(get_dist(d))
 # their moments straight to the inner delay, so their free-leaf moment already
 # agrees — no method needed.
 
-_leaf_mean(d::Affine) = mean(d)
-_leaf_var(d::Affine) = var(d)
+leaf_mean(d::Affine) = mean(d)
+leaf_var(d::Affine) = var(d)
 
 # `Modified` has no analytic moment yet (blocked on ModifiedDistributions#44's
 # numeric cumulative-hazard path), and `free_leaf` peels it to the inner delay —
@@ -94,14 +96,14 @@ _leaf_var(d::Affine) = var(d)
 # delay's moment, understating the hazard modification. Error informatively
 # instead: a chain containing a hazard-modified step has no overall moment until
 # #44 lands (draw the marginal with `rand` meanwhile).
-function _leaf_mean(d::Modified)
+function leaf_mean(d::Modified)
     throw(ArgumentError(
         "a hazard-modified (`Modified`) leaf has no analytic mean; the " *
         "modified moment needs numeric cumulative-hazard integration " *
         "(ModifiedDistributions#44). Draw the marginal with `rand` for a " *
         "Monte-Carlo moment, or exclude the modified step."))
 end
-function _leaf_var(d::Modified)
+function leaf_var(d::Modified)
     throw(ArgumentError(
         "a hazard-modified (`Modified`) leaf has no analytic variance; the " *
         "modified moment needs numeric cumulative-hazard integration " *
@@ -109,7 +111,7 @@ function _leaf_var(d::Modified)
         "Monte-Carlo moment, or exclude the modified step."))
 end
 
-# --- _thin_factor / _set_thin_factor: surface a thin(...) reporting
+# --- extra_leaf_params / set_extra_leaf_params: surface a thin(...) reporting
 # probability as a free parameter -------------------------------------------
 #
 # `thin(d, p)` (a `Transformed` carrying a `ThinOp`) is NOT a fixed-structure
@@ -117,33 +119,44 @@ end
 # be inventoried by `params_table` and round-tripped by `update` like any
 # other leaf parameter (see `src/composers/introspection.jl`'s hook
 # docstring, and CensoredDistributions' `forward_transform.jl` for the
-# precedent this mirrors). The peel-through modifiers (`Affine`/`Weighted`/
-# `Modified`) forward to their inner delay so a thinned leaf still reports its
-# factor underneath any of them.
+# precedent this mirrors). It plugs into the generic extra-parameter protocol
+# as a `:thin` entry on `[0, 1]`. The peel-through modifiers
+# (`Affine`/`Weighted`/`Modified`) forward to their inner delay so a thinned
+# leaf still reports its factor underneath any of them.
 
-_thin_factor(d::Affine) = _thin_factor(get_dist(d))
-_thin_factor(d::Weighted) = _thin_factor(get_dist(d))
-_thin_factor(d::Modified) = _thin_factor(get_dist(d))
-function _thin_factor(d::Transformed)
+extra_leaf_params(d::Affine) = extra_leaf_params(get_dist(d))
+extra_leaf_params(d::Weighted) = extra_leaf_params(get_dist(d))
+extra_leaf_params(d::Modified) = extra_leaf_params(get_dist(d))
+function extra_leaf_params(d::Transformed)
     op = get_op(d)
-    return op isa ThinOp ? get_factor(op) : _thin_factor(get_dist(d))
+    return op isa ThinOp ?
+           (thin = (value = get_factor(op), support = (0.0, 1.0)),) :
+           extra_leaf_params(get_dist(d))
 end
 
-function _set_thin_factor(d::Affine, p)
-    return affine(_set_thin_factor(get_dist(d), p);
+# Empty-`NamedTuple` identity methods disambiguate the modifier forwards below
+# from the core's generic `set_extra_leaf_params(leaf, ::NamedTuple{()})` (both
+# would match a modifier with no extras); setting no extras is the identity.
+set_extra_leaf_params(d::Affine, ::NamedTuple{()}) = d
+set_extra_leaf_params(d::Weighted, ::NamedTuple{()}) = d
+set_extra_leaf_params(d::Modified, ::NamedTuple{()}) = d
+set_extra_leaf_params(d::Transformed, ::NamedTuple{()}) = d
+
+function set_extra_leaf_params(d::Affine, vals::NamedTuple)
+    return affine(set_extra_leaf_params(get_dist(d), vals);
         scale = get_scale(d), shift = get_shift(d))
 end
-function _set_thin_factor(d::Weighted, p)
-    return Weighted(_set_thin_factor(get_dist(d), p), get_weight(d))
+function set_extra_leaf_params(d::Weighted, vals::NamedTuple)
+    return Weighted(set_extra_leaf_params(get_dist(d), vals), get_weight(d))
 end
-function _set_thin_factor(d::Modified, p)
-    return modify(_set_thin_factor(get_dist(d), p), get_effect(d);
-        link = get_link(d))
+function set_extra_leaf_params(d::Modified, vals::NamedTuple)
+    return modify(set_extra_leaf_params(get_dist(d), vals),
+        get_effect(d); link = get_link(d))
 end
-function _set_thin_factor(d::Transformed, p)
+function set_extra_leaf_params(d::Transformed, vals::NamedTuple)
     op = get_op(d)
-    return op isa ThinOp ? Transformed(get_dist(d), ThinOp(p)) :
-           Transformed(_set_thin_factor(get_dist(d), p), op)
+    return op isa ThinOp ? Transformed(get_dist(d), ThinOp(vals.thin)) :
+           Transformed(set_extra_leaf_params(get_dist(d), vals), op)
 end
 
 # --- get_dist: the composed `Shared` tag is transparent to the unwrap protocol

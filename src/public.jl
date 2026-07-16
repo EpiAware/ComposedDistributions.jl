@@ -6,14 +6,20 @@
 public child_nleaves, child_logpdf, child_rand!
 public free_leaf, rewrap_leaf, component_names
 
-# The leaf-introspection recursion a leaf-wrapper package extends alongside
-# `free_leaf`/`rewrap_leaf`: `_uncertain_specs` routes a leaf's attached prior
-# specs through to `params_table`/`build_priors`, and `_leaf_detail_lines`
-# routes a leaf's `inspect` rendering. CensoredDistributions extends both for
-# its censored leaves; a leaf-wrapper package that extends only `free_leaf`/
-# `rewrap_leaf` but not these silently drops an attached prior on a wrapped
-# leaf (`build_priors` then treats it as fixed).
-public _uncertain_specs, _leaf_detail_lines
+# The published leaf protocol a downstream leaf-wrapper package (censoring in
+# CensoredDistributions, the modifiers in ModifiedDistributions) extends
+# alongside `free_leaf`/`rewrap_leaf`. `uncertain_specs` routes a leaf's
+# attached prior specs through to `params_table`/`build_priors`;
+# `leaf_detail_lines` routes a leaf's `inspect` rendering; `shared_tag` sees a
+# shared tie through a wrapper; `leaf_param_names` names a leaf's estimable
+# parameters; `leaf_mean`/`leaf_var` give a leaf's per-moment values; and
+# `extra_leaf_params`/`set_extra_leaf_params` carry any modifier-owned free
+# parameters (the thinning factor is the first instance). A leaf-wrapper package
+# that extends only `free_leaf`/`rewrap_leaf` but not these silently drops an
+# attached prior on a wrapped leaf (`build_priors` then treats it as fixed). See
+# `docs/src/developer/leaf-protocol.md`.
+public uncertain_specs, leaf_detail_lines, shared_tag, leaf_param_names
+public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `_param_names` and rebuilt by `_leaf_ctor`; together they fix the coordinates

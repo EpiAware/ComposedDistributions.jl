@@ -10,8 +10,8 @@ module ComposedDistributionsFlexiChainsExt
 
 using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                              Resolve, Compete, Choose, component_names,
-                             _shared_tag, _leaf_param_names, _collect_shared,
-                             _uncertain_specs, free_leaf, Pool, _pool_specs,
+                             shared_tag, leaf_param_names, _collect_shared,
+                             uncertain_specs, free_leaf, Pool, _pool_specs,
                              _collect_pools!, _population_template
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
@@ -176,12 +176,13 @@ end
 # ordinary `<param>` key, exactly like an unpooled uncertain parameter, so it
 # takes the same read as any other spec'd row.
 function _node_params(leaf, lookup, prefix, path)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     keypath = tag === nothing ? path : (tag,)
-    pnames = _leaf_param_names(leaf)
-    specs = _uncertain_specs(leaf)
+    pnames = leaf_param_names(leaf)
+    specs = uncertain_specs(leaf)
     pooled = _pool_specs(leaf)
     tvals = params(free_leaf(leaf))
+    extras = ComposedDistributions.extra_leaf_params(leaf)
     vals = ntuple(length(pnames)) do i
         p = pnames[i]
         if pooled !== nothing && haskey(pooled, p)
@@ -193,8 +194,13 @@ function _node_params(leaf, lookup, prefix, path)
                 v
             elseif specs !== nothing && haskey(specs, p)
                 throw(ArgumentError("leaf parameter $key not found in chain"))
-            else
+            elseif i <= length(tvals)
                 tvals[i]
+            else
+                # A modifier-owned extra parameter (e.g. `:thin`) reads its
+                # current value from the extra map; `tvals` holds only the
+                # native params.
+                extras[p].value
             end
         end
     end
@@ -232,15 +238,15 @@ function _pool_params(template, lookup, prefix)
     isempty(acc) && return NamedTuple()
     entries = [group => _pool_hyper_params(p, lookup, prefix, group)
                for (group, p) in acc
-               if _uncertain_specs(p.population) !== nothing]
+               if uncertain_specs(p.population) !== nothing]
     return NamedTuple(entries)
 end
 
 function _pool_hyper_params(p::Pool, lookup, prefix, group)
-    specs = _uncertain_specs(p.population)
+    specs = uncertain_specs(p.population)
     specs === nothing && return NamedTuple()
     tmpl = _population_template(p.population)
-    pnames = _leaf_param_names(tmpl)
+    pnames = leaf_param_names(tmpl)
     ks = filter(pn -> haskey(specs, pn), pnames)
     vals = map(ks) do pname
         key = _dotted(prefix, (group, pname))

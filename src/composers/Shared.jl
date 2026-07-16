@@ -70,14 +70,37 @@ event_names(d)
 "
 shared(name::Symbol, dist::UnivariateDistribution) = Shared(name, dist)
 
-# The shared tag of a (possibly wrapped) leaf, or `nothing` when untagged. The
-# tag survives wrapper leaves (a `Truncated`, and the censoring/modifier wrappers
-# whose own methods live in their owning package/extension) so a
-# `shared(:inc, ...)` leaf and a bare `shared(:inc, Gamma(...))` both report
-# `:inc`.
-_shared_tag(leaf) = nothing
-_shared_tag(d::Shared) = d.tag
-_shared_tag(d::Truncated) = _shared_tag(d.untruncated)
+@doc raw"
+The shared tag of a (possibly wrapped) leaf, or `nothing` when untagged.
+
+A `shared(:tag, dist)` leaf carries a tag that ties every occurrence to one set
+of parameters. The tag survives wrapper leaves (a `Truncated`, and the
+censoring / modifier wrappers whose own methods live in their owning package or
+extension), so a `shared(:inc, ...)` leaf and a bare
+`shared(:inc, Gamma(...))` both report `:inc`. An untagged leaf reports
+`nothing`. [`params_table`](@ref) uses the tag as a leaf's edge and inventories
+a tied parameter once.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution whose tag is read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.shared_tag(shared(:inc, Gamma(2.0, 1.0)))
+```
+
+# See also
+- [`shared`](@ref): constructs a tagged leaf.
+- [`tie`](@ref): the tree-level, path-based spelling of the same tie.
+"
+shared_tag(leaf) = nothing
+shared_tag(d::Shared) = d.tag
+shared_tag(d::Truncated) = shared_tag(d.untruncated)
+# The underscored alias retained for internal callers and the leaf-wrapper
+# method definitions; `const` makes it the same function object.
+const _shared_tag = shared_tag
 
 # `Shared` is transparent: every distribution method delegates to the wrapped
 # leaf, so the hot path (logpdf/rand/cdf/quantile/...) is unchanged and AD flows
@@ -86,6 +109,16 @@ _shared_tag(d::Truncated) = _shared_tag(d.untruncated)
 # the `get_dist` unwrap protocol.)
 free_leaf(d::Shared) = free_leaf(d.dist)
 rewrap_leaf(d::Shared, inner) = Shared(d.tag, rewrap_leaf(d.dist, inner))
+
+# Any modifier-owned extra parameters of the wrapped leaf survive the tag (a
+# `shared(:tag, thin(...))`); the setter re-applies the tag around the rebuilt
+# inner. The empty-`NamedTuple` method disambiguates the forward from the
+# generic identity in introspection.jl.
+extra_leaf_params(d::Shared) = extra_leaf_params(d.dist)
+set_extra_leaf_params(d::Shared, ::NamedTuple{()}) = d
+function set_extra_leaf_params(d::Shared, vals::NamedTuple)
+    return Shared(d.tag, set_extra_leaf_params(d.dist, vals))
+end
 
 # The tag does not change the realisation type, so the element type is the
 # wrapped leaf's (keeps a composed tree's `eltype`/`rand` element type correct).

@@ -1,5 +1,20 @@
 ## Unreleased
 
+- **feat:** the composer leaf protocol is now published as considered public API
+  (#170). The downstream contract a leaf-wrapper package implements is
+  de-underscored and documented as the stable surface: `uncertain_specs`,
+  `shared_tag`, `leaf_param_names`, `leaf_mean`, `leaf_var` and
+  `leaf_detail_lines` join the already-public `free_leaf` / `rewrap_leaf` /
+  `component_names` / `param_names` / `leaf_ctor` (the underscored spellings
+  stay as internal aliases, so nothing breaks). The scalar `thin`-factor hook is
+  generalised to a map-based `extra_leaf_params` / `set_extra_leaf_params`
+  protocol, each extra parameter carrying its own value and support, which also
+  fixes a latent `BoundsError` when a leaf carries an extra parameter alongside
+  an uncertain native one. A new developer page documents the protocol. This
+  release is non-breaking; the removal of the ModifiedDistributions reverse
+  extension and its weakdep (ending the MD-CD extension cycle) follows in a
+  later release.
+
 - **fix:** `minimum` and `maximum` on a `Parallel` now return a per-branch
   NamedTuple of support bounds, matching how `mean` / `var` report per-endpoint
   moments, and the other composed types raise a clear `ArgumentError` naming the

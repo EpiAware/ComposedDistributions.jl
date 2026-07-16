@@ -164,7 +164,7 @@ split into lines so a multi-line struct dump stays aligned under its tree
 prefix. A leaf-wrapper type (censoring in CensoredDistributions, the modifiers
 in ModifiedDistributions) adds its own method dispatching on its own type, to
 surface the inner free delay's detail instead of the wrapper's raw struct
-dump. Pair with [`_uncertain_specs`](@ref), the sibling extension hook for the
+dump. Pair with [`uncertain_specs`](@ref), the sibling extension hook for the
 `prior` column.
 
 # Arguments
@@ -174,14 +174,15 @@ dump. Pair with [`_uncertain_specs`](@ref), the sibling extension hook for the
 ```@example
 using ComposedDistributions, Distributions
 
-ComposedDistributions._leaf_detail_lines(Gamma(2.0, 1.0))
+ComposedDistributions.leaf_detail_lines(Gamma(2.0, 1.0))
 ```
 
 # See also
 - [`free_leaf`](@ref), [`rewrap_leaf`](@ref): the sibling leaf-wrapper hooks.
 - [`inspect`](@ref): the tree-printing entry point this feeds.
 "
-_leaf_detail_lines(leaf) = split(sprint(show, MIME"text/plain"(), leaf), '\n')
+leaf_detail_lines(leaf) = split(sprint(show, MIME"text/plain"(), leaf), '\n')
+const _leaf_detail_lines = leaf_detail_lines
 
 # --- nested name-keyed params (hand-rolled, type-stable) --------------------
 
@@ -326,8 +327,9 @@ end
 @doc raw"
 
 The constructor that rebuilds a leaf's free delay from a positional tuple of
-parameter values, in `_leaf_param_names` order (excluding a trailing `:thin`,
-which `_update_leaf` strips and re-attaches around the rebuild).
+parameter values, in [`leaf_param_names`](@ref) order (excluding any trailing
+[`extra_leaf_params`](@ref), which `_update_leaf` splits off and re-attaches
+around the rebuild).
 
 Reconstruction is how an updated parameter vector becomes a distribution again:
 `update`, the `unflatten` then `update` posterior read-back, `uncertain`'s
@@ -401,32 +403,83 @@ treated as fixed.
 ```@example
 using ComposedDistributions, Distributions
 
-ComposedDistributions._uncertain_specs(Gamma(2.0, 1.0)) === nothing
+ComposedDistributions.uncertain_specs(Gamma(2.0, 1.0)) === nothing
 ```
 
 # See also
 - [`free_leaf`](@ref), [`rewrap_leaf`](@ref): the sibling leaf-wrapper hooks.
-- [`_leaf_detail_lines`](@ref): the sibling extension hook for `inspect`
+- [`leaf_detail_lines`](@ref): the sibling extension hook for `inspect`
   rendering.
 - [`has_uncertain`](@ref): the boolean check built on this protocol.
 "
-_uncertain_specs(leaf) = nothing
-_uncertain_specs(d::Truncated) = _uncertain_specs(d.untruncated)
+uncertain_specs(leaf) = nothing
+uncertain_specs(d::Truncated) = uncertain_specs(d.untruncated)
 
-# The thinning-factor protocol: a leaf's downsampling (thin) factor when a
-# thinning modifier is attached, else `nothing` (no thinning). The default is
-# `nothing` and the generic `Truncated` peel forwards, so a plain leaf reports
-# no thin factor and `params_table` emits no `:thin` row. A thinning modifier
-# layer (CensoredDistributions' `ThinOp`/`Transformed`) plugs in by defining
-# these on its own wrapper types, at which point the walker below surfaces the
-# factor as a `:thin` row and `_update_leaf` reads it back. `_set_thin_factor`
-# is the setter dual, re-attaching an updated factor. Both keep leaves fixed by
-# default.
-_thin_factor(leaf) = nothing
-_thin_factor(d::Truncated) = _thin_factor(d.untruncated)
-_set_thin_factor(leaf, p) = leaf
-function _set_thin_factor(d::Truncated, p)
-    return truncated(_set_thin_factor(d.untruncated, p);
+# The underscored alias retained for the package's existing internal callers
+# and the leaf-wrapper method definitions (censoring / modifiers); `const`
+# makes it the same function object, so dropping the underscore is
+# source-compatible.
+const _uncertain_specs = uncertain_specs
+
+@doc raw"
+The extra, modifier-owned parameters of a leaf, keyed by name.
+
+A `NamedTuple` mapping each extra-parameter name to a `(value, support)`
+`NamedTuple`: `value` is the parameter's current value and `support` the
+`(lower, upper)` bounds a default prior is derived from. The default (a plain
+leaf, no extras) is the empty `NamedTuple` `(;)`, and a `Truncated` peels to its
+untruncated inner delay. A modifier layer that owns a free parameter which is
+not one of the inner delay's native parameters plugs in by defining this on its
+own wrapper type. The thinning factor of `thin(d, p)` (ModifiedDistributions'
+`ThinOp`) is the first instance: it reports `(thin = (value = p, support =
+(0.0, 1.0)),)`, at which point [`params_table`](@ref) surfaces a `:thin` row and
+[`update`](@ref) round-trips it.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.extra_leaf_params(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`set_extra_leaf_params`](@ref): the setter dual that rebuilds the leaf.
+- [`leaf_param_names`](@ref): appends the extra names after the native ones.
+"
+extra_leaf_params(leaf) = (;)
+extra_leaf_params(d::Truncated) = extra_leaf_params(d.untruncated)
+
+@doc raw"
+Set a leaf's extra, modifier-owned parameters by name and rebuild the leaf.
+
+The setter dual of [`extra_leaf_params`](@ref): `vals` is a `NamedTuple` mapping
+each extra name to a new value (the support is fixed structure, not passed), and
+the leaf is rebuilt carrying the updated values. The default no-extras method is
+the identity on the empty `NamedTuple`, and a `Truncated` re-applies its bounds
+around the rebuilt inner delay. A modifier layer that owns an extra parameter
+defines this on its own wrapper type, rebuilding around the new value.
+
+# Arguments
+- `leaf`: the leaf whose extra parameters are set.
+- `vals`: a `NamedTuple` of extra name to new value.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.set_extra_leaf_params(Gamma(2.0, 1.0), (;))
+```
+
+# See also
+- [`extra_leaf_params`](@ref): reads the extra parameters and their supports.
+"
+set_extra_leaf_params(leaf, ::NamedTuple{()}) = leaf
+set_extra_leaf_params(d::Truncated, ::NamedTuple{()}) = d
+function set_extra_leaf_params(d::Truncated, vals::NamedTuple)
+    return truncated(set_extra_leaf_params(d.untruncated, vals);
         lower = d.lower, upper = d.upper)
 end
 
@@ -479,11 +532,32 @@ _param_names(::Distributions.Exponential) = (:scale,)
 _param_names(::Distributions.Uniform) = (:lower, :upper)
 _param_names(::Any) = ()
 
-# Names for the inner free delay's `params` tuple, padding with positional
-# fallbacks so every value has a label even when the family is unmapped. A
-# censored leaf delegates to its free delay (`free_leaf`), so the censoring
-# bounds never appear.
-function _leaf_param_names(leaf)
+@doc raw"
+The estimable parameter names of a (possibly wrapped) leaf.
+
+The inner free delay's `_param_names`, padding with positional fallbacks
+(`:param_1`, ...) so every value has a label even when the family is unmapped,
+then the names of any [`extra_leaf_params`](@ref) appended in order. A censored
+or modified leaf delegates to its free delay (`free_leaf`), so the fixed wrapper
+structure never appears, while a thinning modifier's `:thin` factor rides the
+trailing extra-parameter slot. These names are the coordinates
+[`params_table`](@ref), [`uncertain`](@ref) and [`build_priors`](@ref) key on.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution whose parameter names are
+  read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.leaf_param_names(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`extra_leaf_params`](@ref): the extra names appended after the native ones.
+"
+function leaf_param_names(leaf)
     inner = free_leaf(leaf)
     vals = params(inner)
     base = _param_names(inner)
@@ -491,10 +565,11 @@ function _leaf_param_names(leaf)
     names = ntuple(n) do i
         i <= length(base) ? base[i] : Symbol(:param_, i)
     end
-    # A thinned leaf carries a trailing `:thin` factor row after the delay
-    # params.
-    return _thin_factor(leaf) === nothing ? names : (names..., :thin)
+    # Any modifier-owned extra parameters (e.g. a thinned leaf's `:thin` factor)
+    # append after the delay params, in `extra_leaf_params` order.
+    return (names..., keys(extra_leaf_params(leaf))...)
 end
+const _leaf_param_names = leaf_param_names
 
 # --- params_table (hand-rolled pre-order walk) -----------------------------
 
@@ -740,14 +815,15 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
     pnames = _leaf_param_names(leaf)
     specs = _uncertain_specs(leaf)
     sup = (minimum(inner), maximum(inner))
-    # A thinned leaf appends its thin factor as a trailing value with a `(0, 1)`
-    # support; the delay params keep the inner leaf's own support. With no
-    # thinning modifier attached `_thin_factor` is `nothing` and this is exactly
-    # the plain per-param walk.
-    factor = _thin_factor(leaf)
-    vals = factor === nothing ? params(inner) : (params(inner)..., factor)
-    sups = factor === nothing ? ntuple(_ -> sup, length(vals)) :
-           (ntuple(_ -> sup, length(vals) - 1)..., (zero(factor), one(factor)))
+    # The native delay params take the inner leaf's own support; each
+    # modifier-owned extra parameter (e.g. a thinned leaf's `:thin` factor)
+    # appends its current value and its own declared support. With no extras
+    # attached this is exactly the plain per-param walk.
+    extras = extra_leaf_params(leaf)
+    native = params(inner)
+    vals = (native..., map(e -> e.value, extras)...)
+    sups = (ntuple(_ -> sup, length(native))...,
+        map(e -> e.support, extras)...)
     edge = tag === nothing ? _join_path(path) : tag
     tag === nothing || push!(seen, tag)
     for (pname, v, s) in zip(pnames, vals, sups)
@@ -783,14 +859,18 @@ _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 # building a concrete distribution, not a gradient hot path).
 function _update_leaf(leaf, vals::Tuple)
     ctor = _leaf_ctor(leaf)
-    # A thinned leaf's last value is the `:thin` factor (the trailing row the
-    # walker emits): rebuild the inner delay from the leading params, then
-    # re-attach the updated factor. Inert with no thinning modifier attached.
-    if _thin_factor(leaf) === nothing
-        return rewrap_leaf(leaf, ctor(vals...))
-    end
-    rebuilt = rewrap_leaf(leaf, ctor(vals[1:(end - 1)]...))
-    return _set_thin_factor(rebuilt, vals[end])
+    # The trailing values are the modifier-owned extra parameters (the trailing
+    # rows the walker emits, one per `extra_leaf_params` entry): rebuild the
+    # inner delay from the leading native params, then re-attach the updated
+    # extras by name. Inert (no split) when the leaf has no extras.
+    extras = extra_leaf_params(leaf)
+    k = length(extras)
+    k == 0 && return rewrap_leaf(leaf, ctor(vals...))
+    native = vals[1:(end - k)]
+    extra_vals = vals[(end - k + 1):end]
+    rebuilt = rewrap_leaf(leaf, ctor(native...))
+    return set_extra_leaf_params(rebuilt,
+        NamedTuple{keys(extras)}(extra_vals))
 end
 
 @doc "

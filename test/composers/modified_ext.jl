@@ -2,7 +2,7 @@
 # correctly inside a composed tree (free_leaf reaches the inner delay,
 # rewrap_leaf rebuilds the modifier, _shared_tag sees through it), and a
 # thin(...) reporting probability surfaces as a free `:thin` parameter through
-# the core's _thin_factor / _set_thin_factor hooks.
+# the core's extra_leaf_params / set_extra_leaf_params hooks.
 
 @testitem "Modified extension: free_leaf / rewrap_leaf / _shared_tag" begin
     using Distributions
@@ -67,11 +67,11 @@ end
 @testitem "Modified extension: thin factor surfaces through params_table" begin
     using Distributions
     using ModifiedDistributions: thin
-    import ComposedDistributions: _thin_factor
+    import ComposedDistributions: extra_leaf_params
 
-    # thin(leaf, p) is a Transformed carrying a ThinOp; the core's thin hooks
-    # now surface its reporting probability as a free `:thin` row, mirroring
-    # CensoredDistributions' forward_transform.jl precedent.
+    # thin(leaf, p) is a Transformed carrying a ThinOp; the core's extra-param
+    # hooks now surface its reporting probability as a free `:thin` row,
+    # mirroring CensoredDistributions' forward_transform.jl precedent.
     tree = compose((inc = Gamma(2.0, 1.0), cases = thin(LogNormal(1.5, 0.4), 0.3)))
     tbl = params_table(tree)
     @test tbl.param == [:shape, :scale, :mu, :sigma, :thin]
@@ -82,14 +82,15 @@ end
     @test tbl.support[thin_row] == (0.0, 1.0)
 
     leaf = event(tree, :cases)
-    @test _thin_factor(leaf) == 0.3
+    @test extra_leaf_params(leaf) ==
+          (thin = (value = 0.3, support = (0.0, 1.0)),)
 end
 
 @testitem "Modified extension: thin factor round-trips through update" begin
     using Distributions
     using ModifiedDistributions
     using ModifiedDistributions: thin, affine, get_dist
-    import ComposedDistributions: _set_thin_factor
+    import ComposedDistributions: set_extra_leaf_params
 
     tree = compose((cases = thin(LogNormal(1.5, 0.4), 0.3),))
 
@@ -106,9 +107,9 @@ end
     @test rt.value[findfirst(==(:thin), rt.param)] == 0.6
 
     # A thinned leaf wrapped in a fixed-structure modifier (affine) still
-    # peels through to the same ThinOp, so _set_thin_factor reaches it.
+    # peels through to the same ThinOp, so set_extra_leaf_params reaches it.
     wrapped = affine(thin(Gamma(2.0, 1.0), 0.4); scale = 2.0)
-    reset = _set_thin_factor(wrapped, 0.9)
+    reset = set_extra_leaf_params(wrapped, (thin = 0.9,))
     @test reset isa ModifiedDistributions.Affine
     @test reset.dist.op.factor == 0.9
 end
@@ -141,10 +142,10 @@ end
     @test ComposedDistributions.free_leaf(leaf) == Gamma(3.0, 1.0)
 end
 
-@testitem "Modified extension: a Modified leaf reports no thin factor" begin
+@testitem "Modified extension: a Modified leaf reports no extra params" begin
     using Distributions
     using ModifiedDistributions: modify
-    import ComposedDistributions: _thin_factor, _set_thin_factor
+    import ComposedDistributions: extra_leaf_params, set_extra_leaf_params
 
     # `Modified` can only wrap a `Continuous`-typed inner distribution (its own
     # constructor's restriction), and `Transformed`/`Weighted` declare a
@@ -152,14 +153,15 @@ end
     # concrete support, so a `Modified` can never itself sit around a thinned
     # delay via the public constructors today. The peel-through methods added
     # here are future-proofing (symmetry with Affine/Weighted) for when that
-    # changes; meanwhile a bare Modified leaf reports no thin factor, same as
+    # changes; meanwhile a bare Modified leaf reports no extra params, same as
     # any other non-thinned leaf.
     mod = modify(Gamma(2.0, 1.0), 0.5)
-    @test _thin_factor(mod) === nothing
+    @test extra_leaf_params(mod) == (;)
 
-    reset = _set_thin_factor(mod, 0.4)
+    # Setting no extras is the identity.
+    reset = set_extra_leaf_params(mod, (;))
     @test reset isa typeof(mod)
-    @test _thin_factor(reset) === nothing
+    @test extra_leaf_params(reset) == (;)
     @test reset.dist == mod.dist
     @test reset.effect == mod.effect
 end
@@ -420,4 +422,67 @@ end
             series)
         @test length(out) == length(series)
     end
+end
+
+@testitem "Modified extension: extra param survives an unsupplied round-trip" begin
+    using Distributions, Random
+    using ModifiedDistributions: thin, get_dist
+    import ComposedDistributions: extra_leaf_params
+
+    # The BoundsError crux (#170): a thinned leaf carries an extra `:thin`
+    # parameter appended after its native params, but `params(free_leaf(leaf))`
+    # holds only the native values. A round-trip that re-pins or draws a NATIVE
+    # parameter without supplying `:thin` must fall its `:thin` slot back to the
+    # extra map, not index past the native tuple. Before the fix each of the
+    # three fallback sites (`uncertain`, `_uncertain_leaf`, `_merge_leaf`) threw.
+    th = thin(Gamma(2.0, 1.0), 0.3)
+
+    # `uncertain` with a spec on one native param and a Real pin on the other:
+    # exercises the pinning `ntuple` fallback (the `:thin` slot reads the extra
+    # value, not `tvals[3]`).
+    u = uncertain(th; shape = LogNormal(log(2.0), 0.2), scale = 1.5)
+    @test extra_leaf_params(u) == (thin = (value = 0.3, support = (0.0, 1.0)),)
+    tbl = params_table(compose((cases = u,)))
+    @test tbl.param == [:shape, :scale, :thin]
+    @test tbl.value[findfirst(==(:thin), tbl.param)] == 0.3
+
+    # The marginal `rand` draws the spec'd native param and rebuilds the leaf,
+    # keeping `:thin`: exercises `_uncertain_leaf`.
+    tree = compose((cases = u,))
+    @test all(isfinite, values(rand(Xoshiro(1), tree)))
+
+    # `update` in merge mode (a distribution value) re-pins one native param and
+    # makes another uncertain while `:thin` is untouched: exercises
+    # `_merge_leaf`. The thin factor survives the fallback.
+    merged = update(tree, (cases = (shape = 3.0, scale = LogNormal(0.0, 1.0)),))
+    leaf = event(merged, :cases)
+    @test extra_leaf_params(leaf) == (thin = (value = 0.3, support = (0.0, 1.0)),)
+    @test ComposedDistributions.free_leaf(leaf) == Gamma(3.0, 1.5)
+
+    # A strict-mode collapse supplying every coordinate (native + `:thin`) also
+    # round-trips, updating the thin factor.
+    collapsed = update(tree, (cases = (shape = 2.0, scale = 1.0, thin = 0.7),))
+    cleaf = event(collapsed, :cases)
+    @test extra_leaf_params(cleaf) == (thin = (value = 0.7, support = (0.0, 1.0)),)
+    @test get_dist(cleaf) == Gamma(2.0, 1.0)
+end
+
+@testitem "Leaf protocol: published names reachable, thin alias gone (#170)" begin
+    using Distributions
+
+    # The generalised extra-parameter hook is public and empty for a plain leaf.
+    @test ComposedDistributions.extra_leaf_params(Gamma(2.0, 1.0)) == (;)
+    @test ComposedDistributions.set_extra_leaf_params(Gamma(2.0, 1.0), (;)) ==
+          Gamma(2.0, 1.0)
+
+    # The published leaf-protocol names resolve (public, reached qualified).
+    for name in (:uncertain_specs, :shared_tag, :leaf_mean, :leaf_var,
+        :leaf_param_names, :leaf_detail_lines, :extra_leaf_params,
+        :set_extra_leaf_params)
+        @test isdefined(ComposedDistributions, name)
+    end
+
+    # The scalar thin-factor hook is fully replaced, not aliased.
+    @test !isdefined(ComposedDistributions, :_thin_factor)
+    @test !isdefined(ComposedDistributions, :_set_thin_factor)
 end

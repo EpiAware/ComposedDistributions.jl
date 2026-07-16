@@ -6,14 +6,56 @@
 
 # --- per-leaf moment (free-delay transparent) ------------------------------
 
-# Mean / variance of a (possibly censored) leaf: that of its inner free delay.
-# A plain leaf is its own free leaf; a `Convolved` free-leafs to itself and so
-# reuses its additive `mean`/`var`. An `Uncertain` leaf free-leafs straight to
-# the template too (matching `mean`/`var(::Uncertain)`'s own delegation), so a
-# tree containing one silently reports the template moment; guard with
-# `has_uncertain` first if that matters.
-_leaf_mean(leaf) = mean(free_leaf(leaf))
-_leaf_var(leaf) = var(free_leaf(leaf))
+@doc raw"
+Mean of a (possibly wrapped) leaf, seen through its fixed wrapper structure.
+
+The default is that of the inner free delay (`mean(free_leaf(leaf))`): a plain
+leaf is its own free leaf, a `Convolved` free-leafs to itself and reuses its
+additive `mean`, and an `Uncertain` leaf free-leafs to its template (so a tree
+containing one reports the template moment; guard with [`has_uncertain`](@ref)
+first if that matters). A modifier whose transform changes the moment (an
+`Affine` scale/shift) overrides this to report its own analytic moment.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution whose mean is read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.leaf_mean(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`leaf_var`](@ref): the matching per-leaf variance.
+"
+leaf_mean(leaf) = mean(free_leaf(leaf))
+
+@doc raw"
+Variance of a (possibly wrapped) leaf, seen through its fixed wrapper structure.
+
+The variance dual of [`leaf_mean`](@ref): the inner free delay's variance by
+default (`var(free_leaf(leaf))`), overridden by a modifier whose transform
+changes the moment (an `Affine`).
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution whose variance is read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.leaf_var(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`leaf_mean`](@ref): the matching per-leaf mean.
+"
+leaf_var(leaf) = var(free_leaf(leaf))
+# The underscored aliases retained for internal callers and the modifier
+# extension's overrides; `const` makes each the same function object.
+const _leaf_mean = leaf_mean
+const _leaf_var = leaf_var
 
 # --- overall observed-level moments on the composer itself ------------------
 
