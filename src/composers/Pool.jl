@@ -449,6 +449,49 @@ function _assert_pool_compatible(a::Pool, b::Pool)
     return nothing
 end
 
+# --- namespace collision gate -------------------------------------------------
+#
+# `pool` groups, `shared` tags, and a tree's own top-level (root) edge names
+# all end up as sibling entries in the SAME root-lifted NamedTuple at readback
+# (`chain_to_params` in the FlexiChains extension merges each family's
+# top-level entry alongside the tree's own names). A pool group and a shared
+# tag sharing a name silently clobber each other in that merge, and so does
+# either family sharing a name with a root edge (see #177 and the #178 risk
+# list). `_validate_tree_names` gates all three cross-role collisions once at
+# `as_logdensity` construction time, alongside `_validate_pool_groups`'s pool
+# group consistency check, not per gradient evaluation. Reusing the SAME tag
+# for a deliberate tie (`shared`/`tie`, or a pool group with several members)
+# is the intended feature and is not flagged; only a name crossing ROLES is an
+# error.
+function _validate_tree_names(d)
+    pools = Dict{Symbol, Pool}()
+    _collect_pools!(pools, d)
+    shared_tags = _collect_shared(d)
+    roots = Set(_root_edge_names(d))
+    for group in keys(pools)
+        group in roots && throw(ArgumentError(
+            "$(repr(group)) is used as both a pool group and a top-level " *
+            "edge name in the same tree; rename one to avoid a readback " *
+            "namespace collision"))
+    end
+    for (tag, _) in shared_tags
+        haskey(pools, tag) && throw(ArgumentError(
+            "$(repr(tag)) is used as both a shared tag and a pool group in " *
+            "the same tree; rename one to avoid a readback namespace " *
+            "collision"))
+        tag in roots && throw(ArgumentError(
+            "$(repr(tag)) is used as both a shared tag and a top-level edge " *
+            "name in the same tree; rename one to avoid a readback " *
+            "namespace collision"))
+    end
+    return nothing
+end
+
+# The direct child names at the root of a composer tree, the level the
+# readback merge (`chain_to_params`) lifts pool/shared entries onto. Every
+# `AbstractComposedDistribution` subtype implements `component_names`.
+_root_edge_names(d) = component_names(d)
+
 # A `Pool` value in an `update` NamedTuple makes that parameter pooled (a spec),
 # like a distribution value makes it uncertain, so an update carrying only a
 # `pool(...)` spec switches `update` to MERGE mode (attach) rather than STRICT

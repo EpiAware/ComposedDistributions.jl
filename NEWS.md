@@ -15,6 +15,20 @@
   the accessors. This groundwork is a step towards a generated, allocation-free
   flat-vector codec that fixes #162.
 
+- **fix:** `as_logdensity` and the chain readback (`chain_to_params` /
+  `update(template, chain)` / `param_draws`) now reject a tree where a
+  `pool` group, a `shared` tag, and a root-level edge name are not
+  disjoint (#177). All three land in the same root-lifted NamedTuple
+  namespace at readback, so a same-named pair previously clobbered each
+  other silently instead of erroring; the collision is caught once at
+  construction or readback entry, not on the gradient hot path. Reusing
+  one tag to tie a parameter across branches, or one group across several
+  pooled members, is unaffected.
+
+- **feat:** `update(d, x::AbstractVector)` is a flat-vector shorthand for
+  `update(d, unflatten(d, x))`, collapsing an uncertain tree at a sampler draw
+  in a single call (#178).
+
 - **feat:** the composer leaf protocol is now published as considered public API
   (#170). The downstream contract a leaf-wrapper package implements is
   de-underscored and documented as the stable surface: `uncertain_specs`,

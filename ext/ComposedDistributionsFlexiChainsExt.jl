@@ -13,7 +13,8 @@ using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                              shared_tag, leaf_param_names, _collect_shared,
                              uncertain_specs, free_leaf, Pool, _pool_specs,
                              _collect_pools!, _population_template,
-                             pool_noncentred
+                             pool_noncentred, _validate_pool_groups,
+                             _validate_tree_names
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
 using Distributions: params
@@ -279,6 +280,13 @@ end
 
 function chain_to_params(template, chain; prefix::Symbol = :d, draw = nothing,
         draws = nothing, summary = mean)
+    # A bare `template` need never have passed `as_logdensity`'s gate, so the
+    # pool-group consistency and pool/shared/root-edge namespace checks are
+    # repeated here, once per readback call (not per gradient evaluation):
+    # this is the exact site the root-lifted `merge` below can silently
+    # clobber a colliding name (#177).
+    _validate_pool_groups(template)
+    _validate_tree_names(template)
     lookup = _value_lookup(chain, draw, draws, summary)
     tree = _node_params(template, lookup, prefix, ())
     # A shared-tagged leaf is sampled once under its tag, so add a top-level
