@@ -90,6 +90,14 @@ end
 @doc "
 The pooling-group name (`Symbol`) of a [`Pool`](@ref) spec.
 
+# Examples
+```@example
+using ComposedDistributions
+
+spec = pool(:district)
+ComposedDistributions.pool_group(spec)
+```
+
 See also: [`pool_noncentred`](@ref), [`pool`](@ref)
 "
 pool_group(::Pool{group}) where {group} = group
@@ -97,6 +105,14 @@ pool_group(::Pool{group}) where {group} = group
 @doc "
 Whether a [`Pool`](@ref) spec uses the non-centred (location-scale)
 parameterisation.
+
+# Examples
+```@example
+using ComposedDistributions
+
+spec = pool(:district)
+ComposedDistributions.pool_noncentred(spec)
+```
 
 See also: [`pool_group`](@ref), [`pool`](@ref)
 "
