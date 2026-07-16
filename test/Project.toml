@@ -68,7 +68,11 @@ ComposedDistributions = {path = ".."}
 # not yet registered; pin its main branch here (the test env is where the
 # extension loads). Drop this pin once LoweredDistributions registers a release.
 LoweredDistributions = {url = "https://github.com/EpiAware/LoweredDistributions.jl", rev = "main"}
-ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "main"}
+# Pinned to MD's absorb-composed-ext branch while #170 step 2 is in flight
+# (MD's ModifiedDistributionsComposedDistributionsExt now hosts the leaf
+# protocol for the modifier leaves, since this package's reverse extension is
+# gone). Repin to rev = "main" once that MD PR merges.
+ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "feat/absorb-composed-ext"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit
 # alongside this package, e.g. EpiAwarePackageTools = {path = "../../EpiAwarePackageTools.jl"}.

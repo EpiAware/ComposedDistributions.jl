@@ -1,5 +1,17 @@
 ## Unreleased
 
+- **breaking:** the `ComposedDistributionsModifiedDistributionsExt` reverse
+  extension and the `ModifiedDistributions` weakdep are removed (#170 step 2),
+  ending the extension cycle between the two packages (Julia 1.12 fails on
+  cross-module method overwrites when both packages' extensions activate
+  together). ModifiedDistributions' own
+  `ModifiedDistributionsComposedDistributionsExt` now hosts the full leaf
+  protocol for its modifier leaves (`Affine` / `Weighted` / `Transformed` /
+  `Modified`), reading it through the leaf-protocol public API published in
+  #174. Anyone who imported the extension module directly from this package
+  must load ModifiedDistributions and rely on its extension instead;
+  functionality is otherwise unchanged when both packages are loaded together.
+
 - **feat:** the composer leaf protocol is now published as considered public API
   (#170). The downstream contract a leaf-wrapper package implements is
   de-underscored and documented as the stable surface: `uncertain_specs`,
