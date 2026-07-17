@@ -50,7 +50,8 @@ end
 function _reject_pools(dist)
     acc = Dict{Symbol, ComposedDistributions.Pool}()
     ComposedDistributions._collect_pools!(acc, dist)
-    centred = sort([g for (g, p) in acc if !p.noncentred])
+    centred = sort([g for (g, p) in acc
+                    if !ComposedDistributions.pool_noncentred(p)])
     isempty(centred) || throw(ArgumentError(
         "as_turing does not yet support centred pooled trees (groups " *
         "$centred): a centred pool has no fixed `~` prior (its population is " *

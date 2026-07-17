@@ -21,6 +21,11 @@ public free_leaf, rewrap_leaf, component_names
 public uncertain_specs, leaf_detail_lines, shared_tag, leaf_param_names
 public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 
+# `Pool`'s group name and non-centred flag live in type parameters (like
+# `Shared`'s tag); `pool_group`/`pool_noncentred` are the accessors, mirroring
+# `shared_tag` above.
+public pool_group, pool_noncentred
+
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `_param_names` and rebuilt by `_leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf

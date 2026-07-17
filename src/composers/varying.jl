@@ -317,7 +317,9 @@ end
 # A tagged shared leaf keeps its tag through resolution (the resolved value is
 # still the same shared parameter group); it is a wrapper leaf, so it forwards
 # into its wrapped distribution rather than through `_node_children`.
-instantiate(d::Shared, ctx::AbstractContext) = Shared(d.tag, instantiate(d.dist, ctx))
+function instantiate(d::Shared{tag}, ctx::AbstractContext) where {tag}
+    return Shared{tag}(instantiate(d.dist, ctx))
+end
 
 # --- guarding against a forgotten `instantiate` -----------------------------
 

@@ -43,7 +43,8 @@ once by its `tag` and is inventoried once and sampled once, so the tied value is
 shared by every alternative that uses it.
 
 # Fields
-- `names`: tuple of the alternative names (`Symbol`s).
+- the alternative names (`Symbol`s) live in the `names` type parameter (read
+  with [`component_names`](@ref)).
 - `alternatives`: tuple of the alternative distributions, one per name.
 - `selector`: the row field name (`Symbol`) whose value selects an alternative.
 
@@ -52,17 +53,16 @@ shared by every alternative that uses it.
 - [`Resolve`](@ref): exactly one of several shared-origin outcomes (mixture)
 - [`Parallel`](@ref): independent shared-origin branches (product)
 "
-struct Choose{N, K <: NTuple{N, Symbol}, A <: Tuple} <:
+struct Choose{names, A <: Tuple} <:
        AbstractComposedDistribution{Multivariate, Continuous}
-    "Tuple of the alternative names (`Symbol`s)."
-    names::K
     "Tuple of the alternative distributions, one per name."
     alternatives::A
     "The row field name (`Symbol`) whose value selects an alternative."
     selector::Symbol
 
-    function Choose(names::K, alternatives::A, selector::Symbol) where {
-            N, K <: NTuple{N, Symbol}, A <: Tuple}
+    function Choose{names}(alternatives::A, selector::Symbol) where {
+            names, A <: Tuple}
+        N = length(names)
         N >= 2 ||
             throw(ArgumentError("Choose needs at least two alternatives"))
         length(alternatives) == N ||
@@ -75,9 +75,19 @@ struct Choose{N, K <: NTuple{N, Symbol}, A <: Tuple} <:
             throw(ArgumentError(
                 "every Choose alternative must be a UnivariateDistribution " *
                 "or a nested composer"))
-        new{N, K, A}(names, alternatives, selector)
+        new{names, A}(alternatives, selector)
     end
 end
+
+# The names live in the `names` type parameter (like `NamedTuple{names}`); this
+# instantiates it directly from the runtime tuple `choose`/`compose` pass, with
+# no call-site change from the field-based constructor.
+function Choose(names::K, alternatives::A, selector::Symbol) where {
+        N, K <: NTuple{N, Symbol}, A <: Tuple}
+    return Choose{names}(alternatives, selector)
+end
+
+component_names(::Choose{names}) where {names} = names
 
 @doc "
 
@@ -145,11 +155,7 @@ function choose(alternatives::NamedTuple; selector::Symbol = :kind)
     return choose(_nt_pairs(alternatives)...; selector = selector)
 end
 
-_n_alternatives(::Choose{N}) where {N} = N
-
-# The alternative names, filling the `AbstractComposedDistribution` interface
-# gap `Choose` was missing (`component_names(c)` — the child names).
-component_names(d::Choose) = d.names
+_n_alternatives(d::Choose) = length(component_names(d))
 
 # --- Type-stable selection -------------------------------------------------
 #
@@ -161,7 +167,9 @@ component_names(d::Choose) = d.names
 # downstream `logpdf`/`rand` barriers into its concrete type. This is not a
 # runtime `Dict`/type lookup: no boxing, and a `kind` known at the call boundary
 # keeps the hot path inferable.
-@inline _pick(d::Choose, kind::Symbol) = _pick_recurse(d.names, d.alternatives, kind)
+@inline function _pick(d::Choose, kind::Symbol)
+    return _pick_recurse(component_names(d), d.alternatives, kind)
+end
 
 @inline function _pick_recurse(
         names::Tuple, alternatives::Tuple, kind::Symbol)
@@ -323,7 +331,7 @@ function Base.rand(
     # Forward simulation: pick uniformly and return a self-describing record
     # that tags the drawn alternative (`selector => name`) so
     # `logpdf(d, rand(d))` recovers the alternative with no extra argument.
-    chosen = d.names[rand(rng, 1:_n_alternatives(d))]
+    chosen = component_names(d)[rand(rng, 1:_n_alternatives(d))]
     return _choose_tagged_record(d, chosen, rand(rng, _pick(d, chosen)))
 end
 
@@ -351,17 +359,19 @@ See also: [`Choose`](@ref)
 "
 function Base.show(io::IO, ::MIME"text/plain", d::Choose)
     n = _n_alternatives(d)
+    names = component_names(d)
     println(io,
         "Choose node of $n alternatives (selector = $(repr(d.selector)))")
     for k in 1:n
         branch = k == n ? "└─ " : "├─ "
-        println(io, "  ", branch, "$(d.names[k]): $(d.alternatives[k])")
+        println(io, "  ", branch, "$(names[k]): $(d.alternatives[k])")
     end
     return nothing
 end
 
 function Base.show(io::IO, d::Choose)
-    parts = ["$(d.names[k])" for k in 1:_n_alternatives(d)]
+    names = component_names(d)
+    parts = ["$(names[k])" for k in 1:_n_alternatives(d)]
     print(io, "Choose(", join(parts, " | "),
         "; selector=", repr(d.selector), ")")
     return nothing
