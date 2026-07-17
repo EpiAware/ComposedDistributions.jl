@@ -58,7 +58,7 @@ build_docs(
     ComposedDistributions;
     repo = "EpiAware/ComposedDistributions.jl",
     authors = "Sam Abbott, EpiAware contributors",
-    deploy_url = "composeddistributions.epiaware.org",
+    deploy_url = "https://composeddistributions.epiaware.org",
     pages = _cfg(:pages, ["Home" => "index.md"]),
     skip_notebooks = "--skip-notebooks" in ARGS ||
                      get(ENV, "SKIP_NOTEBOOKS", "false") == "true",
