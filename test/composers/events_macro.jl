@@ -51,7 +51,8 @@ end
     @test last_step isa Resolve
     @test probs(last_step) == (death = 0.3, discharge = 0.7)
     # The nested one_of step is auto-named from its branches.
-    @test tree.names == (:onset, :admission, :death_or_discharge)
+    @test ComposedDistributions.component_names(tree) ==
+          (:onset, :admission, :death_or_discharge)
 end
 
 @testitem "@events: the residual last branch is a Resolve" begin
@@ -117,7 +118,8 @@ end
 
     node = tree.components[end]
     @test node isa Parallel
-    @test node.names == (:admission, :notification)
+    @test ComposedDistributions.component_names(node) ==
+          (:admission, :notification)
 end
 
 @testitem "@events: an unfilled hole throws naming it" begin

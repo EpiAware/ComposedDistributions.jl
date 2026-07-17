@@ -27,15 +27,17 @@ function _named_children(d::Union{Sequential, Parallel})
     return ntuple(i -> (names[i], d.components[i], ""), length(d.components))
 end
 function _named_children(c::Resolve)
-    return ntuple(length(c.names)) do i
-        (c.names[i], c.delays[i], "p = $(c.branch_probs[i])")
+    names = component_names(c)
+    return ntuple(length(names)) do i
+        (names[i], c.delays[i], "p = $(c.branch_probs[i])")
     end
 end
 # A racing-hazard node has no per-outcome branch probability (it is derived), so
 # its children carry the `racing` annotation instead.
 function _named_children(c::Compete)
-    return ntuple(length(c.names)) do i
-        (c.names[i], c.delays[i], "racing")
+    names = component_names(c)
+    return ntuple(length(names)) do i
+        (names[i], c.delays[i], "racing")
     end
 end
 
@@ -214,7 +216,7 @@ _child_params(c) = params(c)
 # A racing-hazard node's nested params: each outcome name -> its delay's params.
 # There is no `branch_probs` entry (the winning probability is derived).
 function _hazard_one_of_params(c::Compete)
-    return NamedTuple{c.names}(map(params, c.delays))
+    return NamedTuple{component_names(c)}(map(params, c.delays))
 end
 
 # A `Resolve` node's nested params: each outcome name -> its delay's params,
@@ -223,7 +225,7 @@ end
 # same estimated representation the table lists.
 function _one_of_params(c::Resolve)
     outcome_vals = map(params, c.delays)
-    outcomes = NamedTuple{c.names}(outcome_vals)
+    outcomes = NamedTuple{component_names(c)}(outcome_vals)
     return merge(outcomes, (; branch_probs = _branch_prob_params(c)))
 end
 
@@ -235,7 +237,7 @@ _branch_prob_params(c::Resolve) = _branch_prob_params(c, c.branch_prob_prior)
 _branch_prob_params(c::Resolve, ::Nothing) = c.branch_probs
 function _branch_prob_params(c::Resolve, ::Distributions.Dirichlet)
     v = _simplex_to_stick(collect(c.branch_probs))
-    names = _stick_param_names(length(c.names))
+    names = _stick_param_names(length(component_names(c)))
     return NamedTuple{names}(Tuple(v))
 end
 
@@ -251,7 +253,7 @@ end
 # `params_table`/the prior model.
 function _select_params(d::Choose)
     vals = map(_child_params, d.alternatives)
-    return NamedTuple{d.names}(vals)
+    return NamedTuple{component_names(d)}(vals)
 end
 
 # --- censoring-transparent leaves ------------------------------------------
@@ -734,7 +736,7 @@ end
 # sourced branches is inventoried once.
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
         d::Choose, path)
-    for (name, alt) in zip(d.names, d.alternatives)
+    for (name, alt) in zip(component_names(d), d.alternatives)
         _walk_rows!(edges, params_col, values, supports, priors, seen, alt,
             (path..., name))
     end
@@ -743,7 +745,7 @@ end
 
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
         c::Resolve, path)
-    for (name, delay) in zip(c.names, c.delays)
+    for (name, delay) in zip(component_names(c), c.delays)
         _is_no_event(delay) && continue
         _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
             (path..., name))
@@ -763,9 +765,10 @@ end
 function _branch_prob_rows!(edges, params_col, values, supports, priors,
         c::Resolve, edge, ::Nothing)
     sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
+    cnames = component_names(c)
     for (k, p) in enumerate(c.branch_probs)
         push!(edges, edge)
-        push!(params_col, Symbol(c.names[k]))
+        push!(params_col, Symbol(cnames[k]))
         push!(values, p)
         push!(supports, sup)
         push!(priors, nothing)
@@ -777,7 +780,7 @@ function _branch_prob_rows!(edges, params_col, values, supports, priors,
         c::Resolve, edge, prior::Distributions.Dirichlet)
     v = _simplex_to_stick(collect(c.branch_probs))
     betas = _dirichlet_stick_betas(prior)
-    names = _stick_param_names(length(c.names))
+    names = _stick_param_names(length(component_names(c)))
     for k in eachindex(names)
         push!(edges, edge)
         push!(params_col, names[k])
@@ -792,7 +795,7 @@ end
 # no branch-probability block (the winning probability is derived, not free).
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
         c::Compete, path)
-    for (name, delay) in zip(c.names, c.delays)
+    for (name, delay) in zip(component_names(c), c.delays)
         _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
             (path..., name))
     end
@@ -1096,19 +1099,21 @@ end
 # A `Choose` updates each alternative; a tag shared across alternatives reads one
 # entry from `shared` and is placed in every occurrence.
 function _update(d::Choose, params::NamedTuple, shared, merge::Bool)
-    _check_child_keys(params, d.names, :Choose, shared)
-    alts = ntuple(length(d.names)) do i
-        _update(d.alternatives[i], _child_params(params, d.names[i]), shared,
+    names = component_names(d)
+    _check_child_keys(params, names, :Choose, shared)
+    alts = ntuple(length(names)) do i
+        _update(d.alternatives[i], _child_params(params, names[i]), shared,
             merge)
     end
     return _rebuild(d, alts)
 end
 
 function _update(c::Resolve, params::NamedTuple, shared, merge::Bool)
-    _check_child_keys(params, c.names, :Resolve, shared;
+    names = component_names(c)
+    _check_child_keys(params, names, :Resolve, shared;
         optional = (:branch_probs,))
-    delays = ntuple(length(c.names)) do i
-        _update(c.delays[i], _child_params(params, c.names[i]), shared, merge)
+    delays = ntuple(length(names)) do i
+        _update(c.delays[i], _child_params(params, names[i]), shared, merge)
     end
     return _update_branch_probs(c, delays, params, merge)
 end
@@ -1126,17 +1131,18 @@ end
 #   per-outcome values, as before.
 function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         merge::Bool)
+    names = component_names(c)
     if merge
-        haskey(params, :branch_probs) || return Resolve(c.names, delays,
+        haskey(params, :branch_probs) || return Resolve(names, delays,
             c.branch_probs, c.branch_prob_prior)
         bp = params.branch_probs
         bp isa Distributions.Dirichlet || throw(ArgumentError(
             "update(Resolve, ...): a `branch_probs` update in merge mode must " *
             "be a `Dirichlet` over the outcomes (making the simplex " *
             "uncertain); got a $(typeof(bp))"))
-        return Resolve(c.names, delays, c.branch_probs, bp)
+        return Resolve(names, delays, c.branch_probs, bp)
     end
-    haskey(params, :branch_probs) || return Resolve(c.names, delays,
+    haskey(params, :branch_probs) || return Resolve(names, delays,
         c.branch_probs, nothing)
     bp = params.branch_probs
     bp isa NamedTuple || throw(ArgumentError(
@@ -1145,21 +1151,22 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         "probabilities for a fixed one); got a $(typeof(bp))"))
     probs = c.branch_prob_prior !== nothing ?
             _reconstruct_branch_probs(c, bp) : _replace_branch_probs(c, bp)
-    return Resolve(c.names, delays, probs, nothing)
+    return Resolve(names, delays, probs, nothing)
 end
 
 # Replace the K probabilities from concrete per-outcome values (a fixed node,
 # keyed by outcome name).
 function _replace_branch_probs(c::Resolve, bp::NamedTuple)
-    _check_update_keys(bp, c.names, Symbol("Resolve branch_probs"))
-    return ntuple(i -> bp[c.names[i]], length(c.names))
+    names = component_names(c)
+    _check_update_keys(bp, names, Symbol("Resolve branch_probs"))
+    return ntuple(i -> bp[names[i]], length(names))
 end
 
 # Reconstruct the K probabilities from the K-1 stick coordinates supplied (keyed
 # `:stick_k`), read in coordinate order so the mapping is independent of the
 # NamedTuple's key order.
 function _reconstruct_branch_probs(c::Resolve, sticks::NamedTuple)
-    names = _stick_param_names(length(c.names))
+    names = _stick_param_names(length(component_names(c)))
     _check_update_keys(sticks, names, Symbol("Resolve branch_probs"))
     v = ntuple(k -> sticks[names[k]], length(names))
     return _stick_to_simplex(v)
@@ -1168,9 +1175,10 @@ end
 # A racing-hazard node updates each outcome delay; there is no `branch_probs`
 # block to update (the winning probability is derived).
 function _update(c::Compete, params::NamedTuple, shared, merge::Bool)
-    _check_child_keys(params, c.names, :Compete, shared)
-    delays = ntuple(length(c.names)) do i
-        _update(c.delays[i], _child_params(params, c.names[i]), shared, merge)
+    names = component_names(c)
+    _check_child_keys(params, names, :Compete, shared)
+    delays = ntuple(length(names)) do i
+        _update(c.delays[i], _child_params(params, names[i]), shared, merge)
     end
     return _rebuild(c, delays)
 end
@@ -1275,14 +1283,18 @@ end
 # `update` is Turing-free). Rebuilds a node of the same type and metadata around
 # a new children tuple (steps/branches, one_of outcome delays, Choose
 # alternatives); shared by the `update` / `prune` / `splice` structural edits.
-_rebuild(d::Sequential, components::Tuple) = Sequential(components, d.names)
-_rebuild(d::Parallel, components::Tuple) = Parallel(components, d.names)
+function _rebuild(d::Sequential, components::Tuple)
+    Sequential(components, component_names(d))
+end
+function _rebuild(d::Parallel, components::Tuple)
+    Parallel(components, component_names(d))
+end
 function _rebuild(c::Resolve, delays::Tuple)
-    Resolve(c.names, delays, c.branch_probs,
+    Resolve(component_names(c), delays, c.branch_probs,
         c.branch_prob_prior)
 end
-_rebuild(c::Compete, delays::Tuple) = Compete(c.names, delays)
-_rebuild(d::Choose, alts::Tuple) = Choose(d.names, alts, d.selector)
+_rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
+_rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
 
 # A composer node's children tuple, uniform across the node kinds (the field
 # holding them differs per type). Pairs with `_rebuild` for generic node walks.
@@ -1583,7 +1595,8 @@ _attach_branch_prob_priors(x, d) = x
 
 function _promote_branch_prior(c::Resolve)
     return c.branch_prob_prior === nothing ?
-           Distributions.Dirichlet(ones(length(c.names))) : c.branch_prob_prior
+           Distributions.Dirichlet(ones(length(component_names(c)))) :
+           c.branch_prob_prior
 end
 
 # The child tree node under name `k` for the prior walk, or `nothing` when `k`
@@ -1594,11 +1607,11 @@ function _prior_child_node(d::Union{Sequential, Parallel}, k::Symbol)
     return i === nothing ? nothing : d.components[i]
 end
 function _prior_child_node(c::AbstractOneOf, k::Symbol)
-    i = findfirst(==(k), c.names)
+    i = findfirst(==(k), component_names(c))
     return i === nothing ? nothing : c.delays[i]
 end
 function _prior_child_node(d::Choose, k::Symbol)
-    i = findfirst(==(k), d.names)
+    i = findfirst(==(k), component_names(d))
     return i === nothing ? nothing : d.alternatives[i]
 end
 _prior_child_node(::Any, ::Symbol) = nothing
@@ -1637,7 +1650,7 @@ function event_names(d::Union{Sequential, Parallel, AbstractOneOf})
 end
 # A `Choose` has no single flat layout (the active alternative is data-selected),
 # so its flat event names are its alternative names.
-event_names(d::Choose) = d.names
+event_names(d::Choose) = component_names(d)
 
 @doc "
 
@@ -1673,15 +1686,17 @@ function event_tree(d::Union{Sequential, Parallel})
 end
 
 function event_tree(c::AbstractOneOf)
-    vals = ntuple(i -> _event_tree_child(c.names[i], c.delays[i]),
-        length(c.names))
-    return NamedTuple{c.names}(vals)
+    names = component_names(c)
+    vals = ntuple(i -> _event_tree_child(names[i], c.delays[i]),
+        length(names))
+    return NamedTuple{names}(vals)
 end
 
 function event_tree(d::Choose)
-    vals = ntuple(i -> _event_tree_child(d.names[i], d.alternatives[i]),
-        length(d.names))
-    return NamedTuple{d.names}(vals)
+    names = component_names(d)
+    vals = ntuple(i -> _event_tree_child(names[i], d.alternatives[i]),
+        length(names))
+    return NamedTuple{names}(vals)
 end
 
 # A composer child recurses to its own nested NamedTuple; a leaf is keyed by its
@@ -1711,14 +1726,16 @@ function _event_child(d::Union{Sequential, Parallel}, name::Symbol)
 end
 
 function _event_child(c::AbstractOneOf, name::Symbol)
-    idx = findfirst(==(name), c.names)
-    idx === nothing && _no_event_child_error(c, name, c.names)
+    names = component_names(c)
+    idx = findfirst(==(name), names)
+    idx === nothing && _no_event_child_error(c, name, names)
     return c.delays[idx]
 end
 
 function _event_child(d::Choose, name::Symbol)
-    idx = findfirst(==(name), d.names)
-    idx === nothing && _no_event_child_error(d, name, d.names)
+    names = component_names(d)
+    idx = findfirst(==(name), names)
+    idx === nothing && _no_event_child_error(d, name, names)
     return d.alternatives[idx]
 end
 

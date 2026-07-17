@@ -52,10 +52,12 @@ abstract type AbstractComposedDistribution{F <: VariateForm,
 
 Supertype of the positional multi-child composers [`Sequential`](@ref) and
 [`Parallel`](@ref) (subtype of
-`AbstractComposedDistribution{Multivariate, S}`). These two store `.components` /
-`.names` and are walked positionally by the tree machinery, so they share
-dispatch on `::AbstractMultiChild` (the supertype the tree walkers key off).
-[`Choose`](@ref) (disjoint alternatives) is a sibling, not a multi-child node.
+`AbstractComposedDistribution{Multivariate, S}`). These two store `.components`
+and carry their child names in a `names` type parameter (read with
+[`component_names`](@ref)), and are walked positionally by the tree machinery,
+so they share dispatch on `::AbstractMultiChild` (the supertype the tree
+walkers key off). [`Choose`](@ref) (disjoint alternatives) is a sibling, not a
+multi-child node.
 """
 abstract type AbstractMultiChild{S <: ValueSupport} <:
               AbstractComposedDistribution{Multivariate, S} end

@@ -27,24 +27,27 @@ function _edit_step(d::Union{Sequential, Parallel}, path::Tuple, op)
 end
 
 function _edit_step(c::Resolve, path::Tuple, op)
-    idx = _child_index(c.names, first(path), :Resolve)
-    delays = ntuple(length(c.names)) do i
+    names = component_names(c)
+    idx = _child_index(names, first(path), :Resolve)
+    delays = ntuple(length(names)) do i
         i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
     end
     return _rebuild(c, delays)
 end
 
 function _edit_step(c::Compete, path::Tuple, op)
-    idx = _child_index(c.names, first(path), :Compete)
-    delays = ntuple(length(c.names)) do i
+    names = component_names(c)
+    idx = _child_index(names, first(path), :Compete)
+    delays = ntuple(length(names)) do i
         i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
     end
-    return Compete(c.names, delays)
+    return Compete(names, delays)
 end
 
 function _edit_step(d::Choose, path::Tuple, op)
-    idx = _child_index(d.names, first(path), :Choose)
-    alts = ntuple(length(d.names)) do i
+    names = component_names(d)
+    idx = _child_index(names, first(path), :Choose)
+    alts = ntuple(length(names)) do i
         i == idx ? _edit_at(d.alternatives[i], Base.tail(path), op) :
         d.alternatives[i]
     end
@@ -172,25 +175,27 @@ function _drop_child(d::Union{Sequential, Parallel}, name::Symbol)
 end
 
 function _drop_child(c::Resolve, name::Symbol)
-    idx = _child_index(c.names, name, :Resolve)
-    length(c.names) >= 3 || throw(ArgumentError(
+    names = component_names(c)
+    idx = _child_index(names, name, :Resolve)
+    length(names) >= 3 || throw(ArgumentError(
         "prune: Resolve needs at least two remaining outcomes"))
-    keep = filter(!=(idx), 1:length(c.names))
+    keep = filter(!=(idx), 1:length(names))
     kept_probs = Tuple(c.branch_probs[i] for i in keep)
     total = sum(kept_probs)
     total > 0 || throw(ArgumentError(
         "prune: remaining Resolve branch probabilities sum to zero"))
     probs = map(p -> p / total, kept_probs)
-    return Resolve(Tuple(c.names[i] for i in keep),
+    return Resolve(Tuple(names[i] for i in keep),
         Tuple(c.delays[i] for i in keep), probs)
 end
 
 function _drop_child(d::Choose, name::Symbol)
-    idx = _child_index(d.names, name, :Choose)
-    length(d.names) >= 3 || throw(ArgumentError(
+    names = component_names(d)
+    idx = _child_index(names, name, :Choose)
+    length(names) >= 3 || throw(ArgumentError(
         "prune: Choose needs at least two remaining alternatives"))
-    keep = filter(!=(idx), 1:length(d.names))
-    return Choose(Tuple(d.names[i] for i in keep),
+    keep = filter(!=(idx), 1:length(names))
+    return Choose(Tuple(names[i] for i in keep),
         Tuple(d.alternatives[i] for i in keep), d.selector)
 end
 

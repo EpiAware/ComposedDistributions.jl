@@ -73,7 +73,7 @@ end
 # A standalone `Resolve` node has only a positional origin; its outcome event
 # names anchor at the parent event when nested (see `_walk_edge!` below), so on
 # its own it exposes the origin plus one slot per outcome named by its outcomes.
-_flat_event_names(c::AbstractOneOf) = (:event_1, c.names...)
+_flat_event_names(c::AbstractOneOf) = (:event_1, component_names(c)...)
 
 # The root origin event name E_0: derived from the first edge's name split, else
 # positional. For a `Sequential` the first edge is `components[1]`; for a
@@ -160,8 +160,9 @@ end
 # single outcome), so its terminal name is the shared origin it hangs off.
 function _walk_edge!(names, edge_name::Symbol, child::AbstractOneOf,
         origin::Symbol, counter)
-    for k in eachindex(child.names)
-        _walk_one_of_outcome!(names, child.names[k], child.delays[k],
+    cnames = component_names(child)
+    for k in eachindex(cnames)
+        _walk_one_of_outcome!(names, cnames[k], child.delays[k],
             origin, counter)
     end
     return origin

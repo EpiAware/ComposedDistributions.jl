@@ -489,7 +489,7 @@ end
         :disch => (Gamma(2.0, 1.5), 0.5), :transfer => (Gamma(1.0, 1.0), 0.2))
     pruned = event(prune(compose((res = node,)), :res, :transfer), :res)
     @test sum(pruned.branch_probs) ≈ 1.0
-    @test length(pruned.names) == 2
+    @test length(ComposedDistributions.component_names(pruned)) == 2
     # Splice inserts an after step.
     sp = splice(tree, :admit_death; after = :report => Gamma(1.0, 2.0))
     @test event(sp, :admit_death) isa Sequential
@@ -509,7 +509,7 @@ end
 
     # prune descends through the Compete into a nested Resolve cause.
     pruned = event(prune(tree, :path, :delayed, :c), :path, :delayed)
-    @test length(pruned.names) == 2
+    @test length(ComposedDistributions.component_names(pruned)) == 2
     @test sum(pruned.branch_probs) ≈ 1.0
 
     # tie descends through the Compete to tag a leaf as shared.
@@ -627,6 +627,52 @@ end
     @test r1 != r2             # outcome names are intrinsic
     c = compete(:death => Gamma(1.0, 1.0), :disch => Gamma(1.0, 1.0))
     @test r1 != c
+end
+
+@testitem "type-parameterised names: accessors and runtime-Vector names" begin
+    using Distributions
+    import ComposedDistributions: component_names, shared_tag, pool_group,
+                                  pool_noncentred, rewrap_leaf
+
+    # Names built from a runtime `Vector{Symbol}` (not a tuple literal, e.g. a
+    # data-driven column list) instantiate the same type-parameterised struct
+    # as the literal-tuple form, so the two are `==` and share the accessor.
+    names_vec = [:onset, :admit]
+    s_vec = Sequential(
+        (Gamma(2.0, 1.0), LogNormal(0.5, 0.4)), Tuple(names_vec))
+    s_lit = Sequential(
+        (Gamma(2.0, 1.0), LogNormal(0.5, 0.4)), (:onset, :admit))
+    @test component_names(s_vec) == (:onset, :admit)
+    @test s_vec == s_lit
+    @test typeof(s_vec) == typeof(s_lit)
+
+    p_vec = Parallel((Gamma(2.0, 1.0), Gamma(1.0, 1.0)), Tuple([:a, :b]))
+    @test component_names(p_vec) == (:a, :b)
+
+    ch_vec = Choose(Tuple([:i, :s]), (Gamma(2.0, 1.0), Gamma(1.0, 1.0)),
+        :kind)
+    @test component_names(ch_vec) == (:i, :s)
+
+    r_vec = Resolve(Tuple([:death, :disch]),
+        (Gamma(1.5, 1.0), Gamma(2.0, 1.5)), (0.3, 0.7))
+    @test component_names(r_vec) == (:death, :disch)
+
+    c_vec = Compete(Tuple([:death, :recover]),
+        (Gamma(2.0, 3.0), Gamma(3.0, 2.0)))
+    @test component_names(c_vec) == (:death, :recover)
+
+    # The Shared tag and Pool group/noncentred accessors round-trip through
+    # the type parameter the same way, including a runtime (non-literal)
+    # Symbol value.
+    tag = Symbol("inc_", 1)
+    tagged = shared(tag, Gamma(2.0, 1.0))
+    @test shared_tag(tagged) == tag
+    @test shared_tag(rewrap_leaf(tagged, Gamma(3.0, 1.0))) == tag
+
+    group = Symbol("district_", 1)
+    spec = pool(group)
+    @test pool_group(spec) == group
+    @test pool_noncentred(spec)
 end
 
 @testitem "Shared / tie: one free parameter across branches" begin

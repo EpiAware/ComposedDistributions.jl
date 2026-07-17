@@ -13,7 +13,8 @@ using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                              shared_tag, leaf_param_names, _collect_shared,
                              uncertain_specs, free_leaf, Pool, _pool_specs,
                              _collect_pools!, _population_template,
-                             _validate_pool_groups, _validate_tree_names
+                             pool_noncentred, _validate_pool_groups,
+                             _validate_tree_names
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
 using Distributions: params
@@ -98,10 +99,11 @@ function _node_params(d::Union{Sequential, Parallel}, lookup, prefix, path)
 end
 
 function _node_params(c::Resolve, lookup, prefix, path)
-    delays = map(zip(c.names, c.delays)) do (name, delay)
+    names = component_names(c)
+    delays = map(zip(names, c.delays)) do (name, delay)
         _node_params(delay, lookup, prefix, (path..., name))
     end
-    base = NamedTuple{c.names}(Tuple(delays))
+    base = NamedTuple{names}(Tuple(delays))
     bp = _branch_prob_readback(c, lookup, prefix, path)
     bp === nothing ? base : merge(base, (; branch_probs = bp))
 end
@@ -115,14 +117,15 @@ end
 # per-outcome values only if a chain carries them (a legacy estimate-everything
 # fit) and otherwise omit, keeping the template's fixed values.
 function _branch_prob_readback(c::Resolve, lookup, prefix, path)
+    cnames = component_names(c)
     if c.branch_prob_prior === nothing
-        bp = map(c.names) do name
+        bp = map(cnames) do name
             _read_value(lookup, _dotted(prefix, (path..., :branch_probs, name)))
         end
         any(x -> x === nothing, bp) && return nothing
-        return NamedTuple{c.names}(Tuple(bp))
+        return NamedTuple{cnames}(Tuple(bp))
     end
-    names = ComposedDistributions._stick_param_names(length(c.names))
+    names = ComposedDistributions._stick_param_names(length(cnames))
     v = map(names) do s
         _read_value(lookup, _dotted(prefix, (path..., :branch_probs, s)))
     end
@@ -136,10 +139,11 @@ end
 # A racing-hazard node has only its outcome-delay params in the chain (no
 # branch_probs block, since the winning probability is derived).
 function _node_params(c::Compete, lookup, prefix, path)
-    delays = map(zip(c.names, c.delays)) do (name, delay)
+    names = component_names(c)
+    delays = map(zip(names, c.delays)) do (name, delay)
         _node_params(delay, lookup, prefix, (path..., name))
     end
-    return NamedTuple{c.names}(Tuple(delays))
+    return NamedTuple{names}(Tuple(delays))
 end
 
 # A `Choose` walks its alternatives by name (mirroring the core
@@ -149,10 +153,11 @@ end
 # under its tag (see the leaf method below), so a tie across alternatives maps
 # to the one chain entry.
 function _node_params(d::Choose, lookup, prefix, path)
-    vals = map(zip(d.names, d.alternatives)) do (name, alt)
+    names = component_names(d)
+    vals = map(zip(names, d.alternatives)) do (name, alt)
         _node_params(alt, lookup, prefix, (path..., name))
     end
-    return NamedTuple{d.names}(Tuple(vals))
+    return NamedTuple{names}(Tuple(vals))
 end
 
 # Leaf: read each free parameter (in `_leaf_param_names` order) from `lookup`.
@@ -213,7 +218,7 @@ end
 # must be present (a pooled parameter is always estimated), so a miss errors
 # rather than silently falling back to the template.
 function _pool_param_value(spec::Pool, lookup, prefix, keypath, pname)
-    if spec.noncentred
+    if pool_noncentred(spec)
         key = _dotted(prefix, (keypath..., pname, :z))
         v = _read_value(lookup, key)
         v === nothing && throw(ArgumentError(

@@ -23,25 +23,22 @@ sum of the step values.
 # Fields
 - `components`: tuple of the step distributions (each univariate or a nested
   composer).
-- `names`: tuple of the step names (`Symbol`s), one per component; the `compose`
-  front-ends thread the user's names through, positional construction assigns
+- the step names (`Symbol`s), one per component, live in the `names` type
+  parameter (read with [`component_names`](@ref)); the `compose` front-ends
+  thread the user's names through, positional construction assigns
   `:step_1, :step_2, ...`.
 
 # See also
 - [`Parallel`](@ref): independent branches
 - [`Resolve`](@ref): exactly one of several outcomes
 "
-struct Sequential{C <: Tuple, N <: Tuple} <:
+struct Sequential{names, C <: Tuple} <:
        AbstractMultiChild{Continuous}
     "Tuple of the step distributions ``D_1, \\dots, D_k`` (each univariate or a
     nested composer)."
     components::C
-    "Tuple of the step names (`Symbol`s), one per component. The `compose`
-    NamedTuple front-end uses the user's keys; positional construction assigns
-    `:step_1, :step_2, ...`."
-    names::N
 
-    function Sequential(components::C, names::N) where {C <: Tuple, N <: Tuple}
+    function Sequential{names}(components::C) where {names, C <: Tuple}
         length(components) >= 1 ||
             throw(ArgumentError("Sequential needs at least one component"))
         all(_is_composable, components) ||
@@ -55,8 +52,16 @@ struct Sequential{C <: Tuple, N <: Tuple} <:
             throw(ArgumentError("every Sequential name must be a Symbol"))
         allunique(names) ||
             throw(ArgumentError("Sequential step names must be unique"))
-        new{C, N}(components, names)
+        new{names, C}(components)
     end
+end
+
+# The names live in the `names` type parameter (like `NamedTuple{names}`); this
+# instantiates it directly from the runtime tuple `compose`/`sequential` pass,
+# with no call-site change from the field-based constructor.
+function Sequential(components::C, names::NTuple{N, Symbol}) where {
+        C <: Tuple, N}
+    return Sequential{names}(components)
 end
 
 # Positional construction assigns default `:step_i` names.
@@ -159,7 +164,7 @@ _nt_pairs(nt::NamedTuple) = map(=>, keys(nt), values(nt))
 # Total number of leaf values in a realisation (sum over nested children).
 Base.length(d::Sequential) = _nleaves(d.components)
 
-function Base.eltype(::Type{<:Sequential{C}}) where {C <: Tuple}
+function Base.eltype(::Type{<:Sequential{names, C}}) where {names, C <: Tuple}
     return mapreduce(eltype, promote_type, fieldtypes(C))
 end
 
@@ -186,7 +191,7 @@ ComposedDistributions.component_names(tree)
 - [`event_names`](@ref): the public EDGE-name accessor
 - `_flat_event_names`: the flat EVENT names
 "
-component_names(d::Sequential) = d.names
+component_names(::Sequential{names}) where {names} = names
 
 @doc "
 

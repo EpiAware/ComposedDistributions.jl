@@ -61,26 +61,62 @@ population is scored centred (each member's parameter directly against the
 population).
 
 # Fields
-- `group`: the pooling-group name (`Symbol`); leaves naming the same group are
-  one population.
+- the pooling-group name (`Symbol`) lives in the `group` type parameter (read
+  with [`pool_group`](@ref)); leaves naming the same group are one population.
 - `population`: the population distribution (its free parameters are the
   hyperparameters).
-- `noncentred`: whether the non-centred (location-scale) parameterisation is
-  used (only for a `Normal`/`LogNormal` population).
+- whether the non-centred (location-scale) parameterisation is used (only for
+  a `Normal`/`LogNormal` population) lives in the `noncentred` type parameter
+  (read with [`pool_noncentred`](@ref)).
 
 # See also
 - [`pool`](@ref): the public constructor.
 - [`shared`](@ref)/[`tie`](@ref): complete pooling (the tied extreme).
 - [`uncertain`](@ref): builds a population with hyperparameter priors.
 "
-struct Pool{P <: UnivariateDistribution}
-    "The pooling-group name (`Symbol`)."
-    group::Symbol
+struct Pool{group, noncentred, P <: UnivariateDistribution}
     "The population distribution; its free parameters are the hyperparameters."
     population::P
-    "Whether the non-centred (location-scale) parameterisation is used."
-    noncentred::Bool
 end
+
+# `group`/`noncentred` live in type parameters (like `NamedTuple{names}`); this
+# instantiates them directly from the runtime `pool(...)` call, with no
+# call-site change from the field-based constructor.
+function Pool{group, noncentred}(population::P) where {
+        group, noncentred, P <: UnivariateDistribution}
+    return Pool{group, noncentred, P}(population)
+end
+
+@doc "
+The pooling-group name (`Symbol`) of a [`Pool`](@ref) spec.
+
+# Examples
+```@example
+using ComposedDistributions
+
+spec = pool(:district)
+ComposedDistributions.pool_group(spec)
+```
+
+See also: [`pool_noncentred`](@ref), [`pool`](@ref)
+"
+pool_group(::Pool{group}) where {group} = group
+
+@doc "
+Whether a [`Pool`](@ref) spec uses the non-centred (location-scale)
+parameterisation.
+
+# Examples
+```@example
+using ComposedDistributions
+
+spec = pool(:district)
+ComposedDistributions.pool_noncentred(spec)
+```
+
+See also: [`pool_group`](@ref), [`pool`](@ref)
+"
+pool_noncentred(::Pool{group, noncentred}) where {group, noncentred} = noncentred
 
 # The default population: a `LogNormal` whose location `mu` and scale `sigma`
 # are both estimated (weakly-informative priors), reparameterised non-centred.
@@ -165,7 +201,7 @@ function pool(group::Symbol,
         "non-centred pooling is only available for a location-scale population " *
         "(Normal or LogNormal); a $(nameof(_population_family(population))) " *
         "population must use the centred parameterisation (noncentred = false)"))
-    return Pool{typeof(population)}(group, population, nc)
+    return Pool{group, nc}(population)
 end
 
 # The population's template (an `uncertain` population's concrete template, or
@@ -228,7 +264,8 @@ struct CentredPoolPrior{P <: Pool}
 end
 
 function Base.show(io::IO, p::CentredPoolPrior)
-    print(io, "centred-pool(", repr(p.pool.group), ", ", p.pool.population, ")")
+    print(io, "centred-pool(", repr(pool_group(p.pool)), ", ",
+        p.pool.population, ")")
     return nothing
 end
 
@@ -251,12 +288,12 @@ end
 # marker (centred). All ordinary scalar rows.
 function _pool_rows!(edges, params_col, values, supports, priors, seen,
         p::Pool, leaf_edge, pname, v, s)
-    gkey = _pool_seen_key(p.group)
+    gkey = _pool_seen_key(pool_group(p))
     if !(gkey in seen)
         push!(seen, gkey)
         _pool_hyper_rows!(edges, params_col, values, supports, priors, p)
     end
-    if p.noncentred
+    if pool_noncentred(p)
         push!(edges, _join_path((_split_edge(leaf_edge)..., pname)))
         push!(params_col, :z)
         push!(values, 0.0)
@@ -286,7 +323,7 @@ function _pool_hyper_rows!(edges, params_col, values, supports, priors, p::Pool)
     sup = (minimum(inner), maximum(inner))
     for (pname, v) in zip(pnames, vals)
         haskey(specs, pname) || continue
-        push!(edges, p.group)
+        push!(edges, pool_group(p))
         push!(params_col, pname)
         push!(values, v)
         push!(supports, sup)
@@ -309,7 +346,7 @@ function _reconstruct_pooled_leaf(leaf, leaf_params, shared, pooled, pnames)
         p = pnames[i]
         if haskey(pooled, p)
             spec = pooled[p]
-            if spec.noncentred
+            if pool_noncentred(spec)
                 hyper = _pool_hyper(shared, spec)
                 pop = _collapse_population(spec.population, hyper)
                 loc, scale = params(free_leaf(pop))
@@ -330,11 +367,12 @@ end
 # NamedTuple (the population stays at its template) is returned.
 function _pool_hyper(shared, p::Pool)
     _uncertain_specs(p.population) === nothing && return NamedTuple()
-    (shared isa NamedTuple && haskey(shared, p.group)) || throw(ArgumentError(
-        "update(...) is missing the pooled population $(repr(p.group)); a " *
-        "`pool($(repr(p.group)), ...)` leaf needs a top-level `$(p.group)` " *
+    group = pool_group(p)
+    (shared isa NamedTuple && haskey(shared, group)) || throw(ArgumentError(
+        "update(...) is missing the pooled population $(repr(group)); a " *
+        "`pool($(repr(group)), ...)` leaf needs a top-level `$(group)` " *
         "entry with the population hyperparameters"))
-    return shared[p.group]
+    return shared[group]
 end
 
 # The member's non-centred latent, read from its `(param = (z = ...,),)` slot.
@@ -408,21 +446,22 @@ function _collect_pools!(acc::Dict, leaf)
     specs === nothing && return nothing
     for (k, v) in pairs(specs)
         v isa Pool || continue
-        if haskey(acc, v.group)
-            _assert_pool_compatible(acc[v.group], v)
+        group = pool_group(v)
+        if haskey(acc, group)
+            _assert_pool_compatible(acc[group], v)
         else
-            acc[v.group] = v
+            acc[group] = v
         end
     end
     return nothing
 end
 
 function _assert_pool_compatible(a::Pool, b::Pool)
-    (a.population == b.population && a.noncentred == b.noncentred) ||
+    (a.population == b.population && pool_noncentred(a) == pool_noncentred(b)) ||
         throw(ArgumentError(
-            "pool($(repr(a.group))) is declared inconsistently across leaves: " *
-            "every member of a pooled group must share the same population " *
-            "distribution and parameterisation (one population)"))
+            "pool($(repr(pool_group(a)))) is declared inconsistently across " *
+            "leaves: every member of a pooled group must share the same " *
+            "population distribution and parameterisation (one population)"))
     return nothing
 end
 
@@ -496,14 +535,15 @@ Print a [`Pool`](@ref) spec as its constructor form.
 See also: [`pool`](@ref)
 "
 function Base.show(io::IO, p::Pool)
-    print(io, "pool(", repr(p.group), ", ", p.population, ")")
+    print(io, "pool(", repr(pool_group(p)), ", ", p.population, ")")
     return nothing
 end
 
 function Base.:(==)(a::Pool, b::Pool)
-    return a.group == b.group && a.population == b.population &&
-           a.noncentred == b.noncentred
+    return pool_group(a) == pool_group(b) && a.population == b.population &&
+           pool_noncentred(a) == pool_noncentred(b)
 end
 function Base.hash(p::Pool, h::UInt)
-    return hash(p.group, hash(p.population, hash(p.noncentred, hash(:Pool, h))))
+    return hash(pool_group(p), hash(p.population,
+        hash(pool_noncentred(p), hash(:Pool, h))))
 end
