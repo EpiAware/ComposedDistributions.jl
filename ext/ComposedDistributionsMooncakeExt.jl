@@ -25,6 +25,29 @@ reachable branch whether it is taken or not. `_split_edge`'s result never
 carries a tangent (`Symbol` inputs and outputs), and the message helpers
 always throw (a constant `Union{}` result), so a zero-derivative primitive
 is sound for each.
+
+Also imports Mooncake primitives for `LogExpFunctions.xlogy`/`xlog1py` on
+`Base.IEEEFloat` arguments, fixing issue #99. Mooncake has no rule for
+either function, so it derives one from the primal implementation
+
+    xlogy(x, y) = iszero(x) && !isnan(y) ? zero(x * log(y)) : x * log(y)
+
+whose `iszero(x)` branch returns a constant, giving `∂/∂x = 0` at `x == 0`
+instead of the correct `log(y)`. This surfaces through
+`Distributions.gammalogpdf`, which computes `xlogy(shape - 1, x / scale)`,
+so any Gamma log-density differentiated at `shape == 1` gets a wrong
+shape-gradient under Mooncake reverse — including the shared-hyperparameter
+pooled reconstruction this package's non-centred `pool` builds (a
+population-level draw can land a stratum's reconstructed shape on exactly
+`1.0`). `LogExpFunctionsChainRulesCoreExt` already ships correct
+`ChainRulesCore.rrule`s for both functions, so `@from_rrule` imports them
+directly rather than re-deriving the maths.
+
+This is intentional, narrowly-scoped type piracy on functions this package
+does not own, matching the workflow Mooncake's own `@from_rrule`/
+`@from_chainrules` documentation endorses for closing such gaps from a
+downstream package. It should be removed once Mooncake ships its own rule
+(reported upstream, see #99).
 """
 module ComposedDistributionsMooncakeExt
 
@@ -33,6 +56,7 @@ using ComposedDistributions: _ctor_has_check_args, _split_edge,
                              _throw_logdensity_dimmismatch,
                              _throw_as_named_dimmismatch,
                              _throw_logpdf_dimmismatch
+using LogExpFunctions: xlogy, xlog1py
 using Mooncake: Mooncake
 
 Mooncake.@zero_adjoint Mooncake.DefaultCtx Tuple{
@@ -48,5 +72,10 @@ Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_as_named_dimmismatch), Any, Any}
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_logpdf_dimmismatch), Any, Any, Any}
+
+Mooncake.@from_rrule Mooncake.DefaultCtx Tuple{
+    typeof(xlogy), Base.IEEEFloat, Base.IEEEFloat}
+Mooncake.@from_rrule Mooncake.DefaultCtx Tuple{
+    typeof(xlog1py), Base.IEEEFloat, Base.IEEEFloat}
 
 end # module

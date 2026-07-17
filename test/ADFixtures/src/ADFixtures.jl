@@ -68,11 +68,16 @@ broken_scenario_names() = String[]
 
 # The partial-pooling reconstruction differentiates `logpdf(Gamma(shape), x)`
 # w.r.t. a shape that is `exp(mu + tau*z)` with `mu`, `tau` SHARED across the
-# strata. ForwardDiff, ReverseDiff and Enzyme all agree (the reconstruction is
-# AD-correct — the main suite also checks ForwardDiff vs finite differences),
-# but Mooncake returns a wrong gradient for this pattern (the shared
-# hyperparameters' reverse contributions through the Gamma `loggamma`/`digamma`
-# path are mis-accumulated). Marked broken on Mooncake pending an upstream fix.
+# strata. This used to be marked broken on Mooncake: at this fixture's eval
+# point the second stratum's shape lands exactly on `1.0`, which routes a
+# nonzero cotangent into `LogExpFunctions.xlogy`'s `iszero(x)` branch inside
+# `Distributions.gammalogpdf`, and Mooncake had no rule for the two-argument
+# `xlogy`/`xlog1py` (it derives one from the primal branch, giving `0` instead
+# of `log(y)` at `x == 0`; see #99 and upstream
+# https://github.com/chalk-lab/Mooncake.jl/issues/1241).
+# `ComposedDistributionsMooncakeExt` now imports the ChainRulesCore rules for
+# `xlogy`/`xlog1py` (already shipped by `LogExpFunctionsChainRulesCoreExt`) as
+# Mooncake primitives, so this scenario is no longer broken on Mooncake.
 #
 # The `:latent` "Uncertain-leaf logdensity codec" scenario differentiates the
 # full `as_logdensity`/`logdensity` path, whose `unflatten` rebuilds a nested
@@ -87,10 +92,8 @@ broken_scenario_names() = String[]
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
     return Dict(
-        "Mooncake reverse" =>
-            Set(["Pool non-centred reconstruction logpdf"]),
         "Enzyme reverse" =>
-            Set(["Uncertain-leaf logdensity codec"]))
+        Set(["Uncertain-leaf logdensity codec"]))
 end
 
 "Per-backend scenario names too unstable to run at all."
@@ -199,7 +202,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # the reconstruction (the AD-critical path for node-level uncertainty, #89)
     # as well as the two delays' shapes.
     _push!("Resolve stick-breaking branch-prob logpdf",
-        (θ, obs) -> begin
+        (θ,
+            obs) -> begin
             p = ComposedDistributions._stick_to_simplex((θ[3],))
             sum(
                 x -> logpdf(
@@ -217,7 +221,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # reverse pass must accumulate each hyperparameter from both — into each
     # stratum's Gamma `logpdf`.
     _push!("Pool non-centred reconstruction logpdf",
-        (θ, obs) -> begin
+        (θ,
+            obs) -> begin
             s1 = exp(θ[1] + θ[2] * θ[3])
             s2 = exp(θ[1] + θ[2] * θ[4])
             sum(
