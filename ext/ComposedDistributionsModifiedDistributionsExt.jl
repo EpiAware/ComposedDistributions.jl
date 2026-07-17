@@ -27,6 +27,7 @@ import ComposedDistributions: free_leaf, rewrap_leaf, shared_tag,
                               uncertain_specs, extra_leaf_params,
                               set_extra_leaf_params, leaf_mean, leaf_var,
                               instantiate, has_varying
+import ComposedDistributions: _leaf_free_type, _extra_names_of
 using ComposedDistributions: Shared, AbstractContext
 using Distributions: mean, var
 import ModifiedDistributions: get_dist
@@ -157,6 +158,31 @@ function set_extra_leaf_params(d::Transformed, vals::NamedTuple)
     op = get_op(d)
     return op isa ThinOp ? Transformed(get_dist(d), ThinOp(vals.thin)) :
            Transformed(set_extra_leaf_params(get_dist(d), vals), op)
+end
+
+# --- generated-codec type-level companions (#178 PR 2) ----------------------
+#
+# `_leaf_free_type`/`_extra_names_of` are the TYPE-level counterparts of
+# `free_leaf`/`extra_leaf_params` the generated codec (`codec_gen.jl`) walks
+# at compile time (it has only `typeof(d)`, no instance). Each modifier's
+# free-delay type `D` is its own first type parameter (`Affine{D,...}`,
+# `Weighted{D,...}`, `Transformed{D,Op,...}`, `Modified{D,...}`), so peeling
+# is a direct structural match, mirroring the instance-based methods above.
+# `Transformed{D, ThinOp}` is the one wrapper reporting a non-empty extra (the
+# `:thin` reporting probability, see `extra_leaf_params(d::Transformed)`
+# above); every other modifier forwards to its inner delay's extras, which is
+# always empty for the modifiers defined in this package.
+
+_leaf_free_type(::Type{<:Affine{D}}) where {D} = _leaf_free_type(D)
+_leaf_free_type(::Type{<:Weighted{D}}) where {D} = _leaf_free_type(D)
+_leaf_free_type(::Type{<:Transformed{D}}) where {D} = _leaf_free_type(D)
+_leaf_free_type(::Type{<:Modified{D}}) where {D} = _leaf_free_type(D)
+
+_extra_names_of(::Type{<:Affine{D}}) where {D} = _extra_names_of(D)
+_extra_names_of(::Type{<:Weighted{D}}) where {D} = _extra_names_of(D)
+_extra_names_of(::Type{<:Modified{D}}) where {D} = _extra_names_of(D)
+function _extra_names_of(::Type{<:Transformed{D, Op}}) where {D, Op}
+    return Op <: ThinOp ? (:thin,) : _extra_names_of(D)
 end
 
 # --- get_dist: the composed `Shared` tag is transparent to the unwrap protocol

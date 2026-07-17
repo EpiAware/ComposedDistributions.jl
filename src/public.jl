@@ -54,11 +54,12 @@ public TestUtils
 public Product
 
 # The LogDensityProblems core codec: the flat-vector <-> nested-NamedTuple
-# bijection (`flat_dimension`/`flatten`/`unflatten`) and the assembled
+# bijection (`flat_dimension`/`flatten`/`unflatten`), the fused flat-vector ->
+# rebuilt-distribution primary (`reconstruct`, #178 PR 2), and the assembled
 # PPL-neutral log-density (`ComposedLogDensity`/`as_logdensity`/`logdensity`).
 # A weakdep `LogDensityProblems` extension wraps `ComposedLogDensity` as a
 # standard problem; this core stays Turing/LogDensityProblems-free.
-public flat_dimension, flatten, unflatten
+public flat_dimension, flatten, unflatten, reconstruct
 public ComposedLogDensity, as_logdensity, logdensity
 
 # The prior-driven unconstrained -> constrained transform (public but not
