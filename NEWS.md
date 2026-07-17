@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **docs:** the AD-backends tutorial is back in the docs build (#147),
+  reporting which of the four AD backends we test (ForwardDiff, ReverseDiff,
+  Enzyme reverse, Mooncake reverse) differentiate the package's scenario set
+  and at what cost. It was dropped in #143 because its plotting stack
+  (AlgebraOfGraphics/CairoMakie/DataFramesMeta) pinned a `DimensionalData`
+  bound that would not co-resolve with the rest of the docs environment;
+  that bound has since dropped out of the dependency graph upstream. Enzyme
+  reverse's one broken scenario (the uncertain-leaf `logdensity` codec,
+  #162) is reported honestly through the page's registry-driven support
+  table rather than hidden.
+
 - **refactor!:** the composer/wrapper structs carry their layout-affecting
   names and tags in TYPE parameters rather than runtime fields, lifting
   `Sequential`/`Parallel`/`Choose`/`Resolve`/`Compete`'s outcome/step/branch

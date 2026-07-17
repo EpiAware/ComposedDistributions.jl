@@ -86,9 +86,10 @@ broken_scenario_names() = String[]
 # — its cache-store type reasoning hits `Taking the type of an opaque pointer is
 # illegal` (an Enzyme/LLVM internal limitation with type-unstable heap-building,
 # the same family as the map-vs-generator `IllegalTypeAnalysisException`, finding
-# C8) — so it is marked broken on Enzyme reverse. The gradient itself is correct:
-# ForwardDiff, ReverseDiff and Mooncake reverse all agree on this scenario, and
-# the sibling centred-pool codec scenario differentiates on Enzyme fine.
+# C8) — so it is marked broken on Enzyme reverse (see #162 for the bisection
+# and fix path). The gradient itself is correct: ForwardDiff, ReverseDiff and
+# Mooncake reverse all agree on this scenario, and the sibling centred-pool
+# codec scenario differentiates on Enzyme fine.
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
     return Dict(
