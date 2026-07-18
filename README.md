@@ -26,7 +26,8 @@ A verb grammar for n-ary composition over any `Distributions.jl` distribution.
   tree with `update`, `prune`, and `splice`.
 - Attach parameter uncertainty with `uncertain` (parameters that are themselves
   distributions, nestable): `rand` draws the marginal, and `update(tree,
-  params)` collapses an uncertain leaf to its concrete template.
+  params)` collapses an uncertain leaf to its concrete template. Promote a
+  whole tree to estimate its free parameters at once with `param_priors`.
 - Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
   convolved total via `observed_distribution`), so its convolution and
   quadrature surface is reachable through this package alone.
@@ -51,7 +52,8 @@ mean(node)
 
 ## Relationship to Distributions.jl
 
-ComposedDistributions builds on Distributions.jl rather than replacing it. Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object is itself a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged.
+ComposedDistributions builds on Distributions.jl rather than replacing it.
+Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object is itself a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged.
 
 | Aspect | Distributions.jl | ComposedDistributions |
 |--------|------------------|-----------------------|

@@ -3,9 +3,8 @@
 # ## Introduction
 #
 # ComposedDistributions.jl composes per-event delay distributions into one
-# object that describes a whole record.
-# The same object scores observed records and simulates new ones, so a model is
-# built once and used in both directions.
+# object that describes a whole record: named events linked by delays, wired
+# into a tree.
 #
 # ### What we do here
 #
@@ -26,32 +25,11 @@
 #
 # ### The operator map
 #
-# Every operator here falls into one of three families.
-# Structural composers wire branches into a tree, combinators add or difference
-# whole delays, and the introspection verbs read or edit an assembled object.
-#
-# ```text
-# Structural composition (wire branches into a tree)
-# ├─ compose      lower a NamedTuple / table / matrix to the stack
-# ├─ sequential   conjunctive chain (steps add up)
-# ├─ parallel     independent branches off one shared origin
-# ├─ resolve      one outcome occurs by fixed probability
-# ├─ compete      racing hazards, first to fire wins
-# ├─ choose       a data field picks the branch
-# ├─ tie          tie leaves at paths into one parameter group
-# └─ shared       tag a leaf as a tied parameter group at build time
-#
-# Combination (add or difference whole delays)
-# ├─ convolved   the sum X + Y (Convolved)
-# └─ difference               the dual X - Y (Difference)
-#
-# Reading and editing (inspect or edit an assembled object)
-# ├─ mean / var                     the composed marginal moments
-# ├─ observed_distribution          collapse a chain to its convolved total
-# ├─ params_table                   the flat free-parameter inventory
-# ├─ event / event_names            fetch a child / the per-record key names
-# └─ update / prune / splice / tie  edit values, topology or ties
-# ```
+# Every operator here falls into one of three families: structural composers
+# wire branches into a tree, combinators add or difference whole delays, and
+# the introspection verbs read or edit an assembled object.
+# See the [Concepts](@ref concepts) verb map for the full list, grouped the
+# same way.
 
 # ## Packages used
 #
@@ -168,17 +146,8 @@ event_names(resolution)
 
 racing = compete(:death => Gamma(1.5, 1.0), :discharge => Gamma(2.0, 1.5));
 
-# The marginal any-event time is the `min` of the racing delays, so its survival
-# is the product of the per-cause survivals.
-
-(racing_ccdf = ccdf(racing, 3.0),
-    product_ccdf = ccdf(Gamma(1.5, 1.0), 3.0) * ccdf(Gamma(2.0, 1.5), 3.0))
-
-# Reach for `compete` when the outcome split is driven by competing risks on a
-# shared clock, so the probabilities follow from the delays rather than being
-# set; reach for `resolve` when the split is a fixed probability independent of
-# timing; reach for `choose` (below) when a data field selects which sub-model a
-# record follows.
+# [Competing outcomes](@ref competing-outcomes) works through `resolve` versus
+# `compete` in full, including when to reach for each.
 
 # [`Choose`](@ref) is a data-selected disjunction: the alternatives are
 # independent sub-models with different origins, and a data field picks which one

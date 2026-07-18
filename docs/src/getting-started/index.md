@@ -6,14 +6,6 @@ The home page is generated from the README, so it stays short; put the
 walkthrough a new user needs here and grow it into tutorials as the package
 develops.
 
-!!! note "These docs are generated"
-    This site's layout, navigation, and infrastructure are produced by
-    [EpiAwarePackageTools](https://github.com/EpiAware/EpiAwarePackageTools.jl).
-    Editing the generated pages by hand is not needed; write your content in
-    the package-owned source pages and let the scaffold render the rest. See
-    the [EpiAwarePackageTools documentation](https://github.com/EpiAware/EpiAwarePackageTools.jl)
-    for how the kit keeps this repository in sync.
-
 ## Installation
 
 ```julia
@@ -38,14 +30,8 @@ The building blocks are five composers.
 [`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.
 The [`compose`](@ref) front-end lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same stack.
 
-The package has four layers, each building on the one before.
-
-- **Leaves** are any Distributions.jl `UnivariateDistribution`, used directly as the per-event delays.
-- **Composers** wire named leaves into an event tree.
-- **Combination and lowering** join or collapse whole delays with [`convolved`](@ref), [`difference`](@ref) and [`observed_distribution`](@ref).
-- **Parameters and edits** read and reshape an assembled tree with [`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref) and [`splice`](@ref).
-
-The [Concepts](@ref concepts) page maps each modelling concept to the verb that builds it.
+The package has four layers, each building on the one before: leaves, composers, combination and lowering, and parameters and edits.
+See the [Concepts](@ref concepts) page for the four layers in full and the verb that builds each one.
 
 ## A first example
 
@@ -88,21 +74,17 @@ utree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
 (has_uncertain = has_uncertain(utree),)
 ```
 
-An [`uncertain`](@ref) leaf is one of two *deferred leaves*: a leaf that is not
-yet a concrete distribution but a map to one, resolved before scoring. It maps a
-**latent** parameter (a value a sampler draws, with the spec as its prior); its
-sibling [`Varying`](@ref) maps an **observed** covariate (time, stratum),
-resolved by [`instantiate`](@ref) against a [`Context`](@ref). Both delegate
-silently to a fallback until resolved, and each has a guard —
-`has_uncertain` / `has_varying` — for a fitting loop to check. See
-[the varying-distributions reference](@ref varying-distributions) for the
-observed case.
+An [`uncertain`](@ref) leaf is one of two *deferred leaves*, resolved to a
+concrete distribution later rather than fixed at build time; `has_uncertain`
+guards a fitting loop against a forgotten one.
+See [Concepts](@ref concepts) for how it relates to its sibling
+[`Varying`](@ref).
 
 ## Key features
 
 - **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.
 - **One structure, many front-ends.** [`compose`](@ref) lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same composer stack.
-- **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree.
+- **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, [`param_priors`](@ref) promotes a whole tree to estimate at once, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree. See [Fitting a composed distribution](@ref inference) for the full estimation pipeline.
 - **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolved`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
 - **Automatic differentiation.** Scoring is differentiable through ForwardDiff, ReverseDiff, Mooncake and Enzyme, so a composed distribution drops into a probabilistic-programming fit.
 
