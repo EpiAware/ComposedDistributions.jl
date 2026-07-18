@@ -1041,7 +1041,32 @@ result = update(tree, [3.0])
 event(result, :onset_admit)
 ```
 
+# `update(d, table)` — bulk-set from a Tables.jl table
+
+`update(d, table)` reads a [`params_table`](@ref)-shaped Tables.jl table (any
+`Tables.istable` source with `edge`/`param` columns) and folds every row into
+the tree in one call: a row's `prior` (when present and not `nothing`)
+promotes that parameter to [`uncertain`](@ref), otherwise its `value` sets it
+— the spreadsheet-style bulk-edit route, an input FORMAT for `update` rather
+than a separate verb.
+
+## Arguments
+- `d`: the composed distribution to update.
+- `table`: a Tables.jl table with `edge`/`param` columns and a `value` and/or
+  `prior` column.
+
+## Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+update(tree, params_table(tree))   # a no-op round-trip here
+```
+
 # See also
+- [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point built on
+  the same merge-mode pipeline as this docstring's distribution-valued forms
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
 - [`param_priors`](@ref): default priors for the promote path
 - [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
@@ -1060,8 +1085,59 @@ function update(leaf, params::NamedTuple)
 end
 
 function update(d::AbstractComposedDistribution,
-        x::AbstractVector)
+        x::AbstractVector{<:Real})
     return update(d, unflatten(d, x))
+end
+
+@doc "
+
+Bulk-`update` a composed distribution from a Tables.jl table.
+
+`update(d, table)` reads a [`params_table`](@ref)-shaped Tables.jl table (any
+`Tables.istable` source with `edge`/`param` columns, e.g. `params_table(d)`
+itself, a `DataFrame`, or a hand-built `Vector{<:NamedTuple}`) and folds it
+into the same nested-`NamedTuple` [`update`](@ref) pipeline used everywhere
+else: a row's `prior` entry (when the table carries one and it is not
+`nothing`) promotes that parameter to [`uncertain`](@ref); otherwise its
+`value` entry sets it, so a plain four-column table (no `prior` column) is a
+purely concrete bulk write — the spreadsheet-style workflow `params_table`
+was built to round-trip. This is `update`'s TABLE input format, not a
+separate verb: the result is identical to building the nested `NamedTuple` by
+hand and calling `update(d, nt)`.
+
+A `Vector{<:NamedTuple}` is `Tables.istable` (a Tables.jl row table) under
+BOTH this package's `edge`/`param` convention and
+`DistributionsInference`'s dotted-`name` row convention
+(`parameter_rows`/DI#20) — the two are not interchangeable. This method
+requires `edge` and `param` columns and errors naming the columns it found
+otherwise, so a `DistributionsInference`-shaped row vector is refused loudly
+rather than silently misread.
+
+# Arguments
+- `d`: the composed distribution to edit.
+- `table`: a Tables.jl table with `edge`/`param` columns and a `value` and/or
+  `prior` column (as in [`params_table`](@ref)).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+tbl = params_table(tree)
+# A bulk concrete write: every `value` re-applied (a no-op read/write
+# round-trip here, but the same call works after editing `tbl.value` in
+# place or in a DataFrame).
+update(tree, tbl)
+```
+
+# See also
+- [`params_table`](@ref): the table shape this reads.
+- [`update`](@ref)`(d, params::NamedTuple)`: the underlying pipeline.
+- [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point.
+"
+function update(d::AbstractComposedDistribution, table)
+    return update(d, _table_to_nested_updates(table))
 end
 
 # Whether an `update` NamedTuple carries any distribution-valued parameter,
@@ -1332,6 +1408,53 @@ function _freeze_tree(d::Dict{Symbol})
     return NamedTuple{ks}(map(k -> _freeze_tree(d[k]), ks))
 end
 
+# --- update(d, table): a Tables.jl table folded to a nested update NamedTuple
+
+# `update(d, table)`'s reader: a `params_table`-shaped Tables.jl table ->
+# the nested NamedTuple `update`/`_update` consume. Reuses the exact
+# `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `build_priors` uses,
+# so the table -> tree shape is identical; only the per-row VALUE picked
+# differs (a row's own `prior`/`value`, no override/default machinery — this
+# is a plain bulk write, not prior assembly). Requires `Tables.istable` and
+# `edge`/`param` columns, erroring by NAME on either miss so a
+# differently-shaped row table (e.g. DistributionsInference's dotted-`name`
+# `parameter_rows` convention, DI#20) is refused loudly rather than silently
+# misread — both shapes are `Tables.istable`, so this check is the only thing
+# that tells them apart.
+function _table_to_nested_updates(table)
+    Tables.istable(table) || throw(ArgumentError(
+        "update(d, table) needs a Tables.jl table (params_table-shaped: " *
+        "edge/param columns, plus value and/or prior); got $(typeof(table)). " *
+        "Pass a NamedTuple for a single targeted edit, or an " *
+        "AbstractVector{<:Real} for a flat parameter vector."))
+    cols = Tables.columns(table)
+    colnames = Tables.columnnames(cols)
+    (:edge in colnames && :param in colnames) || throw(ArgumentError(
+        "update(d, table) needs `edge` and `param` columns (as produced by " *
+        "params_table); got columns $(collect(colnames))"))
+    edges = Tables.getcolumn(cols, :edge)
+    params_col = Tables.getcolumn(cols, :param)
+    has_value = :value in colnames
+    has_prior = :prior in colnames
+    values_col = has_value ? Tables.getcolumn(cols, :value) : nothing
+    prior_col = has_prior ? Tables.getcolumn(cols, :prior) : nothing
+    tree = Dict{Symbol, Any}()
+    for i in eachindex(edges)
+        entry = if has_prior && prior_col[i] !== nothing
+            prior_col[i]
+        elseif has_value
+            values_col[i]
+        else
+            throw(ArgumentError(
+                "update(d, table) row $(i) (edge=$(edges[i]), " *
+                "param=$(params_col[i])) has neither a usable `prior` nor a " *
+                "`value` entry"))
+        end
+        _nest_insert!(tree, _split_edge(edges[i]), params_col[i], entry)
+    end
+    return _freeze_tree(tree)
+end
+
 # --- parameter-derived default priors (brms-style family defaults) ----------
 #
 # The default prior is classified from the parameter's own natural domain, not
@@ -1393,6 +1516,17 @@ using ComposedDistributions, Distributions
 default_prior((; edge = :onset_admit, param = :scale,
     value = 1.0, support = (0.0, Inf)))
 ```
+
+!!! note \"DistributionsInference's `distribution_priors`\"
+    `DistributionsInference.distribution_priors` (CD#195/DI#20) applies the
+    SAME support-derived heuristic generically, over any fit-protocol
+    object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
+    `ComposedDistributions` tree. It is a separate implementation, not a
+    thin wrapper over this one: `DistributionsInference` depends on
+    `ComposedDistributions`, not the reverse, so this package's own
+    `default_prior`/[`build_priors`](@ref) cannot delegate to it without
+    inverting that dependency. The two stay independent, parallel
+    implementations of the same heuristic for their respective row shapes.
 
 # See also
 - [`build_priors`](@ref): assembles the nested prior NamedTuple, using this as

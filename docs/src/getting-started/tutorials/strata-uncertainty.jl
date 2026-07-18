@@ -149,12 +149,13 @@ logpdf(fitted, rand(Xoshiro(2), fitted))
 flat = ComposedDistributions.flat_dimension(resolved)
 (estimated_parameters = flat,)
 
-# [`update`](@ref) is the verb that moves the estimation boundary. A distribution
-# in a parameter slot makes just that parameter uncertain (a partial update);
-# `update(tree, param_priors(tree))` promotes every free parameter to uncertain
-# with support-derived default priors, the explicit estimate-everything path.
+# [`uncertain`](@ref) is the verb that moves the estimation boundary on an
+# EXISTING tree: `uncertain(tree, params)` promotes just the named parameters
+# (a targeted promotion, built on `update`'s merge mode); bare `uncertain(tree)`
+# promotes every free parameter with support-derived default priors, the
+# explicit estimate-everything path.
 
-promoted = update(resolved, param_priors(resolved))
+promoted = uncertain(resolved)
 (before = ComposedDistributions.flat_dimension(resolved),
     after = ComposedDistributions.flat_dimension(promoted))
 

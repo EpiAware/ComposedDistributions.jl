@@ -286,6 +286,99 @@ function uncertain(::Type{D}; kwargs...) where {D <: UnivariateDistribution}
     return uncertain(probe; kwargs...)
 end
 
+# --- uncertain(tree, ...): the promotion verb over an existing tree ---------
+#
+# The three constructor forms above build a NEW leaf; these three build a NEW
+# TREE with one or more of an EXISTING tree's free parameters promoted to
+# uncertain. They dispatch on `AbstractComposedDistribution` (not a
+# `Union{Sequential, Parallel, AbstractOneOf, Choose}` of the composer node
+# types): `AbstractOneOf` (`Resolve`/`Compete`) is itself a
+# `UnivariateDistribution` (the univariate arm of the composer hierarchy, see
+# `Resolve.jl`), so it is ALSO a candidate for the leaf-construction method
+# above; dispatching on the single abstract root gives Julia a clean subtype
+# chain (`AbstractComposedDistribution <: UnivariateDistribution` for that
+# arm) to resolve unambiguously in favour of promotion, where a bespoke Union
+# would not reliably out-specify `UnivariateDistribution`.
+#
+# The underlying mechanism is IDENTICAL to `update`'s existing merge mode
+# (`_update(d, params, params, true)`, the same dotted-path/`Shared`-tag
+# routing `_merge_leaf` already implements) — `uncertain` is the
+# intention-revealing spelling for the promotion case, not a new mechanism.
+# `update(tree, nt)` with a distribution value still works exactly as before
+# (unchanged, not deprecated): a caller building `nt` programmatically, not
+# knowing upfront whether an entry will be a prior or a plain number, keeps
+# using `update`'s auto-detection; a caller who KNOWS this call promotes
+# something reaches for `uncertain` instead, and gets a loud error if it
+# turns out to promote nothing.
+
+@doc raw"
+
+Promote one or more of an existing tree's free parameters to uncertain.
+
+`uncertain(tree, params)` / `uncertain(tree; kwargs...)` apply `params` (or
+the keywords, packed the same way) through the SAME dotted/nested targeting
+[`update`](@ref) uses — a `Shared` tag routes through its tag, a nested edge
+targets a descendant node — but restricted to calls that introduce or extend
+at least one prior. A distribution value promotes that parameter (replacing
+any spec already there — promoting an already-uncertain parameter REPLACES
+its spec; it does not nest a hyperprior); a `Real` value alongside it re-pins
+a SIBLING parameter in the same call without itself becoming uncertain. A
+call with no distribution anywhere is refused: use [`update`](@ref) for a
+purely concrete edit.
+
+`uncertain(tree)` (no `params`) promotes EVERY free parameter with its
+default, support-derived prior — one call in place of
+`update(tree, param_priors(tree))`.
+
+This is the PREFERRED way to write a promotion: `update(tree, nt)` still
+accepts the identical distribution-valued `nt` directly (unchanged), for a
+call site that assembles `nt` programmatically without knowing in advance
+whether it promotes anything.
+
+# Arguments
+- `tree`: the composed distribution to promote parameters of.
+- `params`: a nested `NamedTuple`, dotted/nested like [`update`](@ref)'s
+  `params`, with at least one distribution-valued entry.
+
+# Keyword Arguments
+- `kwargs...`: the same targeting, as keywords (`onset_admit = (shape = ...,)`).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+
+# Targeted promotion: only onset_admit.shape becomes uncertain.
+u = uncertain(tree; onset_admit = (shape = LogNormal(log(2.0), 0.2),))
+has_uncertain(u)
+
+# Promote every free parameter with a default prior.
+everything = uncertain(tree)
+has_uncertain(everything)
+```
+
+# See also
+- [`update`](@ref): the underlying mechanism (merge mode) this promotes
+  through; also the concrete-set / node-replacement / flat-vector / table /
+  chain verb.
+- [`Uncertain`](@ref): the leaf type a promoted parameter's spec builds.
+- [`param_priors`](@ref): the default priors `uncertain(tree)` (bare) applies.
+- [`has_uncertain`](@ref): check whether any promotion remains unresolved.
+"
+function uncertain(d::AbstractComposedDistribution, params::NamedTuple)
+    _has_distribution_value(params) || throw(ArgumentError(
+        "uncertain(tree, params) needs at least one distribution-valued " *
+        "parameter; use update(tree, params) to set concrete values"))
+    return _update(d, params, params, true)
+end
+
+function uncertain(d::AbstractComposedDistribution; kwargs...)
+    isempty(kwargs) && return uncertain(d, param_priors(d))
+    return uncertain(d, values(kwargs))
+end
+
 # --- the leaf-protocol hooks -------------------------------------------------
 #
 # The specs are priors ATTACHED to the template's free parameters, so the

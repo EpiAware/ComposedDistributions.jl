@@ -30,7 +30,7 @@ The one free parameter here is `onset_admit`'s shape.
 ComposedDistributions.logdensity(prob, [2.0])
 ```
 
-Promote a fixed tree to estimate its free parameters with default priors through `update(tree, param_priors(tree))`.
+Promote a fixed tree to estimate its free parameters with default priors through [`uncertain`](@ref)`(tree)` (equivalently `update(tree, param_priors(tree))`, the mechanism it is built on).
 
 ## Sampling without Turing
 

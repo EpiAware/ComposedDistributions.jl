@@ -78,6 +78,16 @@ chain = sample(fit(), Prior(), 100; chain_type = VNChain, progress = false)
 chain_to_params(template, chain)
 ```
 
+!!! note \"Migrating towards `DistributionsInference`\"
+    `DistributionsInference`'s PPL-neutral `readback`/`readback_draws`
+    (CD#195/DI#20) are the intended long-run replacement for this
+    `DynamicPPL`-specific, submodel-prefix-aware reader, once a
+    `ComposedDistributions` tree implements the `DistributionsInference` fit
+    protocol (tracked as #20/DI#5 — not yet done). Until then
+    `chain_to_params` stays the working route for a tree fitted through
+    `to_submodel`-based Turing models; it is not yet deprecated, since its
+    replacement cannot yet read a `ComposedDistributions` tree.
+
 # See also
 - [`param_draws`](@ref): the vectorised, every-draw form.
 - [`update`](@ref): the NamedTuple-keyed reconstruction this pairs with.
