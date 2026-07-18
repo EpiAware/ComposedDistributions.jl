@@ -48,15 +48,5 @@ Tables = "1"
 Test = "1"
 julia = "1.11, 1.12"
 
-# TEMPORARY: `convolved`/`convolve_series` only exist in ConvolvedDistributions
-# 0.2, and its AD-safe helpers now live in EpiAwareADTools (adopted here, #137);
-# neither is registered yet. They are direct dependencies, so in the test/docs
-# workspace their source pins must live here in the root (a workspace member's
-# `[sources]` is not honoured for a root-level dep). This reverts #107; drop both
-# pins once the packages register (then this package becomes registrable again).
-[sources]
-ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
-EpiAwareADTools = {url = "https://github.com/EpiAware/EpiAwareADTools.jl", rev = "main"}
-
 [workspace]
 projects = ["test", "docs"]
