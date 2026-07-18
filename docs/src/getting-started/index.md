@@ -35,58 +35,91 @@ See the [Concepts](@ref concepts) page for the four layers in full and the verb 
 
 ## A first example
 
-Compose two delays off a shared onset, then simulate and score a record.
+A hospital pathway: an admission delay whose shape carries literature
+uncertainty, then a death-versus-discharge split where the death probability
+is the case-fatality ratio, alongside a separate delay to public reporting.
 
 ```@example overview
 using ComposedDistributions, Distributions, Random
 
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
+cfr = 0.12   # case-fatality ratio among admitted cases
 
-record = rand(Xoshiro(1), tree)
+admission = compose((
+    path = sequential(
+        :onset_admit => uncertain(LogNormal(1.5, 0.4); mu = Normal(1.5, 0.2)),
+        :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
+            :discharge => Gamma(2.0, 1.5))),
+    onset_report = Gamma(1.5, 1.0)))
 ```
 
-The composed object scores that record straight back.
+`admission` prints as the tree it is: two branches off the onset, the
+admission branch itself a two-step chain ending in the death/discharge split.
 
 ```@example overview
-logpdf(tree, record)
+admission
 ```
 
-Read its free parameters as a flat table, keyed by edge and parameter name.
+The same object simulates a structured record and scores one straight back.
 
 ```@example overview
-params_table(tree)
+record = rand(Xoshiro(1), admission)
 ```
+
+```@example overview
+logpdf(admission, record)
+```
+
+Its free parameters read as a flat table, keyed by edge and parameter name;
+the `onset_admit` shape carries the uncertainty prior attached above, and the
+death/discharge split shows up as its own `branch_probs` rows.
+
+```@example overview
+params_table(admission)
+```
+
+[`event`](@ref) fetches any node by its dotted path, so the death outcome's
+delay is reachable directly.
+
+```@example overview
+event(admission, :path, :admit_outcome, :death)
+```
+
+The tree still has an [`uncertain`](@ref) leaf, so it estimates rather than
+scores at one fixed value until that leaf is pinned or fitted.
+
+```@example overview
+has_uncertain(admission)
+```
+
+Pinning `onset_admit` to a concrete delay collapses the admission chain to
+one convolved total via [`observed_distribution`](@ref), integrating the
+intermediate admission event out.
+
+```@example overview
+pinned = update(admission, (:path, :onset_admit) => LogNormal(1.5, 0.4))
+total = observed_distribution(event(pinned, :path))
+mean(total)
+```
+
+Fitting `admission` itself — estimating the uncertain leaf from data rather
+than pinning it by hand — is one call away; see
+[Fitting a composed distribution](@ref inference) for the full walkthrough.
 
 ## Uncertain distributions
 
 A literature-reported delay rarely comes with exact parameters. Wrap the
 uncertainty inline with [`uncertain`](@ref): parameters that are themselves
 distributions, nestable to any depth. The result is still a univariate
-distribution, so it composes as a leaf everywhere, and `rand` draws the
-marginal (a fresh parameter draw each call); the rest of the surface reports
-the template's central values until you pin concrete parameters with
-[`update`](@ref) (guard against a forgotten collapse with `has_uncertain`).
-
-```@example overview
-u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
-utree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
-(has_uncertain = has_uncertain(utree),)
-```
+distribution, so it composes as a leaf everywhere (as `onset_admit` does
+above), and `rand` draws the marginal (a fresh parameter draw each call); the
+rest of the surface reports the template's central values until concrete
+parameters are pinned with [`update`](@ref) (guard against a forgotten
+collapse with `has_uncertain`).
 
 An [`uncertain`](@ref) leaf is one of two *deferred leaves*, resolved to a
-concrete distribution later rather than fixed at build time; `has_uncertain`
-guards a fitting loop against a forgotten one.
+concrete distribution later rather than fixed at build time.
 See [Concepts](@ref concepts) for how it relates to its sibling
 [`Varying`](@ref).
-
-## Key features
-
-- **Distributions.jl integration.** A composed object is a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged, and any Distributions.jl leaf composes with no package-specific hooks.
-- **One structure, many front-ends.** [`compose`](@ref) lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same composer stack.
-- **A readable, editable tree.** [`params_table`](@ref) inventories the free parameters, [`build_priors`](@ref) derives priors from their support, [`param_priors`](@ref) promotes a whole tree to estimate at once, and [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref) reshape the tree. See [Fitting a composed distribution](@ref inference) for the full estimation pipeline.
-- **Convolution built in.** The package re-exports `ConvolvedDistributions`, so [`convolved`](@ref), [`difference`](@ref) and the quadrature surface are reachable through ComposedDistributions alone.
-- **Automatic differentiation.** Scoring is differentiable through ForwardDiff, ReverseDiff, Mooncake and Enzyme, so a composed distribution drops into a probabilistic-programming fit.
 
 ## Learning more
 
@@ -94,5 +127,11 @@ See [Concepts](@ref concepts) for how it relates to its sibling
 - Work through the composers end to end in [Composing distributions](@ref composing-distributions).
 - See mutually exclusive outcomes in [Competing outcomes](@ref competing-outcomes) and multi-step delays in [Delay chains and the linear chain trick](@ref linear-chain).
 - Want the full interface? See the [Public API](@ref public-api).
-- Want to report a problem or ask a question? Open an issue or start a
-  discussion on the [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
+
+## Getting help
+
+For usage questions, ask on the [Julia Discourse](https://discourse.julialang.org)
+(the SciML or usage categories) or the [epinowcast community forum](https://community.epinowcast.org),
+our home for epidemiological modelling questions.
+Please use [GitHub issues](https://github.com/EpiAware/ComposedDistributions.jl/issues)
+for bug reports and feature requests only.
