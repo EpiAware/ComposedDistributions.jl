@@ -6,8 +6,11 @@
 # `chain_to_params` / `update(dist, chain)` unchanged; (b) the model's total
 # log-density equals the codec's `logdensity` by construction; (c) a
 # non-centred pooled tree samples and reads back through `update(dist, chain)`
-# like any other tree; and (d) a centred-pool tree is rejected with a clear
-# pointer to the codec path.
+# like any other tree; (d) a centred-pool tree is rejected with a clear
+# pointer to the codec path; and (e) a `shared(...)`-tagged parameter, tied
+# across two branches, reads back onto BOTH occurrences from the ONE sampled
+# site — the one test that exercises the params_table/codec ordering coupling
+# `ext/ComposedDistributionsDynamicPPLExt.jl` depends on (#192).
 
 @testitem "as_turing extension loads under DynamicPPL alone" begin
     using ComposedDistributions, DynamicPPL
@@ -55,6 +58,58 @@ end
     @test event(fit, :onset_admit) isa Gamma
     @test event(fit, :admit_death) isa LogNormal
     @test !has_uncertain(fit)
+end
+
+@testitem "as_turing round-trip: shared-tag readback lands on the right leaf" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using FlexiChains: FlexiChains, VNChain
+    using Statistics: mean
+
+    # A parameter shared across two branches by tag: params_table and the
+    # codec must both treat it as ONE estimated parameter (the first
+    # occurrence the walk visits emits/reads it, the second is skipped), and
+    # the one sampled site must read back onto BOTH occurrences identically —
+    # exactly the ordering coupling `_flat_layout`/`flatten` rely on (#192).
+    tied = shared(:incubation,
+        uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)))
+    tree = compose((primary = tied, secondary = tied,
+        tail = LogNormal(0.5, 0.4)))
+    data = [[0.5, 1.0, 2.0], [0.8, 1.5, 2.5], [0.6, 1.2, 2.1]]
+
+    model = as_turing(tree, data)
+
+    Random.seed!(23)
+    chain = sample(model, NUTS(), 200; chain_type = VNChain, progress = false)
+
+    # Exactly ONE site for the tie, at the tag's dotted name — not one per
+    # occurrence (`d.primary.shape`/`d.secondary.shape` never appear).
+    vns = Set(string.(collect(FlexiChains.parameters(chain))))
+    @test "d.incubation.shape" in vns
+    @test !("d.primary.shape" in vns)
+    @test !("d.secondary.shape" in vns)
+
+    fit = update(tree, chain)
+    @test !has_uncertain(fit)
+    # The tie survives the round trip: both occurrences read back to the SAME
+    # fitted value the one sampled site produced. `event` returns the `Shared`
+    # wrapper at a tied position, not the bare inner leaf.
+    @test event(fit, :primary) == event(fit, :secondary)
+    @test event(fit, :primary) isa Shared
+    @test event(fit, :primary).dist isa Gamma
+    @test event(fit, :tail) isa LogNormal
+
+    # Anchor the fitted value against the chain's OWN draws, read independently
+    # of `update`/`chain_to_params` (a direct FlexiChains index on the site's
+    # VarName): a regression where readback silently fell back to the
+    # template value (2.0) for both tied occurrences — consistent between the
+    # two, so the equality check above alone would not catch it — would fail
+    # this. `update`'s default summary is the posterior mean (see
+    # `_update_from_chain`, `summary = mean`), so this reproduces that
+    # computation from the raw chain rather than through the code under test.
+    posterior_mean = mean(vec(chain[@varname(d.incubation.shape)]))
+    fitted_shape = event(fit, :primary).dist.α
+    @test fitted_shape ≈ posterior_mean
+    @test fitted_shape != 2.0
 end
 
 @testitem "as_turing round-trip: uncertain branch_probs stick coordinate" begin
