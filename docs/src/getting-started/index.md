@@ -29,8 +29,9 @@ See [Why ComposedDistributions?](../index.md) on the home page for the full moti
 
 A hospital pathway: an admission delay with literature uncertainty on its
 typical duration, then a death-versus-discharge split where the death
-probability is the case-fatality ratio, alongside a separate delay to public
-reporting.
+probability is the case-fatality ratio, alongside a separate reporting delay
+truncated at a 21-day reporting cutoff with Distributions.jl's own
+`truncated()`.
 
 ```@example overview
 using ComposedDistributions, Distributions, Random
@@ -42,11 +43,13 @@ admission = @uncertain compose((
         :onset_admit => LogNormal(Normal(1.5, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
-    onset_report = Gamma(1.5, 1.0)))
+    onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0)))
 ```
 
 `admission` prints as the tree it is: two branches off the onset, the
-admission branch itself a two-step chain ending in the death/discharge split.
+admission branch itself a two-step chain ending in the death/discharge split,
+and the reporting branch keeping its `truncated()` wrapper visible in the
+printed tree.
 
 ```@example overview
 admission
