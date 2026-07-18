@@ -102,7 +102,7 @@ Wrapping a whole composed tree in `truncated()`/`censored()` is a different ques
 - [LoweredDistributions.jl](https://lowereddistributions.epiaware.org/dev/) turns a distribution into a backend-agnostic dynamical-systems representation (`lower`), the bridge to compartmental models; it lowers a composed tree as well as a single leaf.
 - [CensoredDistributions.jl](https://censoreddistributions.epiaware.org/stable/) adds primary-event, interval and double-interval censoring wrappers for delay distributions, for observation processes with imperfect timing data.
 - [ConvolvedDistributions.jl](https://convolveddistributions.epiaware.org/dev/) builds convolutions, differences and products of independent delays; ComposedDistributions re-exports it directly, so a chain collapses to its convolved total with `observed_distribution`.
-- [DistributionsInference.jl](https://github.com/EpiAware/DistributionsInference.jl) is the emerging home for probabilistic-programming integrations (Turing.jl, DynamicPPL, Bijectors) across the EpiAware distribution packages, including this one.
+- [DistributionsInference.jl](https://github.com/EpiAware/DistributionsInference.jl) is the fit-protocol and PPL-integration layer (Turing.jl, DynamicPPL, Bijectors); its extension here reads a composed tree's generated codec directly, so an uncertain leaf (including pooled and shared parameters) is fittable with no extra glue.
 
 ## Where to learn more
 
