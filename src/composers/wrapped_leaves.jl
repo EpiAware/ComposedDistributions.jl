@@ -73,10 +73,10 @@ function _reject_tree_wrap(verb::String, d)
         "tree ($(nameof(typeof(d)))): Sequential/Parallel combine several " *
         "named child distributions, not a single scalar the inverse-cdf " *
         "machinery can act on, and a Resolve/Compete outcome is a " *
-        "structured named event rather than a plain scalar, so $(verb)ing " *
-        "the whole node is not well-defined even though it type-checks as " *
-        "univariate. $(uppercasefirst(verb)) the individual leaf delays " *
-        "instead, e.g. `compose((onset = $verb(Gamma(2.0, 1.0); " *
+        "structured named event rather than a plain scalar, so applying " *
+        "$verb to the whole node is not well-defined even though it " *
+        "type-checks as univariate. Apply $verb to the individual leaf " *
+        "delays instead, e.g. `compose((onset = $verb(Gamma(2.0, 1.0); " *
         "upper = 10.0), ...))`."))
 end
 
