@@ -154,6 +154,30 @@ end
     @test all(x -> 1.0 <= x <= 5.0, [rand(rng, t2) for _ in 1:200])
 end
 
+@testitem "censored pushes inside an uncertain leaf" begin
+    using Distributions, Random
+
+    # Mirrors "truncated pushes inside an uncertain leaf": without this,
+    # `censored(u; ...)` would nest as `Censored{Uncertain}` and the generated
+    # codec (which only recognises `Uncertain` as the OUTERMOST wrapper) would
+    # silently treat the whole leaf as fixed, dropping the estimated parameter.
+    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    c = censored(u; upper = 5.0)
+    @test c isa Uncertain
+    @test c.template isa Distributions.Censored
+    @test c.specs == u.specs
+
+    c2 = censored(u, 1.0, 5.0)
+    @test c2 isa Uncertain
+    @test c2.template.lower == 1.0
+    @test c2.template.upper == 5.0
+
+    @test censored(u, nothing, nothing) === u
+
+    rng = Xoshiro(4)
+    @test all(x -> 1.0 <= x <= 5.0, [rand(rng, c2) for _ in 1:200])
+end
+
 @testitem "update collapses an uncertain leaf to its concrete template" begin
     using Distributions
 
@@ -176,6 +200,17 @@ end
     @test leaf isa Truncated
     @test leaf.upper == 10.0
     @test ComposedDistributions.free_leaf(leaf) == Gamma(3.0, 1.5)
+
+    # A censored uncertain leaf keeps its fixed structure through the update,
+    # exactly like the truncated case above.
+    cu = uncertain(censored(Gamma(2.0, 1.0); upper = 10.0);
+        shape = LogNormal(log(2.0), 0.2))
+    ctree = compose((onset_admit = cu,))
+    ctree2 = update(ctree, (onset_admit = (shape = 3.0, scale = 1.5),))
+    cleaf = event(ctree2, :onset_admit)
+    @test cleaf isa Distributions.Censored
+    @test cleaf.upper == 10.0
+    @test ComposedDistributions.free_leaf(cleaf) == Gamma(3.0, 1.5)
 end
 
 @testitem "update node-replace makes a leaf uncertain" begin

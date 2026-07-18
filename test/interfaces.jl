@@ -201,4 +201,53 @@ end
     @test free_leaf(sh) == Gamma(2.0, 1.0)
     rw2 = rewrap_leaf(sh, Gamma(3.0, 1.5))
     @test free_leaf(rw2) == Gamma(3.0, 1.5)
+
+    # `Distributions.censored(...)` (a `Censored` wrapper) behaves exactly like
+    # `Truncated` above: fixed censoring bounds peel off, rewrap re-applies
+    # them around the new inner delay.
+    cs = censored(Gamma(2.0, 1.0); upper = 10.0)
+    @test free_leaf(cs) == Gamma(2.0, 1.0)
+    rwc = rewrap_leaf(cs, Gamma(3.0, 1.5))
+    @test free_leaf(rwc) == Gamma(3.0, 1.5)
+    @test logpdf(rwc, 2.0) ≈
+          logpdf(censored(Gamma(3.0, 1.5); upper = 10.0), 2.0)
+end
+
+@testitem "params_table reports a censored leaf's inner params, not its bounds" begin
+    using ComposedDistributions, Distributions
+
+    # Before Censored had its own leaf-protocol methods, `params_table` fell
+    # back to the generic (unpeeled) walk and reported the censoring bounds as
+    # if they were free parameters (a spurious `nothing` row for an absent
+    # bound, and the fixed bound itself as a "value"), with the wrong support.
+    # This is the regression guard for that gap.
+    tree = compose((onset = censored(Gamma(2.0, 3.0); upper = 10.0),
+        admit = LogNormal(0.5, 0.4)))
+    tbl = params_table(tree)
+    onset_rows = findall(==(:onset), tbl.edge)
+    @test length(onset_rows) == 2
+    @test tbl.param[onset_rows] == [:shape, :scale]
+    @test tbl.value[onset_rows] == [2.0, 3.0]
+    # The support is the untruncated/uncensored Gamma's own support, not the
+    # censoring bounds.
+    @test all(==((0.0, Inf)), tbl.support[onset_rows])
+end
+
+@testitem "truncated/censored on a composed tree throws an informative error" begin
+    using ComposedDistributions, Distributions
+
+    # `Sequential`/`Parallel` are multivariate; Distributions.jl's own
+    # truncated/censored are univariate-only, so these already error via plain
+    # dispatch. `Resolve`/`Compete` DO satisfy `UnivariateDistribution`, but
+    # their outcome is a structured named event, not a plain scalar, so
+    # truncating/censoring the whole node is not well-defined even though it
+    # type-checks -- that case must not be allowed to silently construct and
+    # fail later (at `rand`, with an unrelated internal error).
+    seq = compose((onset = Gamma(2.0, 1.0), death = LogNormal(0.5, 0.4)))
+    res = resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => (Gamma(2.0, 1.5), 0.7))
+
+    for node in (seq, res)
+        @test_throws ArgumentError truncated(node; upper = 10.0)
+        @test_throws ArgumentError censored(node; upper = 10.0)
+    end
 end
