@@ -528,7 +528,7 @@ end
 
     replaced = uncertain(tree; onset_admit = (shape = Normal(2.0, 0.5),))
     spec = ComposedDistributions._uncertain_specs(replaced.components[1])
-    # REPLACE semantics, not hyperprior nesting: the new spec is the plain
+    # Replace semantics, not hyperprior nesting: the new spec is the plain
     # Normal, not a distribution wrapping the old LogNormal.
     @test spec.shape == Normal(2.0, 0.5)
 end

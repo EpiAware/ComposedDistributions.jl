@@ -111,11 +111,13 @@ Assemble a [`ComposedLogDensity`](@ref) from a composed distribution and data.
 `as_logdensity(dist, data; loglik)` packages the template `dist` and the
 observed `data` into the PPL-neutral log-density spec, reading the priors off
 the object's [`uncertain`](@ref) specs (the estimation boundary). The result
-evaluates the (unnormalised) log-posterior over the ESTIMATED flat parameter
-vector — the spec'd parameters — via [`logdensity`](@ref). A tree with no
-uncertain leaves estimates nothing: the flat vector is empty and `logdensity`
-is the data likelihood at the fixed tree. Promote a tree to estimate its free
-parameters with default priors through `update(tree, param_priors(tree))`.
+evaluates the (unnormalised) log-posterior over the *estimated* flat
+parameter vector — the spec'd parameters — via [`logdensity`](@ref). A tree
+with no uncertain leaves estimates nothing: the flat vector is empty and
+`logdensity` is the data likelihood at the fixed tree. Promote a tree to
+estimate its free parameters with default priors through
+[`uncertain`](@ref)`(tree)` (equivalently `update(tree, param_priors(tree))`,
+the mechanism it is built on).
 
 `as_logdensity(dist, priors, data)` overrides the on-object specs with an
 explicit nested prior `NamedTuple`, read at the same estimated (spec'd) rows.
@@ -150,7 +152,8 @@ ComposedDistributions.logdensity(prob, [2.0])
 # See also
 - [`logdensity`](@ref): evaluate the assembled spec on a flat vector.
 - [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec.
-- [`param_priors`](@ref): default priors for `update(tree, param_priors(tree))`.
+- [`uncertain`](@ref)`(tree)`: the promotion route this pairs with.
+- [`param_priors`](@ref): the default priors [`uncertain`](@ref)`(tree)` applies.
 "
 function as_logdensity(dist::AbstractComposedDistribution, priors, data;
         loglik = _default_loglik)

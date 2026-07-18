@@ -62,8 +62,8 @@ end
     # ...but a `Vector{<:NamedTuple}` no longer matches it (it would
     # previously have been silently handed to `unflatten`, which expects
     # `Real` elements): it now routes to the table arm instead, and errors
-    # NAMING the columns it found rather than the elements' types, because a
-    # `Vector{<:NamedTuple}` is `Tables.istable` under BOTH this package's
+    # naming the columns it found rather than the elements' types, because a
+    # `Vector{<:NamedTuple}` is `Tables.istable` under both this package's
     # `edge`/`param` convention and DistributionsInference's dotted-`name`
     # `parameter_rows` convention (DI#20) — this checks the shapes are told
     # apart rather than one silently misread as the other.

@@ -150,7 +150,8 @@ flat = ComposedDistributions.flat_dimension(resolved)
 (estimated_parameters = flat,)
 
 # [`uncertain`](@ref) is the verb that moves the estimation boundary on an
-# EXISTING tree: `uncertain(tree, params)` promotes just the named parameters
+# already-built tree: `uncertain(tree, params)` promotes just the named
+# parameters
 # (a targeted promotion, built on `update`'s merge mode); bare `uncertain(tree)`
 # promotes every free parameter with support-derived default priors, the
 # explicit estimate-everything path.

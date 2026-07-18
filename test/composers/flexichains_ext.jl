@@ -7,6 +7,51 @@
 # Turing's `Prior()` (fast, no gradients) purely to get a real chain to read
 # back.
 
+@testitem "update(tree, chain) has no dispatch ambiguity against update(tree, table)" begin
+    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random, Test
+    using FlexiChains: FlexiChains, VNChain
+
+    # CD#195's Tables.jl bulk-write arm (`update(d::AbstractComposedDistribution,
+    # table)`, untyped in its second argument) and this extension's chain
+    # readback (`update(template, chain::FlexiChain)`, untyped in its first)
+    # are each individually more specific than the other for an
+    # `(AbstractComposedDistribution, FlexiChain)` call — without the
+    # disambiguating `update(d::AbstractComposedDistribution,
+    # chain::FlexiChains.FlexiChain)` method this extension also defines,
+    # every `update(tree, chain)` call site in this file (and the getting-
+    # started inference guide) would throw an ambiguous-call `MethodError`
+    # the moment both this extension and the table arm are loaded — which is
+    # always true together in a real environment using both features. This
+    # is the permanent regression guard for that: zero ambiguities with both
+    # loaded, and the canonical call actually returns.
+    ambiguities = Test.detect_ambiguities(ComposedDistributions; recursive = true)
+    @test isempty(ambiguities)
+
+    template = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
+        shape = LogNormal(log(2.0), 0.2)),))
+
+    @model function onset_admit_model()
+        shape ~ truncated(Normal(2.0, 0.3); lower = 0)
+        scale ~ truncated(Normal(1.0, 0.3); lower = 0)
+        return (shape = shape, scale = scale)
+    end
+    @model function tree_model()
+        onset_admit ~ to_submodel(onset_admit_model())
+        return (onset_admit = onset_admit,)
+    end
+    @model function fit()
+        d ~ to_submodel(tree_model())
+        return d
+    end
+
+    Random.seed!(1)
+    chain = sample(fit(), Prior(), 20; chain_type = VNChain, progress = false)
+
+    fitted = update(template, chain)
+    @test fitted isa ComposedDistributions.AbstractComposedDistribution
+    @test !has_uncertain(fitted)
+end
+
 @testitem "chain_to_params / param_draws / update(template, chain) round-trip" begin
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain

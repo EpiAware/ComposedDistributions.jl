@@ -1047,7 +1047,7 @@ event(result, :onset_admit)
 `Tables.istable` source with `edge`/`param` columns) and folds every row into
 the tree in one call: a row's `prior` (when present and not `nothing`)
 promotes that parameter to [`uncertain`](@ref), otherwise its `value` sets it
-— the spreadsheet-style bulk-edit route, an input FORMAT for `update` rather
+— the spreadsheet-style bulk-edit route, an input format for `update` rather
 than a separate verb.
 
 ## Arguments
@@ -1075,8 +1075,20 @@ update(tree, params_table(tree))   # a no-op round-trip here
 "
 function update end
 
-function update(d::Union{Sequential, Parallel, AbstractOneOf, Choose},
-        params::NamedTuple)
+# Typed on the abstract root, not the enumerated
+# `Union{Sequential, Parallel, AbstractOneOf, Choose}` this used to carry
+# (identical body either way): `update(d::AbstractComposedDistribution,
+# table)` below is untyped in its second argument (any `Tables.istable`
+# source), so for a `(composed distribution, NamedTuple)` call it ties with
+# the untyped-first-argument `update(leaf, params::NamedTuple)` fallback
+# unless a method exists that is strictly more specific in both arguments.
+# The enumerated Union was a strict subtype of `AbstractComposedDistribution`
+# so it happened to still win for every composer type that exists today, but
+# a future composer subtype not in that Union would have hit a live dispatch
+# ambiguity between the table arm and the leaf fallback the moment it called
+# `update(new_type, a_namedtuple)`. Typing on the root closes that off for
+# every subtype, present and future, not just the four enumerated here.
+function update(d::AbstractComposedDistribution, params::NamedTuple)
     return _update(d, params, params, _has_distribution_value(params))
 end
 
@@ -1084,8 +1096,16 @@ function update(leaf, params::NamedTuple)
     return _update(leaf, params, params, _has_distribution_value(params))
 end
 
-function update(d::AbstractComposedDistribution,
-        x::AbstractVector{<:Real})
+function update(d::AbstractComposedDistribution, x::AbstractVector)
+    # A `Vector{<:NamedTuple}` is BOTH an `AbstractVector` (matching this
+    # method, more specific than the untyped table arm below) AND
+    # `Tables.istable` (a Tables.jl row table) — so it would otherwise
+    # silently reach `unflatten`, which expects `Real` elements, instead of
+    # the table arm it is actually shaped for. A duck-typed flat vector
+    # (`Vector{Any}` holding only `Real`s, say) is NOT `Tables.istable`
+    # (checked on the vector's static element type, not its contents), so
+    # this probe does not affect it.
+    Tables.istable(x) && return update(d, _table_to_nested_updates(x))
     return update(d, unflatten(d, x))
 end
 
@@ -1101,17 +1121,20 @@ else: a row's `prior` entry (when the table carries one and it is not
 `nothing`) promotes that parameter to [`uncertain`](@ref); otherwise its
 `value` entry sets it, so a plain four-column table (no `prior` column) is a
 purely concrete bulk write — the spreadsheet-style workflow `params_table`
-was built to round-trip. This is `update`'s TABLE input format, not a
+was built to round-trip. This is `update`'s table input format, not a
 separate verb: the result is identical to building the nested `NamedTuple` by
 hand and calling `update(d, nt)`.
 
 A `Vector{<:NamedTuple}` is `Tables.istable` (a Tables.jl row table) under
-BOTH this package's `edge`/`param` convention and
+both this package's `edge`/`param` convention and
 `DistributionsInference`'s dotted-`name` row convention
-(`parameter_rows`/DI#20) — the two are not interchangeable. This method
-requires `edge` and `param` columns and errors naming the columns it found
-otherwise, so a `DistributionsInference`-shaped row vector is refused loudly
-rather than silently misread.
+(`parameter_rows`/DI#20) — the two are not interchangeable. Either way it
+reaches this same logic (a `Vector{<:NamedTuple}` argument is caught by the
+[`update`](@ref)`(d, x::AbstractVector)` method, which checks
+`Tables.istable` before treating `x` as a flat numeric vector, and forwards
+here). This logic requires `edge` and `param` columns and errors naming the
+columns it found otherwise, so a `DistributionsInference`-shaped row vector
+is refused loudly rather than silently misread.
 
 # Arguments
 - `d`: the composed distribution to edit.
@@ -1413,10 +1436,10 @@ end
 # `update(d, table)`'s reader: a `params_table`-shaped Tables.jl table ->
 # the nested NamedTuple `update`/`_update` consume. Reuses the exact
 # `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `build_priors` uses,
-# so the table -> tree shape is identical; only the per-row VALUE picked
+# so the table -> tree shape is identical; only the per-row value picked
 # differs (a row's own `prior`/`value`, no override/default machinery — this
 # is a plain bulk write, not prior assembly). Requires `Tables.istable` and
-# `edge`/`param` columns, erroring by NAME on either miss so a
+# `edge`/`param` columns, erroring by column name on either miss so a
 # differently-shaped row table (e.g. DistributionsInference's dotted-`name`
 # `parameter_rows` convention, DI#20) is refused loudly rather than silently
 # misread — both shapes are `Tables.istable`, so this check is the only thing
@@ -1519,7 +1542,7 @@ default_prior((; edge = :onset_admit, param = :scale,
 
 !!! note \"DistributionsInference's `distribution_priors`\"
     `DistributionsInference.distribution_priors` (CD#195/DI#20) applies the
-    SAME support-derived heuristic generically, over any fit-protocol
+    same support-derived heuristic generically, over any fit-protocol
     object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
     `ComposedDistributions` tree. It is a separate implementation, not a
     thin wrapper over this one: `DistributionsInference` depends on
