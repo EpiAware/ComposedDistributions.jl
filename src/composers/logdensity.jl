@@ -1,212 +1,33 @@
-# PPL-neutral flat-vector <-> nested-NamedTuple codec, plus the assembled
-# `ComposedLogDensity` spec. Turing-free: no DynamicPPL/LogDensityProblems
-# dependency here, only `params_table`, the uncertain specs and `update`. A thin
+# PPL-neutral assembled `ComposedLogDensity` spec, over the generated flat
+# <-> nested codec (`unflatten`/`flatten`/`flat_dimension`/`reconstruct`, now
+# in `codec_gen.jl`). Turing-free: no DynamicPPL/LogDensityProblems dependency
+# here, only `params_table`, the uncertain specs and `update`. A thin
 # `LogDensityProblems` weakdep extension (deferred; see the package tracker)
 # wraps `ComposedLogDensity` for AdvancedHMC/DynamicHMC/Pathfinder-style
 # samplers on top of this.
 
-# --- flat <-> nested codec ---------------------------------------------------
-#
-# Uncertain-first: the uncertain specs set the estimation boundary. The flat
-# vector spans EXACTLY the spec'd parameters of the tree's uncertain leaves —
-# the rows of `params_table` whose `prior` column carries a spec — in the
-# table's pre-order order restricted to those rows. A fixed (non-uncertain)
-# leaf contributes ZERO estimated parameters, so a tree with no uncertain
-# leaves has flat dimension 0 (it estimates nothing; `logdensity` is then just
-# the data likelihood at the fixed tree). Promote a tree to estimate its free
-# parameters with default priors through `update(tree, param_priors(tree))`,
-# which specs every parameter (see `update`).
-#
-# `flatten` reads a nested `NamedTuple` at the spec'd rows; `unflatten` rebuilds
-# the FULL nested `NamedTuple` `update` consumes — the estimated parameters at
-# the flat vector's values, the fixed parameters at their template values — so
-# `update(d, unflatten(d, x))` collapses each uncertain leaf at the draw while
-# holding the fixed parameters at the template. A `Varying` leaf has no fixed
-# value until it is resolved against a context, so flattening one would quietly
-# score its `reference` and ignore the covariate it is meant to vary with; the
-# codec refuses that eagerly instead (`_reject_varying` below).
-
-# Refuse eagerly when `d` still carries a `Varying` leaf: unlike `Uncertain`,
-# whose row already tracks concrete template values, a `Varying` leaf's row
-# reports its `reference` only, so the codec would otherwise silently ignore
-# the covariate dependence rather than score it.
-function _reject_varying(d, what)
-    has_varying(d) && throw(ArgumentError(
-        "cannot $what a tree with varying leaves; resolve them with " *
-        "`instantiate(tree, context)` first"))
-    return nothing
-end
-
-# The length guards below (`unflatten`, `logdensity`) interpolate the tree
-# `d`/`prob.dist` into their error message via `show`, which recurses into
-# Base's UTF-8 string-indexing continuation machinery. Mooncake's whole-
-# program rule derivation needs a rule for that machinery even on the
-# passing path, where the branch is never taken, and has none (a `sub_ptr`
-# pointer-arithmetic intrinsic). Hoisting the message construction into its
-# own `@noinline` function keeps that call out of the differentiated
-# function's own IR; the `ComposedDistributionsMooncakeExt` extension
-# shields these helpers from Mooncake with `@zero_derivative` so the `show`
-# call is never traced, even when the branch does throw under AD.
-@noinline function _throw_unflatten_dimmismatch(x, est, d)
-    throw(DimensionMismatch(
-        "flat vector has length $(length(x)) but $d has " *
-        "$(length(est)) estimated parameters"))
-end
-
-@noinline function _throw_logdensity_dimmismatch(x, fp, dist)
-    throw(DimensionMismatch(
-        "flat parameter vector has length $(length(x)) but " *
-        "$dist has $(length(fp)) estimated parameters"))
-end
-
 # The estimated rows of a params table: those whose `prior` column carries an
 # uncertain spec. Under uncertain-first these are the free (estimated)
 # parameters; a fixed leaf's rows hold `nothing` and are excluded, so a tree
-# with no uncertain leaves has no estimated rows.
+# with no uncertain leaves has no estimated rows. Still used by `as_turing`'s
+# `_flat_layout` (the estimated `(path, param)` keys, for VarName construction
+# at model-build time, not per-gradient) and by `_spec_priors` below.
 _estimated_rows(table) = findall(!isnothing, Tables.getcolumn(table, :prior))
 
 # The flat layout: a vector of `(path, param)` keys, one per ESTIMATED row, in
 # table order. `path` is the `_split_edge` tuple of the row's edge; `param` the
 # leaf key. This list is the bijection between flat index and estimated
-# parameter.
+# parameter, used only at `as_turing` model-build time (not per gradient).
 function _flat_layout(table)
     edges = Tables.getcolumn(table, :edge)
     params_col = Tables.getcolumn(table, :param)
     return [(_split_edge(edges[i]), params_col[i]) for i in _estimated_rows(table)]
 end
 
-# Read the value at `(path..., param)` of a nested NamedTuple.
-function _read_path(nt::NamedTuple, path::Tuple, param::Symbol)
-    node = nt
-    for k in path
-        node = getproperty(node, k)
-    end
-    return getproperty(node, param)
-end
-
-@doc "
-
-The estimated parameter dimension of a composed distribution.
-
-`flat_dimension(d)` is the number of scalar ESTIMATED parameters: the count of
-[`uncertain`](@ref) specs across the tree, i.e. the [`params_table`](@ref) rows
-whose `prior` column carries a spec. A fixed (non-uncertain) leaf contributes
-nothing, so a tree with no uncertain leaves has flat dimension 0. It is the
-length of the flat vector [`flatten`](@ref) produces and [`unflatten`](@ref)
-consumes.
-
-# Arguments
-- `d`: a composed distribution.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
-    admit_death = LogNormal(0.5, 0.4)))
-# Public but not exported; reach it by the qualified name. Only onset_admit's
-# shape is uncertain, so the dimension is 1.
-ComposedDistributions.flat_dimension(tree)
-```
-
-# See also
-- [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec.
-"
-function flat_dimension(d::AbstractComposedDistribution)
-    _reject_varying(d, "compute the flat dimension of")
-    return length(_estimated_rows(params_table(d)))
-end
-
-@doc "
-
-Flatten a nested parameter `NamedTuple` to the estimated flat vector.
-
-`flatten(d, nt)` reads `nt` (keyed like [`params`](@ref)`(d)`, the shape
-[`update`](@ref) consumes) at each ESTIMATED [`params_table`](@ref) row (an
-[`uncertain`](@ref) spec's parameter) and returns those values as a `Vector`,
-in table order restricted to the spec'd rows. A fixed parameter is not read. It
-is the inverse of [`unflatten`](@ref): `flatten(d, unflatten(d, x)) == x`.
-
-# Arguments
-- `d`: the composed distribution whose table fixes the order.
-- `nt`: a nested parameter `NamedTuple` keyed like `params(d)`.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
-    admit_death = LogNormal(0.5, 0.4)))
-# The estimated vector is 1-long (onset_admit.shape); round-trip it.
-# Public but not exported; reach the codec by the qualified name.
-nt = ComposedDistributions.unflatten(tree, [2.0])
-ComposedDistributions.flatten(tree, nt)
-```
-
-# See also
-- [`unflatten`](@ref): the inverse, flat vector -> nested NamedTuple.
-- [`flat_dimension`](@ref): the estimated length.
-"
-function flatten(d::AbstractComposedDistribution, nt::NamedTuple)
-    _reject_varying(d, "flatten")
-    layout = _flat_layout(params_table(d))
-    return [_read_path(nt, path, param) for (path, param) in layout]
-end
-
-@doc "
-
-Rebuild the full nested parameter `NamedTuple` from an estimated flat vector.
-
-`unflatten(d, x)` maps the estimated flat vector `x` (the spec'd parameters,
-e.g. a draw from a sampler) back to the full nested `NamedTuple`
-[`update`](@ref) consumes: each estimated parameter takes its value from `x`,
-each fixed parameter its template value. It is the inverse of [`flatten`](@ref),
-so `update(d, unflatten(d, x))` collapses every uncertain leaf at the draw while
-holding the fixed parameters at the template.
-
-# Arguments
-- `d`: the composed distribution whose table fixes the layout.
-- `x`: an estimated flat vector of length [`flat_dimension`](@ref)`(d)`.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
-    admit_death = LogNormal(0.5, 0.4)))
-# One estimated parameter (onset_admit.shape); the rest stay at the template.
-# Public but not exported; reach it by the qualified name.
-update(tree, ComposedDistributions.unflatten(tree, [3.0]))
-```
-
-# See also
-- [`flatten`](@ref): the inverse, nested NamedTuple -> flat vector.
-- [`update`](@ref): rebuild the distribution from the result.
-"
-function unflatten(d::AbstractComposedDistribution, x::AbstractVector)
-    _reject_varying(d, "unflatten")
-    table = params_table(d)
-    edges = Tables.getcolumn(table, :edge)
-    params_col = Tables.getcolumn(table, :param)
-    values = Tables.getcolumn(table, :value)
-    priors = Tables.getcolumn(table, :prior)
-    est = _estimated_rows(table)
-    length(x) == length(est) || _throw_unflatten_dimmismatch(x, est, d)
-    tree = Dict{Symbol, Any}()
-    j = 0
-    for i in eachindex(edges)
-        path = _split_edge(edges[i])
-        if priors[i] === nothing
-            _nest_insert!(tree, path, params_col[i], values[i])
-        else
-            j += 1
-            _nest_insert!(tree, path, params_col[i], x[j])
-        end
-    end
-    return _freeze_tree(tree)
+@noinline function _throw_logdensity_dimmismatch(x, fp, dist)
+    throw(DimensionMismatch(
+        "flat parameter vector has length $(length(x)) but " *
+        "$dist has $(length(fp)) estimated parameters"))
 end
 
 # --- assembled log-density spec ---------------------------------------------

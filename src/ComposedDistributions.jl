@@ -217,10 +217,15 @@ include("composers/Pool.jl")
 # Shared against a context) and after introspection (it extends free_leaf/
 # rewrap_leaf/_shared_tag for the Varying leaf).
 include("composers/varying.jl")
-# The LogDensityProblems core codec (flat <-> nested + `ComposedLogDensity`).
-# After introspection (`params_table`/`build_priors`/`update`), Uncertain
-# (an uncertain leaf's row is inventoried like any other) and varying (the
-# codec refuses a tree that still carries a `Varying` leaf via `has_varying`).
+# The generated type-domain flat <-> nested codec (`unflatten`/`flatten`/
+# `flat_dimension`/`reconstruct`, #178 PR 2). After every composer/wrapper
+# type (Sequential/Parallel/Choose/Resolve/Compete/Uncertain/Shared/Pool) and
+# varying.jl (`has_varying`, for the `_reject_varying` guard).
+include("composers/codec_gen.jl")
+# The LogDensityProblems core codec (`ComposedLogDensity`/`as_logdensity`/
+# `logdensity`). After introspection (`params_table`/`build_priors`/`update`),
+# Uncertain (an uncertain leaf's row is inventoried like any other) and
+# codec_gen.jl (the flat <-> nested codec it evaluates against).
 include("composers/logdensity.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.

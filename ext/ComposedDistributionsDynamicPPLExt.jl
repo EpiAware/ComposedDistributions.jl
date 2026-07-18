@@ -15,7 +15,7 @@ module ComposedDistributionsDynamicPPLExt
 
 using ComposedDistributions: ComposedDistributions,
                              AbstractComposedDistribution, ComposedLogDensity,
-                             as_logdensity, unflatten, update, params_table
+                             as_logdensity, reconstruct, params_table
 import ComposedDistributions: as_turing
 using DynamicPPL: DynamicPPL, @model, NamedDist, VarName
 
@@ -64,23 +64,32 @@ end
 # The model: sample each estimated parameter from its prior at its dotted
 # VarName (a `NamedDist`, so the site name is the readback name regardless of
 # the LHS), then add the data likelihood with `@addlogprob!` from the codec's
-# reconstruction. Priors via `~`, likelihood via `@addlogprob!`, so no double
-# counting; the total equals `logdensity(prob, θ)`. `θ` has an abstract element
-# type so a sampled/AD value (a `Dual`/tracked number) flows through `unflatten`
-# / `update` unchanged.
+# `reconstruct` primary. Priors via `~`, likelihood via `@addlogprob!`, so no
+# double counting; the total equals `logdensity(prob, θ)`.
+#
+# `θ` is built as a CONCRETELY-typed `Vector` (sample the first site, then
+# allocate `Vector{typeof(θ1)}` for the rest), not the old `Vector{Real}(undef,
+# n)`: that abstract-eltype array boxed every sampled/AD value (a `Dual`/
+# tracked number) on the heap, which is exactly the type-unstable
+# heap-building shape Enzyme's cache-store type reasoning cannot compile
+# through (see the `ADFixtures` note this fix lifts, #162). Every site in one
+# evaluation shares the same underlying numeric type (whatever the active
+# sampler/AD context uses), so the first sample fixes it for the rest.
 @model function _composed_turing_model(prob::ComposedLogDensity, vns)
     fp = prob.flat_priors
     n = length(fp)
-    θ = Vector{Real}(undef, n)
-    for i in 1:n
-        # A plain scalar LHS: the `NamedDist` supplies the site's VarName (the
-        # dotted readback name), while the sampled value is bound to `param` and
-        # stored into `θ` by index. An indexed LHS (`θ[i] ~ ...`) instead makes
-        # DynamicPPL apply the site's optic to `θ`, which is not what we want.
-        param ~ NamedDist(fp[i], vns[i])
-        θ[i] = param
+    if n == 0
+        θ = Float64[]
+    else
+        θ1 ~ NamedDist(fp[1], vns[1])
+        θ = Vector{typeof(θ1)}(undef, n)
+        θ[1] = θ1
+        for i in 2:n
+            θi ~ NamedDist(fp[i], vns[i])
+            θ[i] = θi
+        end
     end
-    d = update(prob.dist, unflatten(prob.dist, θ))
+    d = reconstruct(prob.dist, θ)
     DynamicPPL.@addlogprob! prob.loglik(d, prob.data)
     return d
 end
