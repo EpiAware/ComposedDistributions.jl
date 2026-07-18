@@ -40,7 +40,7 @@ cfr = 0.12   # case-fatality ratio among admitted cases
 
 admission = @uncertain compose((
     path = sequential(
-        :onset_admit => LogNormal(Normal(1.5, 0.2), 0.4),
+        :onset_admit => LogNormal(Normal(0.0, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
     onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0)))
@@ -66,8 +66,10 @@ logpdf(admission, record)
 ```
 
 Its free parameters read as a flat table, keyed by edge and parameter name;
-`onset_admit`'s `mu` carries the uncertainty prior attached above, and the
-death/discharge split shows up as its own `branch_probs` rows.
+`onset_admit`'s `mu` carries the uncertainty prior attached above (its
+reported value, `0.0`, is the `LogNormal` family's own default, which here
+also happens to be the prior's centre), and the death/discharge split shows
+up as its own `branch_probs` rows.
 
 ```@example overview
 params_table(admission)

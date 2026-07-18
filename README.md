@@ -49,7 +49,7 @@ cfr = 0.12   # case-fatality ratio among admitted cases
 
 admission = @uncertain compose((
     path = sequential(
-        :onset_admit => LogNormal(Normal(1.5, 0.2), 0.4),
+        :onset_admit => LogNormal(Normal(0.0, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
     onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0)))
@@ -90,7 +90,8 @@ Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object
 | **Builds on** | — | any Distributions.jl `UnivariateDistribution` as a leaf |
 | **Adds** | — | `compose`, the five composers, a parameter table and structural edits |
 
-Because a composed object is a `Distribution`, it also works with `truncated()` from Distributions.jl and drops into any code that expects a distribution.
+Standard Distributions.jl wrappers slot in as leaves inside a tree: `truncated()` works today (as `onset_report` shows above), and censoring support is landing next.
+Wrapping a whole composed tree in `truncated()`/`censored()` is a different question and is not supported: an event tree does not have a single scalar support to truncate or censor, so that path is not a meaningful operation rather than an oversight.
 
 ## Related packages
 
