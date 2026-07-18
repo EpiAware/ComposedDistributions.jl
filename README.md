@@ -39,23 +39,29 @@ See [documentation](https://composeddistributions.epiaware.org/stable/) for a fu
 
 A hospital pathway: an admission delay with literature uncertainty, then a
 death-versus-discharge split where the death probability is the case-fatality
-ratio, alongside a separate delay to public reporting.
+ratio, alongside a reporting delay truncated at a 21-day cutoff (reports
+arriving later are excluded) and a referral delay censored at 14 days (a
+referral still pending at day 14 is recorded as arriving then) — both plain
+Distributions.jl wrappers used here as ordinary leaves.
 
 ```julia
 using ComposedDistributions, Distributions, Random
 
 cfr = 0.12   # case-fatality ratio among admitted cases
 
-admission = compose((
+admission = @uncertain compose((
     path = sequential(
-        :onset_admit => uncertain(LogNormal(1.5, 0.4); mu = Normal(1.5, 0.2)),
+        :onset_admit => LogNormal(Normal(0.0, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
-    onset_report = Gamma(1.5, 1.0)))
+    onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0),
+    onset_referral = censored(Gamma(1.0, 2.0); upper = 14.0)))
 ```
 
-`admission` prints as the tree it is: two branches off the onset, the
-admission branch itself a two-step chain ending in the death/discharge split.
+`admission` prints as the tree it is: three branches off the onset, the
+admission branch itself a two-step chain ending in the death/discharge split,
+and the reporting and referral branches keeping their `truncated()` and
+`censored()` wrappers visible in the printed tree.
 
 ```julia
 admission
@@ -87,14 +93,16 @@ Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object
 | **Builds on** | — | any Distributions.jl `UnivariateDistribution` as a leaf |
 | **Adds** | — | `compose`, the five composers, a parameter table and structural edits |
 
-Because a composed object is a `Distribution`, it also works with `truncated()` from Distributions.jl and drops into any code that expects a distribution.
+Standard Distributions.jl wrappers slot in as leaves inside a tree: both `truncated()` and `censored()` work as ordinary leaves, as `onset_report` and `onset_referral` show above.
+Wrapping a whole composed tree in `truncated()`/`censored()` is a different question: an event tree does not have a single scalar support to truncate or censor, so that path raises a clear error rather than silently doing the wrong thing.
 
-## What packages work well with ComposedDistributions?
+## Related packages
 
-- [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) supplies the leaf distributions and the interface a composed object implements.
-- [ConvolvedDistributions.jl](https://github.com/EpiAware/ConvolvedDistributions.jl) is re-exported, so convolution (`convolved`, `convolve_series`, `difference`) and quadrature are reachable through ComposedDistributions alone.
-- [Tables.jl](https://github.com/JuliaData/Tables.jl) sources build a composer through `compose`, and `params_table` returns a Tables.jl table.
-- [Turing.jl](https://github.com/TuringLang/Turing.jl) and the wider probabilistic-programming ecosystem, where automatic-differentiation-friendly scoring lets a composed distribution drop into a Bayesian fit.
+- [ModifiedDistributions.jl](https://modifieddistributions.epiaware.org/dev/) rescales, shifts, weights and reshapes the hazard of any distribution (`affine`, `weight`, `modify`); its modifiers apply across composed chains as well as plain leaves.
+- [LoweredDistributions.jl](https://lowereddistributions.epiaware.org/dev/) turns a distribution into a backend-agnostic dynamical-systems representation (`lower`), the bridge to compartmental models; it lowers a composed tree as well as a single leaf.
+- [CensoredDistributions.jl](https://censoreddistributions.epiaware.org/stable/) adds primary-event, interval and double-interval censoring wrappers for delay distributions, for observation processes with imperfect timing data.
+- [ConvolvedDistributions.jl](https://convolveddistributions.epiaware.org/dev/) builds convolutions, differences and products of independent delays; ComposedDistributions re-exports it directly, so a chain collapses to its convolved total with `observed_distribution`.
+- [DistributionsInference.jl](https://github.com/EpiAware/DistributionsInference.jl) is the fit-protocol and PPL-integration layer (Turing.jl, DynamicPPL, Bijectors); its extension here reads a composed tree's generated codec directly, so an uncertain leaf (including pooled and shared parameters) is fittable with no extra glue.
 
 ## Where to learn more
 
