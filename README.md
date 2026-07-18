@@ -39,8 +39,10 @@ See [documentation](https://composeddistributions.epiaware.org/stable/) for a fu
 
 A hospital pathway: an admission delay with literature uncertainty, then a
 death-versus-discharge split where the death probability is the case-fatality
-ratio, alongside a separate reporting delay truncated at a 21-day reporting
-cutoff with Distributions.jl's own `truncated()`.
+ratio, alongside a reporting delay truncated at a 21-day cutoff (reports
+arriving later are excluded) and a referral delay censored at 14 days (a
+referral still pending at day 14 is recorded as arriving then) — both plain
+Distributions.jl wrappers used here as ordinary leaves.
 
 ```julia
 using ComposedDistributions, Distributions, Random
@@ -52,13 +54,14 @@ admission = @uncertain compose((
         :onset_admit => LogNormal(Normal(0.0, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
-    onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0)))
+    onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0),
+    onset_referral = censored(Gamma(1.0, 2.0); upper = 14.0)))
 ```
 
-`admission` prints as the tree it is: two branches off the onset, the
+`admission` prints as the tree it is: three branches off the onset, the
 admission branch itself a two-step chain ending in the death/discharge split,
-and the reporting branch keeping its `truncated()` wrapper visible in the
-printed tree.
+and the reporting and referral branches keeping their `truncated()` and
+`censored()` wrappers visible in the printed tree.
 
 ```julia
 admission
@@ -90,8 +93,8 @@ Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object
 | **Builds on** | — | any Distributions.jl `UnivariateDistribution` as a leaf |
 | **Adds** | — | `compose`, the five composers, a parameter table and structural edits |
 
-Standard Distributions.jl wrappers slot in as leaves inside a tree: `truncated()` works today (as `onset_report` shows above), and censoring support is landing next.
-Wrapping a whole composed tree in `truncated()`/`censored()` is a different question and is not supported: an event tree does not have a single scalar support to truncate or censor, so that path is not a meaningful operation rather than an oversight.
+Standard Distributions.jl wrappers slot in as leaves inside a tree: both `truncated()` and `censored()` work as ordinary leaves, as `onset_report` and `onset_referral` show above.
+Wrapping a whole composed tree in `truncated()`/`censored()` is a different question: an event tree does not have a single scalar support to truncate or censor, so that path raises a clear error rather than silently doing the wrong thing.
 
 ## Related packages
 
