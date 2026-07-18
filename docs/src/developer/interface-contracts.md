@@ -29,10 +29,11 @@ plain univariate leaves (no composer supertype):
 ```
 
 `AbstractComposedDistribution` is parametric on variate form `F` (`Univariate` / `Multivariate`), so one supertype spans the univariate one_of members and the multivariate event-tree composers while preserving `Distribution{F, S}`.
-`AbstractMultiChild` is an intermediate that groups the two positional multi-child composers (`Sequential`, `Parallel`) the tree walkers dispatch over together; `Choose` is a sibling, not a multi-child node; and `AbstractOneOf` re-roots the univariate one_of family under the composed supertype, so it stays a `UnivariateDistribution` while sharing the composed abstract.
-The tree walkers still dispatch on `AbstractOneOf` wherever the two one_of nodes behave alike (one event slot per outcome, the shared origin, the per-outcome draw) and on the concrete type only where the scoring arithmetic differs.
-Downstream extension packages (CensoredDistributions and its siblings) dispatch on these supertypes, so the names and shape match the shared contract.
-`test_abstract_membership` pins the membership down as a test, so a type filed under the wrong supertype fails.
+
+- `AbstractMultiChild` is an intermediate that groups the two positional multi-child composers (`Sequential`, `Parallel`) the tree walkers dispatch over together.
+- `Choose` is a sibling of `AbstractMultiChild`, not a multi-child node itself.
+- `AbstractOneOf` re-roots the univariate one_of family under the composed supertype, so it stays a `UnivariateDistribution` while sharing the composed abstract; the tree walkers dispatch on `AbstractOneOf` wherever the two one_of nodes behave alike (one event slot per outcome, the shared origin, the per-outcome draw) and on the concrete type only where the scoring arithmetic differs.
+- Downstream extension packages (CensoredDistributions and its siblings) dispatch on these supertypes, so the names and shape match the shared contract; `test_abstract_membership` pins the membership down as a test, so a type filed under the wrong supertype fails.
 
 ## The composer-node contract
 
@@ -127,23 +128,8 @@ params_table(tree)             # a Tables.jl table of the free parameters
 
 ## The leaf-wrapper contract
 
-A leaf wrapper wraps one inner base distribution and stays transparent to the prior and parameter surface.
-The package reaches the inner leaf through two methods (`public`, not exported):
-
-- `free_leaf(d)` returns the free inner leaf (a `Distribution`), peeling any wrapping;
-- `rewrap_leaf(d, inner)` reconstructs an equivalent wrapper around a new inner leaf.
-
-Together they must round-trip: `rewrap_leaf(d, free_leaf(d))` reproduces a node whose density matches `d`.
-A plain leaf is its own free leaf (`free_leaf(d) == d`, `rewrap_leaf(d, inner) == inner`); `Truncated` peels to its untruncated base and rebuilds the bounds; [`Shared`](@ref) peels through to its inner leaf and rebuilds the tie.
-
-```julia
-using ComposedDistributions, Distributions
-import ComposedDistributions: free_leaf, rewrap_leaf
-
-d = shared(:inc, Gamma(2.0, 1.0))
-free_leaf(d)                                 # Gamma(2.0, 1.0)
-free_leaf(rewrap_leaf(d, Gamma(3.0, 1.5)))   # Gamma(3.0, 1.5)
-```
+A leaf wrapper wraps one inner base distribution and stays transparent to the prior and parameter surface, through the `free_leaf` / `rewrap_leaf` pair (`public`, not exported).
+See [The leaf protocol](@ref leaf-protocol) for the full contract, the round-trip guarantee, and a worked example.
 
 ## Keeping the hierarchy honest
 
