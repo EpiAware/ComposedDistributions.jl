@@ -20,7 +20,6 @@ DynamicPPL = "366bfd00-2699-11ea-058f-f148b4cae6d8"
 FlexiChains = "4a37a8b9-6e57-4b92-8664-298d46e639f7"
 LogDensityProblems = "6fdf6af0-433a-55f7-b3ed-c6c6e0b8df7c"
 LoweredDistributions = "8539b7eb-0b85-40d0-a8a6-65093c3d0137"
-ModifiedDistributions = "664e6f8c-d74f-44d3-9f37-f82699103046"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [extensions]
@@ -29,7 +28,6 @@ ComposedDistributionsDynamicPPLExt = "DynamicPPL"
 ComposedDistributionsFlexiChainsExt = ["DynamicPPL", "FlexiChains"]
 ComposedDistributionsLogDensityProblemsExt = "LogDensityProblems"
 ComposedDistributionsLoweredDistributionsExt = "LoweredDistributions"
-ComposedDistributionsModifiedDistributionsExt = "ModifiedDistributions"
 ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
@@ -43,7 +41,6 @@ FlexiChains = "0.4, 0.5, 0.6"
 LogDensityProblems = "2"
 LogExpFunctions = "0.3, 1"
 LoweredDistributions = "0.1"
-ModifiedDistributions = "0.1"
 Mooncake = "0.5"
 Random = "1"
 Statistics = "1"

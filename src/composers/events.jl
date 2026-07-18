@@ -7,8 +7,8 @@
 # value is ANY valid leaf (a plain distribution, an `uncertain(...)` leaf, a
 # ModifiedDistributions modifier leaf, or a pre-built subtree), so the fill never
 # hard-codes to a distribution family. A ModifiedDistributions leaf composes
-# through the existing `ComposedDistributionsModifiedDistributionsExt` because
-# the composer verbs already admit any `UnivariateDistribution`.
+# through ModifiedDistributions' own `ModifiedDistributionsComposedDistributionsExt`
+# because the composer verbs already admit any `UnivariateDistribution`.
 
 # --- the structural spec nodes ---------------------------------------------
 
