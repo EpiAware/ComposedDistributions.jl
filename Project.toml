@@ -19,7 +19,6 @@ Bijectors = "76274a88-744f-5084-9051-94815aaf08c4"
 DynamicPPL = "366bfd00-2699-11ea-058f-f148b4cae6d8"
 FlexiChains = "4a37a8b9-6e57-4b92-8664-298d46e639f7"
 LogDensityProblems = "6fdf6af0-433a-55f7-b3ed-c6c6e0b8df7c"
-LoweredDistributions = "8539b7eb-0b85-40d0-a8a6-65093c3d0137"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [extensions]
@@ -27,7 +26,6 @@ ComposedDistributionsBijectorsExt = "Bijectors"
 ComposedDistributionsDynamicPPLExt = "DynamicPPL"
 ComposedDistributionsFlexiChainsExt = ["DynamicPPL", "FlexiChains"]
 ComposedDistributionsLogDensityProblemsExt = "LogDensityProblems"
-ComposedDistributionsLoweredDistributionsExt = "LoweredDistributions"
 ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
@@ -40,7 +38,6 @@ EpiAwareADTools = "0.1"
 FlexiChains = "0.4, 0.5, 0.6"
 LogDensityProblems = "2"
 LogExpFunctions = "0.3, 1"
-LoweredDistributions = "0.1"
 Mooncake = "0.5"
 Random = "1"
 Statistics = "1"

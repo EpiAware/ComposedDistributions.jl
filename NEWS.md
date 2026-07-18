@@ -1,5 +1,18 @@
 ## Unreleased
 
+- **breaking:** the `ComposedDistributionsLoweredDistributionsExt` extension
+  and the `LoweredDistributions` weakdep are removed (LD#51, the #22
+  hub-owned decision). `LoweredDistributions` now hosts the `lower` bridge
+  for the composer types itself, in its own
+  `LoweredDistributionsComposedDistributionsExt` (moved verbatim from this
+  package). Anyone who imported the extension module directly from this
+  package must load `LoweredDistributions` and rely on its extension
+  instead; functionality is otherwise unchanged when both packages are
+  loaded together. This is the last source-bridge weakdep this package
+  carries — the remaining `Bijectors`/`DynamicPPL`/`FlexiChains`/
+  `LogDensityProblems`/`Mooncake` inference extensions are separately
+  staged to move out to DistributionsInference.jl (#185).
+
 - **chore:** dropped the root `[sources]` pins for `ConvolvedDistributions`
   and `EpiAwareADTools` now that both are registered in General
   (ConvolvedDistributions 0.2.0, EpiAwareADTools 0.1.0) — both root
