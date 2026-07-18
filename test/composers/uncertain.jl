@@ -480,3 +480,55 @@ end
             :notif => LogNormal(1.0, 0.5)))
     @test logpdf(tree, flat) == logpdf(tmpl_tree, flat)
 end
+
+@testitem "uncertain(tree, ...): the promotion verb" begin
+    using Distributions
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    # Keyword form: a targeted promotion, matching update's merge mode.
+    u1 = uncertain(tree; onset_admit = (shape = LogNormal(log(2.0), 0.2),))
+    @test has_uncertain(u1)
+    @test u1 == update(tree,
+        (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+
+    # Positional NamedTuple form is equivalent.
+    u2 = uncertain(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+    @test u1 == u2
+
+    # A Real sibling in the same call re-pins without becoming uncertain.
+    u3 = uncertain(tree; onset_admit = (
+        shape = LogNormal(log(2.0), 0.2), scale = 2.5))
+    @test u3.components[1].template.θ == 2.5
+
+    # Bare `uncertain(tree)` promotes every free parameter (matches
+    # `update(tree, param_priors(tree))`).
+    everything = uncertain(tree)
+    @test has_uncertain(everything)
+    @test everything == update(tree, param_priors(tree))
+
+    # No distribution anywhere: refused, pointed at `update`.
+    @test_throws ArgumentError uncertain(tree; onset_admit = (scale = 2.5,))
+
+    # A `Resolve` node (AbstractOneOf, itself a UnivariateDistribution) also
+    # dispatches to the tree-level promotion, not the leaf-construction
+    # method — the two never collide because AbstractComposedDistribution is
+    # a strict subtype of UnivariateDistribution for this arm.
+    r = resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => Gamma(2.0, 1.5))
+    ru = uncertain(r; death = (shape = LogNormal(log(1.5), 0.2),))
+    @test has_uncertain(ru)
+end
+
+@testitem "uncertain(tree, ...) replaces an already-uncertain parameter" begin
+    using Distributions
+
+    tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
+        shape = LogNormal(log(2.0), 0.2)),))
+
+    replaced = uncertain(tree; onset_admit = (shape = Normal(2.0, 0.5),))
+    spec = ComposedDistributions._uncertain_specs(replaced.components[1])
+    # Replace semantics, not hyperprior nesting: the new spec is the plain
+    # Normal, not a distribution wrapping the old LogNormal.
+    @test spec.shape == Normal(2.0, 0.5)
+end

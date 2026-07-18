@@ -56,7 +56,7 @@ When scoring a whole record, check that every value sits in its own leaf's suppo
 
 ## How do I fit a composed distribution to data?
 
-Mark the parameters to estimate with [`uncertain`](@ref) (or promote a whole tree at once with `update(tree, param_priors(tree))`), then package the tree and data into a log-density with [`as_logdensity`](@ref), or wrap it as a `DynamicPPL` model with [`as_turing`](@ref) for direct sampling with Turing.jl.
+Mark the parameters to estimate by building a leaf with [`uncertain`](@ref), or promote a leaf/subtree/whole tree already in place with [`uncertain`](@ref)`(tree, ...)` / `uncertain(tree)`, then package the tree and data into a log-density with [`as_logdensity`](@ref), or wrap it as a `DynamicPPL` model with [`as_turing`](@ref) for direct sampling with Turing.jl.
 See [Fitting a composed distribution](@ref inference) for the full pipeline.
 
 ## Is a composed distribution really a `Distribution`?

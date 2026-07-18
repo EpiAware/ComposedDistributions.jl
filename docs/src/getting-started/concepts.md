@@ -46,7 +46,8 @@ The verbs fall into five families, listed here as verb, what it does, and what i
 | `params_table` | the flat free-parameter inventory | a Tables.jl table |
 | `build_priors` | support-derived default priors from that table | a nested prior `NamedTuple` |
 | `default_prior` | the default prior for one parameter row | a `Distribution` |
-| `param_priors` | `params_table` + `build_priors` in one call, for `update(tree, param_priors(tree))` | a nested prior `NamedTuple` |
+| `param_priors` | `params_table` + `build_priors` in one call, for `uncertain(tree)` (bare) | a nested prior `NamedTuple` |
+| `uncertain(tree, ...)` | promote one or more free parameters of an existing tree; bare `uncertain(tree)` promotes all | a tree |
 
 See [Fitting a composed distribution](@ref inference) for how these feed the estimation pipeline.
 

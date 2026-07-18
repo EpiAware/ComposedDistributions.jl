@@ -8,13 +8,13 @@ module ComposedDistributionsFlexiChainsExt
 # chain's parameter names. Loaded only when both DynamicPPL and FlexiChains are
 # available.
 
-using ComposedDistributions: ComposedDistributions, Sequential, Parallel,
-                             Resolve, Compete, Choose, component_names,
-                             shared_tag, leaf_param_names, _collect_shared,
-                             uncertain_specs, free_leaf, Pool, _pool_specs,
-                             _collect_pools!, _population_template,
-                             pool_noncentred, _validate_pool_groups,
-                             _validate_tree_names
+using ComposedDistributions: ComposedDistributions, AbstractComposedDistribution,
+                             Sequential, Parallel, Resolve, Compete, Choose,
+                             component_names, shared_tag, leaf_param_names,
+                             _collect_shared, uncertain_specs, free_leaf,
+                             Pool, _pool_specs, _collect_pools!,
+                             _population_template, pool_noncentred,
+                             _validate_pool_groups, _validate_tree_names
 import ComposedDistributions: chain_to_params, update, strip_prefix,
                               param_draws
 using Distributions: params
@@ -333,11 +333,32 @@ end
 # `update(template, chain)` there) so the bare `[`update`](@ref)` used
 # throughout the docs resolves to one binding rather than being split across
 # per-method docstrings.
-function update(template, chain::FlexiChains.FlexiChain;
+function _update_from_chain(template, chain::FlexiChains.FlexiChain;
         prefix::Symbol = :d, draw = nothing, draws = nothing, summary = mean)
     params = chain_to_params(template, chain; prefix = prefix, draw = draw,
         draws = draws, summary = summary)
     return update(template, params)
+end
+
+function update(template, chain::FlexiChains.FlexiChain; kwargs...)
+    return _update_from_chain(template, chain; kwargs...)
+end
+
+# Disambiguates against `update(d::AbstractComposedDistribution, table)`
+# (CD#195's Tables.jl bulk-write arm, `composers/introspection.jl`): that
+# method is untyped in its second argument (any `Tables.istable` source),
+# this one is untyped in its first (any `template`) — for an
+# `AbstractComposedDistribution` + `FlexiChain` call neither generic method
+# is more specific than the other, so without this method `update(tree,
+# chain)` throws an ambiguous-call `MethodError` the moment this extension
+# and the table arm are both loaded. This third method's signature is a
+# strict refinement of both (both arguments concretely typed), so it wins
+# outright and the ambiguity does not arise for the documented canonical
+# case. See `Test.detect_ambiguities` in the test suite (`flexichains_ext.jl`)
+# for the regression guard.
+function update(d::AbstractComposedDistribution, chain::FlexiChains.FlexiChain;
+        kwargs...)
+    return _update_from_chain(d, chain; kwargs...)
 end
 
 # Remove the single leading `prefix` from one parameter VarName, leaving the
