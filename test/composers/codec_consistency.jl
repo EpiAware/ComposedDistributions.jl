@@ -12,15 +12,15 @@
 # Full unification (rewriting both as one shared, pluggable walker — a
 # "collect runtime rows" instantiation and a "generate an expression" one) is
 # a genuine architectural change to the hottest, most heavily tested part of
-# this package, at a moment when #202 is independently rewriting
-# introspection.jl. This test is the fallback the issue offers instead: it
-# builds every composer/leaf shape the walk must handle and asserts, for each,
-# that feeding params_table's own current values (in table order) through the
-# codec (`reconstruct`) reproduces the SAME values — which can only hold if
-# table order and codec order are the same bijection onto the tree's
-# estimated parameters. A silent divergence (a reordering, a skip that
-# disagrees between the two walks) breaks this immediately. Pool's ordering
-# is deliberately not re-covered here: `test/composers/turing_ext.jl`'s
+# this package, at a moment when #202 was independently rewriting
+# introspection.jl (merged since). This test is the fallback the issue offers
+# instead: it builds every composer/leaf shape the walk must handle and
+# asserts, for each, that feeding params_table's own current values (in table
+# order) through the codec (`reconstruct`) reproduces the SAME values — which
+# can only hold if table order and codec order are the same bijection onto
+# the tree's estimated parameters. A silent divergence (a reordering, a skip
+# that disagrees between the two walks) breaks this immediately. Pool's
+# ordering is deliberately not re-covered here: `test/composers/turing_ext.jl`'s
 # non-centred pooled round-trip already exercises it end-to-end through real
 # NUTS sampling and readback.
 #
@@ -133,6 +133,22 @@ end
     seq2 = sequential(:total => diff_leaf,
         :report => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
     @test _assert_codec_matches_table(seq2) == :ok
+end
+
+@testitem "codec/params_table order: Truncated and Censored wrapper leaves" setup=[
+    CodecConsistencyHelpers] begin
+    # Wrapper peeling (free_leaf/rewrap_leaf) is a distinct code path both
+    # walks must agree on independently of plain leaves and composers — the
+    # exact kind of shape this file exists to guard, and one this file didn't
+    # cover until now despite Truncated pre-dating this PR and Censored
+    # landing alongside it (#215).
+    trunc_leaf = truncated(
+        uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)); upper = 10.0)
+    cens_leaf = censored(
+        uncertain(Gamma(3.0, 1.5); scale = LogNormal(0.0, 0.2)); upper = 10.0)
+    tree = sequential(:trunc => trunc_leaf, :cens => cens_leaf,
+        :plain => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
+    @test _assert_codec_matches_table(tree) == :ok
 end
 
 @testitem "codec/params_table order: deeply nested mixed tree" setup=[

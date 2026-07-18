@@ -63,6 +63,7 @@ end
 @testitem "as_turing round-trip: shared-tag readback lands on the right leaf" begin
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
+    using Statistics: mean
 
     # A parameter shared across two branches by tag: params_table and the
     # codec must both treat it as ONE estimated parameter (the first
@@ -96,6 +97,19 @@ end
     @test event(fit, :primary) isa Shared
     @test event(fit, :primary).dist isa Gamma
     @test event(fit, :tail) isa LogNormal
+
+    # Anchor the fitted value against the chain's OWN draws, read independently
+    # of `update`/`chain_to_params` (a direct FlexiChains index on the site's
+    # VarName): a regression where readback silently fell back to the
+    # template value (2.0) for both tied occurrences — consistent between the
+    # two, so the equality check above alone would not catch it — would fail
+    # this. `update`'s default summary is the posterior mean (see
+    # `_update_from_chain`, `summary = mean`), so this reproduces that
+    # computation from the raw chain rather than through the code under test.
+    posterior_mean = mean(vec(chain[@varname(d.incubation.shape)]))
+    fitted_shape = event(fit, :primary).dist.α
+    @test fitted_shape ≈ posterior_mean
+    @test fitted_shape != 2.0
 end
 
 @testitem "as_turing round-trip: uncertain branch_probs stick coordinate" begin
