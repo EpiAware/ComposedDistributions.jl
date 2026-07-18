@@ -195,6 +195,13 @@ _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 # the one-level peeled inner type; `own_extra_names` is this case's OWN extra
 # parameter names (empty = none, keep peeling). All plain data -- no
 # callables -- so nothing here is ever `Base.invokelatest`-sensitive.
+#
+# Do not add a `Function`/callable field to this struct. That was the first
+# design tried here (a `free_type`/`extra_names` closure pair) and it does not
+# work: calling a stored closure from within the generator hits the exact
+# same world-age wall a direct dispatch method does, `Base.invokelatest`
+# included -- see the comment above this section. `_LeafCodecEntry` stays
+# plain data specifically so nothing it holds is ever called.
 struct _LeafCodecEntry
     pattern::Type
     free_index::Int
