@@ -80,20 +80,20 @@ broken_scenario_names() = String[]
 # Mooncake primitives, so this scenario is no longer broken on Mooncake.
 #
 # The `:latent` "Uncertain-leaf logdensity codec" scenario differentiates the
-# full `as_logdensity`/`logdensity` path, whose `unflatten` rebuilds a nested
-# `NamedTuple` mixing the active flat parameter with the fixed leaf's constant
-# template values on the heap. Enzyme reverse cannot compile that reconstruction
-# — its cache-store type reasoning hits `Taking the type of an opaque pointer is
-# illegal` (an Enzyme/LLVM internal limitation with type-unstable heap-building,
-# the same family as the map-vs-generator `IllegalTypeAnalysisException`, finding
-# C8) — so it is marked broken on Enzyme reverse. The gradient itself is correct:
-# ForwardDiff, ReverseDiff and Mooncake reverse all agree on this scenario, and
-# the sibling centred-pool codec scenario differentiates on Enzyme fine.
+# full `as_logdensity`/`logdensity` path, whose `unflatten` rebuilds the nested
+# `NamedTuple` `update` consumes. It used to be marked broken on Enzyme
+# reverse: the old Dict-based walk built a type-unstable, heap-boxed
+# `NamedTuple`, and Enzyme's cache-store type reasoning hit `Taking the type
+# of an opaque pointer is illegal` on that reconstruction (an Enzyme/LLVM
+# internal limitation with type-unstable heap-building, the same family as
+# the map-vs-generator `IllegalTypeAnalysisException`, finding C8). #178 PR 2
+# replaced that walk with a `@generated` compile-time layout walk
+# (`codec_gen.jl`) that emits a concretely-typed (`@inferred`-stable)
+# `NamedTuple` construction with the slot indices baked in as literals, so
+# Enzyme reverse now differentiates it like every other backend (#162).
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
-    return Dict(
-        "Enzyme reverse" =>
-        Set(["Uncertain-leaf logdensity codec"]))
+    return Dict{String, Set{String}}()
 end
 
 "Per-backend scenario names too unstable to run at all."
