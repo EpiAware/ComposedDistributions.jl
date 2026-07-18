@@ -1097,12 +1097,12 @@ function update(leaf, params::NamedTuple)
 end
 
 function update(d::AbstractComposedDistribution, x::AbstractVector)
-    # A `Vector{<:NamedTuple}` is BOTH an `AbstractVector` (matching this
-    # method, more specific than the untyped table arm below) AND
+    # A `Vector{<:NamedTuple}` is both an `AbstractVector` (matching this
+    # method, more specific than the untyped table arm below) and
     # `Tables.istable` (a Tables.jl row table) — so it would otherwise
     # silently reach `unflatten`, which expects `Real` elements, instead of
     # the table arm it is actually shaped for. A duck-typed flat vector
-    # (`Vector{Any}` holding only `Real`s, say) is NOT `Tables.istable`
+    # (`Vector{Any}` holding only `Real`s, say) is not `Tables.istable`
     # (checked on the vector's static element type, not its contents), so
     # this probe does not affect it.
     Tables.istable(x) && return update(d, _table_to_nested_updates(x))
