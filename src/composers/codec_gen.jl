@@ -79,9 +79,11 @@ end
 @doc "
 The peeled free-delay TYPE of a (possibly wrapped) leaf type, mirroring
 `free_leaf` at the type level. The base identity is `L` itself; `Truncated`
-peels to its untruncated inner type. A leaf-wrapper extension (censoring,
-modifiers) adds its own method on its own type, in step with its instance-based
-`free_leaf` method.
+peels to its untruncated inner type. A CORE (in-module) leaf wrapper adds its
+own method here, in step with its instance-based `free_leaf` method. A
+leaf-wrapper PACKAGE EXTENSION (censoring, modifiers) must NOT add a direct
+dispatch method here -- see [`register_leaf_wrapper!`](@ref) below (#189)
+instead.
 " _leaf_free_type(::Type{L}) where {L} = L
 _leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _leaf_free_type(D)
 _leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _leaf_free_type(D)
@@ -102,9 +104,11 @@ _param_names_of(::Type{<:Distributions.Uniform}) = (:lower, :upper)
 
 @doc "
 The extra (modifier-owned) parameter names of a leaf TYPE, mirroring
-`extra_leaf_params`'s key set at the type level. Defaults to `()`; a
-leaf-wrapper extension reporting a non-empty `extra_leaf_params` (e.g.
-ModifiedDistributions' `thin(...)`) adds its own method.
+`extra_leaf_params`'s key set at the type level. Defaults to `()`; a CORE
+(in-module) leaf wrapper reporting a non-empty `extra_leaf_params` adds its
+own method here. A leaf-wrapper PACKAGE EXTENSION (e.g. ModifiedDistributions'
+`thin(...)`) must NOT add a direct dispatch method here -- see
+[`register_leaf_wrapper!`](@ref) below (#189) instead.
 " _extra_names_of(::Type) = ()
 _extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _extra_names_of(D)
 _extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _extra_names_of(D)
@@ -122,6 +126,204 @@ _extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _extra_names_of
 # override.
 _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 
+# --- load-order-independent leaf-wrapper registry (#189, #178 PR 4) --------
+#
+# `_leaf_free_type`/`_extra_names_of` above are ordinary generic functions, so
+# a leaf-wrapper PACKAGE EXTENSION (ModifiedDistributions' `Affine`/`Weighted`/
+# `Transformed`/`Modified`) could in principle add its own dispatch method to
+# each, mirroring how `Truncated` does it in-module. It CANNOT safely do so:
+# both hooks are called from a `@generated` function's GENERATOR (reached from
+# `unflatten`/`flat_dimension`/`flatten`'s generator bodies), and calling ANY
+# user-defined function or closure from within a generator -- dispatched OR
+# not, and regardless of `Base.invokelatest` -- can hit a world-age wall
+# ("MethodError: ...may be too new") once the generator's own constituent
+# functions have been JIT-compiled against an earlier world. This is a
+# confirmed, empirically-reproduced Julia semantics gap specific to
+# `@generated` function generators (reproduces with `--compiled-modules=no`;
+# not fixable by adding more `invokelatest` calls anywhere in the chain --
+# tried, including wrapping a registry-stored CLOSURE itself, which fails
+# exactly the same way). See #188/#189.
+#
+# The fix that actually holds: the registry stores no callables at all, only
+# PLAIN DATA -- a type-parameter INDEX (`Int`) for the one-level peel, and a
+# FIXED `NTuple{N,Symbol}` for a wrapper's own extra names (empty = "no
+# extras, keep peeling"). Reading `L.parameters[idx]` and a struct field are
+# both pure, non-dispatching, world-age-FREE operations (`.parameters` access
+# is a language-level introspection primitive, not a generic-function call),
+# and the registry lookup itself (`L <: e.pattern`) is the `<:` operator, a
+# compiler primitive rather than ordinary multiple dispatch -- so NONE of the
+# registry-consulting code below ever needs `Base.invokelatest`, and none of
+# it can be invalidated by a load-order timing gap: there is no user code
+# being CALLED at all, only type introspection.
+#
+# Because a wrapper family can need a CONDITIONAL answer (`Transformed`'s
+# `ThinOp` case owns an extra and does not peel further; every other
+# `Transformed` owns none and does peel through), a family that needs this
+# registers ONE ENTRY PER CASE, most specific pattern first in the scan order
+# (`register_leaf_wrapper!(Transformed{D, <:ThinOp} where D; ...)` ahead of
+# the general `register_leaf_wrapper!(Transformed; ...)`) -- ordinary type
+# specificity via `<:`, not a closure branching at call time.
+#
+# An extension calls `register_leaf_wrapper!` from its OWN `__init__` (not at
+# module top level: `__init__` runs once Julia actually ACTIVATES the
+# extension, i.e. as soon as every one of its trigger packages is loaded,
+# strictly before any downstream code could construct one of its leaf types,
+# let alone place one in a composed tree) -- so the registry is fully
+# populated before the first possible use, by construction (a leaf type from
+# an extension cannot exist before that extension is loaded).
+#
+# A CORE (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`)
+# keeps using its existing direct-dispatch `_leaf_free_type`/`_extra_names_of`
+# methods (still `Base.invokelatest`-wrapped as before) unchanged: those are
+# defined in THIS module, compiled alongside the generator itself, so there is
+# no cross-module load-order hazard for them, and the registry is only
+# consulted as a first-choice check ahead of that existing dispatch chain,
+# never a replacement for it.
+#
+# Known residual gap (not fixed here): a CORE wrapper applied directly around
+# an EXTENSION leaf (e.g. a hypothetical `truncated(thin(Gamma(...)))`, core
+# wrapping extension, rather than the supported `thin(truncated(Gamma(...)))`)
+# still resolves through the OLD dispatch-only chain at that layer, which does
+# not consult the registry either. This is not a currently-exercised
+# combination (censoring/truncation is modelled as the INNER layer, modifiers
+# as the OUTER one, throughout this codebase), and the existing safety net
+# still applies if it is ever hit: an un-peeled fallback surfaces as a loud,
+# clear `ArgumentError`/`KeyError` from `update`'s instance-based key
+# validation, not silent corruption (see the `#188` test in
+# `test/composers/codec_gen.jl`). Fixing this fully would mean routing
+# `Truncated`/`Censored`'s own recursive peel through the registry-aware
+# resolvers below too; left as a documented follow-up rather than bundled
+# here to avoid an unrelated structural change to those core-type methods.
+
+# One registered leaf-wrapper case: `pattern` is what a concrete leaf type is
+# matched against (`<:`); `free_index` is the type-parameter position holding
+# the one-level peeled inner type; `own_extra_names` is this case's OWN extra
+# parameter names (empty = none, keep peeling). All plain data -- no
+# callables -- so nothing here is ever `Base.invokelatest`-sensitive.
+struct _LeafCodecEntry
+    pattern::Type
+    free_index::Int
+    own_extra_names::Tuple{Vararg{Symbol}}
+end
+
+const _LEAF_CODEC_REGISTRY = _LeafCodecEntry[]
+
+@doc "
+Register a leaf-wrapper case's type-level codec hooks with the generated
+codec's load-order-independent registry (#189).
+
+`register_leaf_wrapper!(pattern; free_index, extra_names = ())` tells the
+generated codec how to peel a leaf-wrapper TYPE matching `pattern` (matched
+against a concrete leaf's type with `<:`) without dispatching on it at
+generation time: `free_index` is the position, among `pattern`'s type
+parameters, of the ONE-LEVEL peeled inner type (mirroring [`free_leaf`](@ref)
+at the type level -- the resolver recurses through further layers itself, so
+this need not peel more than one level even for a leaf nested under several
+wrappers), and `extra_names` is this case's OWN extra (modifier-owned)
+parameter names, or `()` (the default) to mean \"this case owns no extras,
+keep peeling\" (mirroring [`extra_leaf_params`](@ref)'s key set at the type
+level).
+
+A wrapper family whose answer depends on a further type parameter (a
+`Transformed` carrying a `ThinOp` owns a `:thin` extra and does not peel
+further; every other `Transformed` owns none and does peel through) registers
+ONE ENTRY PER CASE, most specific `pattern` registered LAST (later entries are
+checked first, so a later, more specific registration takes precedence over an
+earlier, more general one already covering the same types).
+
+Call this from an extension's `__init__`, never at module top level:
+`__init__` runs once the extension is actually activated, which is exactly
+when this registry needs to be populated (see the comment above this
+docstring for why that guarantees no load-order hazard, and why this hook
+takes plain data rather than a callable). Registering the same `pattern` twice
+replaces the earlier entry.
+
+# Arguments
+- `pattern`: the leaf-wrapper type a direct dispatch method would otherwise
+  have targeted (e.g. `ModifiedDistributions.Affine`, or a more specific case
+  such as `Transformed{D, <:ThinOp} where D`), matched via `<:` against a
+  concrete leaf's type.
+
+# Keyword Arguments
+- `free_index`: the position of `pattern`'s type parameter holding the
+  ONE-LEVEL peeled inner type.
+- `extra_names`: this case's own extra parameter names (default `()`, meaning
+  \"no extras, keep peeling\").
+
+# Examples
+```@example
+using ComposedDistributions
+
+# A toy wrapper family with one extra parameter of its own, no further
+# peeling (a stand-in for how a real leaf-wrapper extension would register).
+struct ToyWrap{D}
+    dist::D
+    extra::Float64
+end
+ComposedDistributions.register_leaf_wrapper!(ToyWrap;
+    free_index = 1, extra_names = (:toy_extra,))
+ComposedDistributions._resolve_extra_names(ToyWrap{Float64})
+```
+
+# See also
+- [`free_leaf`](@ref), [`extra_leaf_params`](@ref): the matching instance-level hooks.
+"
+function register_leaf_wrapper!(pattern::Type; free_index::Int,
+        extra_names::Tuple{Vararg{Symbol}} = ())
+    filter!(e -> e.pattern != pattern, _LEAF_CODEC_REGISTRY)
+    push!(_LEAF_CODEC_REGISTRY, _LeafCodecEntry(pattern, free_index, extra_names))
+    return nothing
+end
+
+# The LAST-registered entry whose pattern matches `L` (so a more specific,
+# later registration wins over an earlier, more general one for the same
+# type -- see `register_leaf_wrapper!`'s docstring), or `nothing` for a core
+# (unregistered) type. A plain reverse linear scan over a handful of entries,
+# run only at generation time (once per distinct tree TYPE, never per
+# gradient evaluation), so no faster structure is warranted.
+function _registered_leaf_entry(::Type{L}) where {L}
+    for e in Iterators.reverse(_LEAF_CODEC_REGISTRY)
+        L <: e.pattern && return e
+    end
+    return nothing
+end
+
+@doc "
+Peel a (possibly wrapped) leaf TYPE to its free delay TYPE, registry-first.
+
+The load-order-independent counterpart of [`free_leaf`](@ref) at the type
+level: checks the [`register_leaf_wrapper!`](@ref) registry first (a plain,
+world-age-free type-parameter read, never a dispatched call) and recurses
+through however many further layers remain -- core, registered, or a mix --
+until reaching a fixed point (a type whose peel is itself); falls back to the
+existing in-module dispatch chain (`_leaf_free_type`) for a type with no
+registry entry.
+" function _resolve_leaf_free_type(::Type{L}) where {L}
+    entry = _registered_leaf_entry(L)
+    next = entry === nothing ? Base.invokelatest(_leaf_free_type, L) :
+           L.parameters[entry.free_index]
+    next === L && return L
+    return _resolve_leaf_free_type(next)
+end
+
+@doc "
+The extra (modifier-owned) parameter names of a (possibly wrapped) leaf TYPE,
+registry-first.
+
+The load-order-independent counterpart of [`extra_leaf_params`](@ref)'s key
+set at the type level: a registered entry either owns its own extras (a
+non-empty `own_extra_names`, matching a `Transformed`/`ThinOp`'s
+instance-level short-circuit) or peels through (empty, recursing on the
+type-parameter at `free_index`); a type with no registry entry falls back to
+the existing in-module dispatch chain (`_extra_names_of`), which already
+peels core wrappers on its own.
+" function _resolve_extra_names(::Type{L}) where {L}
+    entry = _registered_leaf_entry(L)
+    entry === nothing && return Base.invokelatest(_extra_names_of, L)
+    isempty(entry.own_extra_names) || return entry.own_extra_names
+    return _resolve_extra_names(L.parameters[entry.free_index])
+end
+
 # The full (native..., extra...) parameter name tuple of a (possibly wrapped)
 # leaf TYPE `L`, mirroring `leaf_param_names` at the type level exactly:
 # native names come from the PEELED free delay (padding unmapped names
@@ -129,26 +331,14 @@ _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 # parameter (e.g. `thin`'s reporting probability) is owned by the wrapper, not
 # the inner free delay, exactly as `extra_leaf_params(leaf)` (not
 # `extra_leaf_params(free_leaf(leaf))`) reads it at the instance level.
-#
-# `Base.invokelatest` on every one of these type-level hooks: they are called
-# from a `@generated` function's GENERATOR (this function is reached from
-# `_leaf_unflatten_expr`, itself reached from `unflatten`/`flat_dimension`/
-# `flatten`'s generator bodies), and a generator's own world age can be fixed
-# BEFORE a package extension (e.g. `ComposedDistributionsModifiedDistributionsExt`)
-# has added its `_leaf_free_type`/`_extra_names_of` methods for a wrapper type
-# like `Transformed`, silently baking in the un-peeled fallback. Forcing the
-# latest world age here is generation-time-only cost (this runs once per
-# distinct tree TYPE, never per evaluation) and makes the walk see every
-# extension method that is loaded by the time the generated function first
-# runs, not just the ones loaded before it was first triggered.
 function _leaf_type_param_names(::Type{L}) where {L}
-    freeL = Base.invokelatest(_leaf_free_type, L)
+    freeL = _resolve_leaf_free_type(L)
     base = Base.invokelatest(_param_names_of, freeL)
     n = Base.invokelatest(_params_arity_of, freeL)
     native = ntuple(n) do i
         i <= length(base) ? base[i] : Symbol(:param_, i)
     end
-    return (native..., Base.invokelatest(_extra_names_of, L)...)
+    return (native..., _resolve_extra_names(L)...)
 end
 
 # --- generation-time layout context -----------------------------------------
@@ -306,7 +496,10 @@ function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
         speckeys = ()
         specvaltypes = ()
     end
-    n = Base.invokelatest(_params_arity_of, Base.invokelatest(_leaf_free_type, Ltempl))
+    # Registry-aware peel (matches `_leaf_type_param_names`'s own resolution
+    # exactly, #189) -- this `n` and that function's internal `n` must agree,
+    # since both fix where the native/extra boundary falls in `allnames`.
+    n = Base.invokelatest(_params_arity_of, _resolve_leaf_free_type(Ltempl))
     allnames = _leaf_type_param_names(Ltempl)
     vals = Vector{Any}(undef, length(allnames))
     for (i, pname) in enumerate(allnames)
