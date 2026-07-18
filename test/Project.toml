@@ -68,6 +68,9 @@ ComposedDistributions = {path = ".."}
 # not yet registered; pin its main branch here (the test env is where the
 # extension loads). Drop this pin once LoweredDistributions registers a release.
 LoweredDistributions = {url = "https://github.com/EpiAware/LoweredDistributions.jl", rev = "main"}
+# MD's ModifiedDistributionsComposedDistributionsExt hosts the leaf protocol
+# for the modifier leaves, since this package's reverse extension is gone
+# (#170 step 2). Pinned by git until ModifiedDistributions registers.
 ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "main"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit

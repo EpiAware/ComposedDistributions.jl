@@ -25,6 +25,18 @@
   protocol methods, a genuine Julia semantics gap around generated functions
   and extensions, not a bug in this PR's scope.
 
+- **breaking:** the `ComposedDistributionsModifiedDistributionsExt` reverse
+  extension and the `ModifiedDistributions` weakdep are removed (#170 step 2),
+  ending the extension cycle between the two packages (Julia 1.12 fails on
+  cross-module method overwrites when both packages' extensions activate
+  together). ModifiedDistributions' own
+  `ModifiedDistributionsComposedDistributionsExt` now hosts the full leaf
+  protocol for its modifier leaves (`Affine` / `Weighted` / `Transformed` /
+  `Modified`), reading it through the leaf-protocol public API published in
+  #174. Anyone who imported the extension module directly from this package
+  must load ModifiedDistributions and rely on its extension instead;
+  functionality is otherwise unchanged when both packages are loaded together.
+
 - **refactor!:** the composer/wrapper structs carry their layout-affecting
   names and tags in TYPE parameters rather than runtime fields, lifting
   `Sequential`/`Parallel`/`Choose`/`Resolve`/`Compete`'s outcome/step/branch
