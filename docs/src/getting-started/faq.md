@@ -38,30 +38,15 @@ Prefer the `NamedTuple` form in new code.
 
 ## How do I get the total-delay distribution of a chain?
 
-A [`Sequential`](@ref) chain models each step separately, and its `rand` returns the per-step record.
-To collapse the chain to the single distribution of its origin-to-final gap, use [`observed_distribution`](@ref), which convolves the steps into one delay.
-
-```@example faq
-chain = sequential(:onset_admit => Gamma(2.0, 1.0),
-    :admit_death => Gamma(3.0, 1.0))
-total = observed_distribution(chain)
-mean(total)
-```
-
+A [`Sequential`](@ref) chain models each step separately; to collapse it to the single distribution of its origin-to-final gap, use [`observed_distribution`](@ref), which convolves the steps into one delay.
 For two standalone delays that are not part of a tree, [`convolved`](@ref) gives their sum `X + Y` directly.
+See [Delay chains and the linear chain trick](@ref linear-chain) for a worked example.
 
 ## How do I fix a parameter across branches?
 
-Use [`shared`](@ref) or [`tie`](@ref) to make several leaves one free parameter.
-[`shared`](@ref) tags a leaf where it is built; [`tie`](@ref) walks an assembled tree to named leaves and ties them.
+Use [`shared`](@ref) or [`tie`](@ref) to make several leaves one free parameter: `shared` tags a leaf where it is built, `tie` walks an assembled tree to named leaves and ties them.
 Either way [`params_table`](@ref) then inventories the tied occurrences once under the shared tag rather than as separate parameters.
-
-```@example faq
-d = compose((incubation = Gamma(2.0, 1.0),
-    onset_report = Gamma(2.0, 1.0)))
-tied = tie(d, :incubation, :onset_report; name = :delay)
-unique(params_table(tied).edge)
-```
+See [Composing distributions](@ref composing-distributions) for a worked example.
 
 ## Why is my `logpdf` `-Inf`?
 
@@ -71,9 +56,8 @@ When scoring a whole record, check that every value sits in its own leaf's suppo
 
 ## How do I fit a composed distribution to data?
 
-A composed object is a `Distribution`, so its `logpdf` is the likelihood term you need, and scoring is automatic-differentiation friendly.
-Drop it into a [Turing.jl](https://github.com/TuringLang/Turing.jl) model, or any optimiser, exactly as you would any distribution; there is no package-specific fitting API.
-[`params_table`](@ref) gives the free-parameter inventory and [`build_priors`](@ref) derives support-respecting priors to start from.
+Mark the parameters to estimate with [`uncertain`](@ref) (or promote a whole tree at once with `update(tree, param_priors(tree))`), then package the tree and data into a log-density with [`as_logdensity`](@ref), or wrap it as a `DynamicPPL` model with [`as_turing`](@ref) for direct sampling with Turing.jl.
+See [Fitting a composed distribution](@ref inference) for the full pipeline.
 
 ## Is a composed distribution really a `Distribution`?
 
