@@ -13,6 +13,11 @@
   `LogDensityProblems`/`Mooncake` inference extensions are separately
   staged to move out to DistributionsInference.jl (#185).
 
+- **chore:** dropped the root `[sources]` pins for `ConvolvedDistributions`
+  and `EpiAwareADTools` now that both are registered in General
+  (ConvolvedDistributions 0.2.0, EpiAwareADTools 0.1.0) — both root
+  dependencies resolve from the registry again, so this package is
+  registrable (#41).
 - **feat:** `reconstruct(d, x)` is a new generated primary for the flat-vector
   codec — a composed distribution rebuilt straight from an estimated flat
   vector in one call, with no intermediate `Dict`-typed accumulation (#178,

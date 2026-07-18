@@ -29,11 +29,13 @@ pages = [
     # composition, grounded in the conformance suite under `test/interfaces.jl`.
     "Developer" => [
         "Interface contracts" => "developer/interface-contracts.md",
-        "Leaf protocol" => "developer/leaf-protocol.md"
+        "Leaf protocol" => "developer/leaf-protocol.md",
+        "Developer FAQ" => "developer/faq.md"
     ],
     "API reference" => [
         "Public API" => "lib/public.md",
         "Internal API" => "lib/internals.md"
     ],
-    "Benchmarks" => "benchmarks.md"
+    "Benchmarks" => "benchmarks.md",
+    "Release notes" => "release-notes.md"
 ]
