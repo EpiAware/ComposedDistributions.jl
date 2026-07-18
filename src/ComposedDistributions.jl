@@ -41,8 +41,7 @@ import Base: minimum, maximum
 # Types, constructors, and helpers used without method extension.
 using Distributions: Distributions, UnivariateDistribution, Distribution,
                      Continuous, Multivariate, Univariate, VariateForm,
-                     ValueSupport, MixtureModel, Truncated, truncated,
-                     Censored, censored
+                     ValueSupport, MixtureModel, Truncated, truncated, censored
 
 using LogExpFunctions: log1mexp
 
