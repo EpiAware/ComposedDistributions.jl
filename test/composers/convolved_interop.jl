@@ -443,7 +443,9 @@ end
     # The fixed component parameters ride the full NamedTuple at their template
     # values (see-through), unlike the old fixed-composite contract where the
     # composite had no key at all. (Read by field, not by NamedTuple equality:
-    # `unflatten` assembles the nested tuple key order from a Dict.)
+    # `unflatten`'s generated, compile-time walk fixes its NamedTuple's key
+    # order from the tree's TYPE, not necessarily params_table's row order —
+    # see #192 — so a field-by-field read is the order-agnostic check.)
     @test nt.total.component_1.shape == 2.0 && nt.total.component_1.scale == 1.0
     @test nt.total.component_2.shape == 1.0 && nt.total.component_2.scale == 1.0
     @test flatten(seq, nt) == [0.9]

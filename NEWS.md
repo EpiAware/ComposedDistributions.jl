@@ -1,5 +1,22 @@
 ## Unreleased
 
+- **test:** added a guard against `params_table`/codec ordering drift (#192,
+  the #190 review follow-up): the runtime `params_table` walk and the
+  generated `unflatten`/`flatten` codec are two independent, hand-maintained
+  implementations of the same walk-order and dedup rule, and
+  `ext/ComposedDistributionsDynamicPPLExt.jl` assumes their orderings
+  coincide with nothing checking it. A new consistency test
+  (`test/composers/codec_consistency.jl`) covers every composer/leaf shape;
+  a new `as_turing`/NUTS round trip on a `shared(...)`-tagged tree
+  (`test/composers/turing_ext.jl`) covers the one path that actually depends
+  on the coupling. Full unification into one shared walker was assessed and
+  set aside as disproportionate at this point (see the test file's header for
+  the reasoning); `_param_names`/`_param_names_of`, the other duplicated
+  piece the review flagged, turned out to serve genuinely different
+  purposes (a public, instance-dispatched extension point vs. an internal,
+  type-dispatched table the generated codec needs) and are not safely
+  mergeable, so they get a direct comparison test instead.
+
 - **breaking:** the `ComposedDistributionsLoweredDistributionsExt` extension
   and the `LoweredDistributions` weakdep are removed (LD#51, the #22
   hub-owned decision). `LoweredDistributions` now hosts the `lower` bridge

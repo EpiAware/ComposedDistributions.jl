@@ -666,9 +666,13 @@ Rebuild a composed distribution straight from its estimated flat vector.
 ([`logdensity`](@ref), `as_turing`) routes through: it collapses `d` at the
 estimated parameters in `x` (each fixed parameter held at its template value),
 equivalent to `update(d, `[`unflatten`](@ref)`(d, x))` but naming the whole
-operation as one verb. The nested `NamedTuple` `unflatten` produces is now
-generated (concretely typed, no `Dict`), so this differentiates under every
-supported AD backend including Enzyme reverse (#162).
+operation as one verb. `reconstruct` itself is `update ∘ unflatten`, not a
+single generated function, so it is not independently shown `@inferred`-
+concrete here — that guarantee is [`unflatten`](@ref)'s own (see its
+docstring): the intermediate nested `NamedTuple` it produces is generated
+(concretely typed, no `Dict`), which is what lets Enzyme reverse differentiate
+through the codec at all (#162). `update`'s own inferrability is inherited,
+not re-derived, by this composition.
 
 # Arguments
 - `d`: the composed distribution to rebuild.
