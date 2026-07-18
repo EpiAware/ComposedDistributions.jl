@@ -120,16 +120,33 @@ _extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _extra_names_o
 # override.
 _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 
-# The full (native..., extra...) parameter name tuple of a leaf TYPE `L`
-# (already peeled to its free delay), padding unmapped native names
-# positionally exactly like `leaf_param_names` does at the instance level.
+# The full (native..., extra...) parameter name tuple of a (possibly wrapped)
+# leaf TYPE `L`, mirroring `leaf_param_names` at the type level exactly:
+# native names come from the PEELED free delay (padding unmapped names
+# positionally), but extras are read off `L` itself, UNPEELED -- an extra
+# parameter (e.g. `thin`'s reporting probability) is owned by the wrapper, not
+# the inner free delay, exactly as `extra_leaf_params(leaf)` (not
+# `extra_leaf_params(free_leaf(leaf))`) reads it at the instance level.
+#
+# `Base.invokelatest` on every one of these type-level hooks: they are called
+# from a `@generated` function's GENERATOR (this function is reached from
+# `_leaf_unflatten_expr`, itself reached from `unflatten`/`flat_dimension`/
+# `flatten`'s generator bodies), and a generator's own world age can be fixed
+# BEFORE a package extension (e.g. `ComposedDistributionsModifiedDistributionsExt`)
+# has added its `_leaf_free_type`/`_extra_names_of` methods for a wrapper type
+# like `Transformed`, silently baking in the un-peeled fallback. Forcing the
+# latest world age here is generation-time-only cost (this runs once per
+# distinct tree TYPE, never per evaluation) and makes the walk see every
+# extension method that is loaded by the time the generated function first
+# runs, not just the ones loaded before it was first triggered.
 function _leaf_type_param_names(::Type{L}) where {L}
-    base = _param_names_of(L)
-    n = _params_arity_of(L)
+    freeL = Base.invokelatest(_leaf_free_type, L)
+    base = Base.invokelatest(_param_names_of, freeL)
+    n = Base.invokelatest(_params_arity_of, freeL)
     native = ntuple(n) do i
         i <= length(base) ? base[i] : Symbol(:param_, i)
     end
-    return (native..., _extra_names_of(L)...)
+    return (native..., Base.invokelatest(_extra_names_of, L)...)
 end
 
 # --- generation-time layout context -----------------------------------------
@@ -287,9 +304,8 @@ function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
         speckeys = ()
         specvaltypes = ()
     end
-    freeL = _leaf_free_type(Ltempl)
-    n = _params_arity_of(freeL)
-    allnames = _leaf_type_param_names(freeL)
+    n = Base.invokelatest(_params_arity_of, Base.invokelatest(_leaf_free_type, Ltempl))
+    allnames = _leaf_type_param_names(Ltempl)
     vals = Vector{Any}(undef, length(allnames))
     for (i, pname) in enumerate(allnames)
         j = findfirst(==(pname), speckeys)
@@ -330,8 +346,7 @@ function _pool_hyper_unflatten_expr(specT::Type{<:Pool}, ctx::_CodecCtx)
     Ptempl = P.parameters[2]
     PS = P.parameters[3]
     speckeys = PS.parameters[1]::Tuple
-    freeP = _leaf_free_type(Ptempl)
-    pnames = _leaf_type_param_names(freeP)
+    pnames = _leaf_type_param_names(Ptempl)
     keys_out = Symbol[]
     vals_out = Any[]
     for pname in pnames
@@ -446,7 +461,7 @@ ComposedDistributions.flat_dimension(tree)
 "
 @generated function flat_dimension(d::T) where {T <: AbstractComposedDistribution}
     ctx = _CodecCtx()
-    _unflatten_expr(:d, T, ctx)
+    Base.invokelatest(_unflatten_expr, :d, T, ctx)
     n = ctx.idx
     return quote
         _reject_varying(d, "compute the flat dimension of")
@@ -553,8 +568,7 @@ function _leaf_flatten_reads!(exprs::Vector, nt_access, ::Type{L},
         speckeys = ()
         specvaltypes = ()
     end
-    freeL = _leaf_free_type(Ltempl)
-    allnames = _leaf_type_param_names(freeL)
+    allnames = _leaf_type_param_names(Ltempl)
     for pname in allnames
         j = findfirst(==(pname), speckeys)
         j === nothing && continue
@@ -587,8 +601,7 @@ function _pool_hyper_flatten_reads!(
     Ptempl = P.parameters[2]
     PS = P.parameters[3]
     speckeys = PS.parameters[1]::Tuple
-    freeP = _leaf_free_type(Ptempl)
-    pnames = _leaf_type_param_names(freeP)
+    pnames = _leaf_type_param_names(Ptempl)
     for pname in pnames
         pname in speckeys || continue
         ctx.idx += 1
