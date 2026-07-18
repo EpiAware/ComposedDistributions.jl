@@ -46,9 +46,9 @@ using ComposedDistributions, Distributions, Random
 
 cfr = 0.12   # case-fatality ratio among admitted cases
 
-admission = compose((
+admission = @uncertain compose((
     path = sequential(
-        :onset_admit => uncertain(LogNormal(1.5, 0.4); mu = Normal(1.5, 0.2)),
+        :onset_admit => LogNormal(Normal(1.5, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
     onset_report = Gamma(1.5, 1.0)))
@@ -89,12 +89,13 @@ Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object
 
 Because a composed object is a `Distribution`, it also works with `truncated()` from Distributions.jl and drops into any code that expects a distribution.
 
-## What packages work well with ComposedDistributions?
+## Related packages
 
-- [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) supplies the leaf distributions and the interface a composed object implements.
-- [ConvolvedDistributions.jl](https://github.com/EpiAware/ConvolvedDistributions.jl) is re-exported, so convolution (`convolved`, `convolve_series`, `difference`) and quadrature are reachable through ComposedDistributions alone.
-- [Tables.jl](https://github.com/JuliaData/Tables.jl) sources build a composer through `compose`, and `params_table` returns a Tables.jl table.
-- [Turing.jl](https://github.com/TuringLang/Turing.jl) and the wider probabilistic-programming ecosystem, where automatic-differentiation-friendly scoring lets a composed distribution drop into a Bayesian fit.
+- [ModifiedDistributions.jl](https://modifieddistributions.epiaware.org/dev/) rescales, shifts, weights and reshapes the hazard of any distribution (`affine`, `weight`, `modify`); its modifiers apply across composed chains as well as plain leaves.
+- [LoweredDistributions.jl](https://lowereddistributions.epiaware.org/dev/) turns a distribution into a backend-agnostic dynamical-systems representation (`lower`), the bridge to compartmental models; it lowers a composed tree as well as a single leaf.
+- [CensoredDistributions.jl](https://censoreddistributions.epiaware.org/stable/) adds primary-event, interval and double-interval censoring wrappers for delay distributions, for observation processes with imperfect timing data.
+- [ConvolvedDistributions.jl](https://convolveddistributions.epiaware.org/dev/) builds convolutions, differences and products of independent delays; ComposedDistributions re-exports it directly, so a chain collapses to its convolved total with `observed_distribution`.
+- [DistributionsInference.jl](https://github.com/EpiAware/DistributionsInference.jl) is the emerging home for probabilistic-programming integrations (Turing.jl, DynamicPPL, Bijectors) across the EpiAware distribution packages, including this one.
 
 ## Where to learn more
 

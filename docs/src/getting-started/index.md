@@ -21,32 +21,25 @@ using ComposedDistributions
 
 ## What ComposedDistributions does
 
-ComposedDistributions composes per-event delay distributions into one object that describes a whole record.
-A composed object is a multi-state event process: named events linked by delays, which the composers wire into a tree.
-The same object scores observed records with `logpdf` and simulates new ones with `rand`, so a model is built once and used in both directions.
-It composes any [Distributions.jl](https://juliastats.org/Distributions.jl) `UnivariateDistribution`, with no censoring, so it is the generic composition layer.
-
-The building blocks are five composers.
-[`Sequential`](@ref) chains steps in series, [`Parallel`](@ref) fans branches off one shared origin, [`Resolve`](@ref) and [`Compete`](@ref) express one_of outcomes (a fixed-probability mixture and racing hazards), and [`Choose`](@ref) selects a branch from a data field.
-The [`compose`](@ref) front-end lowers a NamedTuple, a Tables.jl table, or a nested matrix to the same stack.
-
-The package has four layers, each building on the one before: leaves, composers, combination and lowering, and parameters and edits.
-See the [Concepts](@ref concepts) page for the four layers in full and the verb that builds each one.
+A composed distribution is a multi-state event process: named events linked by delays, wired into a tree.
+The same object scores an observed record with `logpdf` and simulates a new one with `rand`, so a model is built once and used in both directions.
+See [Why ComposedDistributions?](../index.md) on the home page for the full motivation, and [Concepts](@ref concepts) for the four layers and the verb that builds each one.
 
 ## A first example
 
-A hospital pathway: an admission delay whose shape carries literature
-uncertainty, then a death-versus-discharge split where the death probability
-is the case-fatality ratio, alongside a separate delay to public reporting.
+A hospital pathway: an admission delay with literature uncertainty on its
+typical duration, then a death-versus-discharge split where the death
+probability is the case-fatality ratio, alongside a separate delay to public
+reporting.
 
 ```@example overview
 using ComposedDistributions, Distributions, Random
 
 cfr = 0.12   # case-fatality ratio among admitted cases
 
-admission = compose((
+admission = @uncertain compose((
     path = sequential(
-        :onset_admit => uncertain(LogNormal(1.5, 0.4); mu = Normal(1.5, 0.2)),
+        :onset_admit => LogNormal(Normal(1.5, 0.2), 0.4),
         :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
             :discharge => Gamma(2.0, 1.5))),
     onset_report = Gamma(1.5, 1.0)))
@@ -70,7 +63,7 @@ logpdf(admission, record)
 ```
 
 Its free parameters read as a flat table, keyed by edge and parameter name;
-the `onset_admit` shape carries the uncertainty prior attached above, and the
+`onset_admit`'s `mu` carries the uncertainty prior attached above, and the
 death/discharge split shows up as its own `branch_probs` rows.
 
 ```@example overview
@@ -107,13 +100,14 @@ than pinning it by hand — is one call away; see
 
 ## Uncertain distributions
 
-A literature-reported delay rarely comes with exact parameters. Wrap the
-uncertainty inline with [`uncertain`](@ref): parameters that are themselves
-distributions, nestable to any depth. The result is still a univariate
-distribution, so it composes as a leaf everywhere (as `onset_admit` does
-above), and `rand` draws the marginal (a fresh parameter draw each call); the
-rest of the surface reports the template's central values until concrete
-parameters are pinned with [`update`](@ref) (guard against a forgotten
+A literature-reported delay rarely comes with exact parameters. Write the
+uncertainty inline with [`@uncertain`](@ref) (as `onset_admit` does above): a
+distribution literal in a parameter slot reads as that parameter's prior, the
+natural spelling of the positional [`uncertain`](@ref) family form. The result
+is still a univariate distribution, so it composes as a leaf everywhere, and
+`rand` draws the marginal (a fresh parameter draw each call); the rest of the
+surface reports a fixed placeholder for each uncertain parameter until
+concrete values are pinned with [`update`](@ref) (guard against a forgotten
 collapse with `has_uncertain`).
 
 An [`uncertain`](@ref) leaf is one of two *deferred leaves*, resolved to a
@@ -127,6 +121,8 @@ See [Concepts](@ref concepts) for how it relates to its sibling
 - Work through the composers end to end in [Composing distributions](@ref composing-distributions).
 - See mutually exclusive outcomes in [Competing outcomes](@ref competing-outcomes) and multi-step delays in [Delay chains and the linear chain trick](@ref linear-chain).
 - Want the full interface? See the [Public API](@ref public-api).
+- Want the packages ComposedDistributions works alongside? See
+  [Related packages](../index.md) on the home page.
 
 ## Getting help
 
