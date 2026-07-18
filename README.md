@@ -14,41 +14,66 @@ A verb grammar for n-ary composition over any `Distributions.jl` distribution.
 
 ## Why ComposedDistributions?
 
-- Compose delays into chains (`sequential`), independent branches (`parallel`),
-  fixed-probability or racing one_of outcomes (`resolve` / `compete`) and
-  data-selected disjunctions (`choose`), over any `UnivariateDistribution`.
-- One object scores an observed record with `logpdf` and simulates one with
-  `rand`, so a model is built once and used in both directions.
-- Build a whole tree from a `NamedTuple`, a `Tables.jl` table, or a nested
-  matrix with `compose`, and read its structure with `params_table`,
-  `event_names`, `event`, and `event_tree`.
-- Turn the parameter table into a nested prior with `build_priors`, and edit the
-  tree with `update`, `prune`, and `splice`.
-- Attach parameter uncertainty with `uncertain` (parameters that are themselves
-  distributions, nestable): `rand` draws the marginal, and `update(tree,
-  params)` collapses an uncertain leaf to its concrete template. Promote a
-  whole tree to estimate its free parameters at once with `param_priors`.
-- Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
-  convolved total via `observed_distribution`), so its convolution and
-  quadrature surface is reachable through this package alone.
-- No censoring: this is the generic composition layer.
+- A natural history is usually a hand-rolled convolution or simulation loop
+  per project; ComposedDistributions gives it one small vocabulary — chains,
+  branches, and one_of outcomes — so the model is built by naming its
+  structure, not by re-deriving the maths.
+- The same composed object scores an observed record and simulates a new one,
+  so a model built once serves calibration and forward simulation alike.
+- Parameter uncertainty is an ordinary leaf, not a separate PPL-specific
+  layer, so a delay's literature uncertainty is written once and reused
+  whether it is sampled or just drawn from.
+- Every leaf is an ordinary Distributions.jl distribution, so nothing needs
+  reimplementing to compose it, and the composed result is itself a
+  distribution that drops into code expecting one.
+- A composed tree is inspectable, editable data — a parameter table, a nested
+  prior, a rendered tree — rather than an opaque function, so its structure
+  and priors can be read and changed without rereading the model code.
+- Convolution, quadrature and automatic differentiation across four backends
+  come with the package, so a composed delay is fit-ready with no extra
+  plumbing.
 
 ## Getting started
 
 See [documentation](https://composeddistributions.epiaware.org/stable/) for a full walkthrough.
 
+A hospital pathway: an admission delay with literature uncertainty, then a
+death-versus-discharge split where the death probability is the case-fatality
+ratio, alongside a separate delay to public reporting.
+
 ```julia
-using ComposedDistributions, Distributions
+using ComposedDistributions, Distributions, Random
 
-# A two-step delay chain, then its parameter table and a default prior set.
-tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
-params_table(tree)
-priors = build_priors(params_table(tree))
+cfr = 0.12   # case-fatality ratio among admitted cases
 
-# A death-vs-discharge competition (the death branch probability is the CFR).
-node = resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => Gamma(2.0, 1.5))
-mean(node)
+admission = compose((
+    path = sequential(
+        :onset_admit => uncertain(LogNormal(1.5, 0.4); mu = Normal(1.5, 0.2)),
+        :admit_outcome => resolve(:death => (Gamma(1.5, 1.0), cfr),
+            :discharge => Gamma(2.0, 1.5))),
+    onset_report = Gamma(1.5, 1.0)))
 ```
+
+`admission` prints as the tree it is: two branches off the onset, the
+admission branch itself a two-step chain ending in the death/discharge split.
+
+```julia
+admission
+```
+
+The same object simulates a structured record and scores one straight back.
+
+```julia
+record = rand(Xoshiro(1), admission)
+```
+
+```julia
+logpdf(admission, record)
+```
+
+The [getting started guide](https://composeddistributions.epiaware.org/stable/getting-started/)
+carries this same tree further: reading its parameter table, editing a
+node, collapsing a chain to its observed total, and fitting it.
 
 ## Relationship to Distributions.jl
 
@@ -76,8 +101,15 @@ Because a composed object is a `Distribution`, it also works with `truncated()` 
 - Want to get started running code? See the [getting started guide](https://composeddistributions.epiaware.org/stable/getting-started/).
 - Want the right verb by intent? See the [Concepts](https://composeddistributions.epiaware.org/stable/getting-started/concepts) page.
 - Want to understand the API? See the [API reference](https://composeddistributions.epiaware.org/stable/lib/public).
-- Want to chat about `ComposedDistributions`? Post on our [GitHub Discussions](https://github.com/EpiAware/ComposedDistributions.jl/discussions).
 - Want to see the code? Check out our [GitHub repository](https://github.com/EpiAware/ComposedDistributions.jl).
+
+## Getting help
+
+For usage questions, ask on the [Julia Discourse](https://discourse.julialang.org)
+(the SciML or usage categories) or the [epinowcast community forum](https://community.epinowcast.org),
+our home for epidemiological modelling questions.
+Please use [GitHub issues](https://github.com/EpiAware/ComposedDistributions.jl/issues)
+for bug reports and feature requests only.
 
 ## Contributing
 
