@@ -250,4 +250,20 @@ end
         @test_throws ArgumentError truncated(node; upper = 10.0)
         @test_throws ArgumentError censored(node; upper = 10.0)
     end
+
+    # Regression guard: the message is built from the bare function name
+    # ("truncated"/"censored"), so a naive "$(verb)ing" template renders the
+    # nonsense "truncateding"/"censoreding" -- assert the real word appears
+    # and the mangled one does not.
+    for (f, verb) in ((truncated, "truncated"), (censored, "censored"))
+        err = try
+            f(res; upper = 10.0)
+            nothing
+        catch e
+            e
+        end
+        msg = sprint(showerror, err)
+        @test occursin("applying $verb to the whole node", msg)
+        @test !occursin("$(verb)ing", msg)
+    end
 end
