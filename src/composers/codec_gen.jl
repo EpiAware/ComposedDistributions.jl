@@ -84,6 +84,7 @@ modifiers) adds its own method on its own type, in step with its instance-based
 `free_leaf` method.
 " _leaf_free_type(::Type{L}) where {L} = L
 _leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _leaf_free_type(D)
+_leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _leaf_free_type(D)
 
 @doc "
 The native parameter name labels of a peeled free-delay TYPE, mirroring
@@ -106,6 +107,7 @@ leaf-wrapper extension reporting a non-empty `extra_leaf_params` (e.g.
 ModifiedDistributions' `thin(...)`) adds its own method.
 " _extra_names_of(::Type) = ()
 _extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _extra_names_of(D)
+_extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _extra_names_of(D)
 
 # The native parameter arity of a peeled free-delay TYPE: the length of
 # `Distributions.params(instance)`. Every ordinary Distributions.jl leaf

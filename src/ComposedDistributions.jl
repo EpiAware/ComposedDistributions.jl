@@ -41,7 +41,8 @@ import Base: minimum, maximum
 # Types, constructors, and helpers used without method extension.
 using Distributions: Distributions, UnivariateDistribution, Distribution,
                      Continuous, Multivariate, Univariate, VariateForm,
-                     ValueSupport, MixtureModel, Truncated, truncated
+                     ValueSupport, MixtureModel, Truncated, truncated,
+                     Censored, censored
 
 using LogExpFunctions: log1mexp
 
@@ -217,6 +218,13 @@ include("composers/Pool.jl")
 # Shared against a context) and after introspection (it extends free_leaf/
 # rewrap_leaf/_shared_tag for the Varying leaf).
 include("composers/varying.jl")
+# `Censored` (Distributions.jl's `censored(...)` wrapper) leaf-protocol parity
+# with `Truncated`, plus the tree-level truncated/censored guard. After
+# introspection.jl (extends free_leaf/rewrap_leaf/uncertain_specs/
+# extra_leaf_params/set_extra_leaf_params), Shared.jl (shared_tag), Uncertain.jl
+# (the `Uncertain` type, and the censored-pushes-inside method set) and
+# varying.jl (has_varying), which it extends.
+include("composers/wrapped_leaves.jl")
 # The generated type-domain flat <-> nested codec (`unflatten`/`flatten`/
 # `flat_dimension`/`reconstruct`, #178 PR 2). After every composer/wrapper
 # type (Sequential/Parallel/Choose/Resolve/Compete/Uncertain/Shared/Pool) and
