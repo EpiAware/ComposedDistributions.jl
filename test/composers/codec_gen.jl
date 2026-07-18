@@ -20,6 +20,32 @@
     @test reconstruct(tree, x) == update(tree, nt) == tree
 end
 
+@testitem "codec: property round-trip -- a censored leaf's estimated parameter" begin
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    # Mirrors the plain-fixed-tree test above but with a `censored(...)` leaf
+    # carrying an uncertain parameter, so the codec's type-level `Censored`
+    # entries (`_leaf_free_type`/`_extra_names_of`) are exercised the same way
+    # `Truncated` already is.
+    est = uncertain(censored(Gamma(2.0, 3.0); upper = 10.0);
+        shape = LogNormal(log(2.0), 0.2))
+    tree = compose((onset = est, death = LogNormal(0.5, 0.4)))
+    @test flat_dimension(tree) == 1
+
+    x = [2.5]
+    nt = unflatten(tree, x)
+    @test nt == (onset = (shape = 2.5, scale = 3.0), death = (mu = 0.5, sigma = 0.4))
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+    leaf = event(collapsed, :onset)
+    @test leaf isa Distributions.Censored
+    @test leaf.upper == 10.0
+    @test ComposedDistributions.free_leaf(leaf) == Gamma(2.5, 3.0)
+end
+
 @testitem "codec: property round-trip -- shared tags at different depths" begin
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
