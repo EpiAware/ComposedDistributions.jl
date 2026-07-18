@@ -46,6 +46,9 @@ The verbs fall into five families, listed here as verb, what it does, and what i
 | `params_table` | the flat free-parameter inventory | a Tables.jl table |
 | `build_priors` | support-derived default priors from that table | a nested prior `NamedTuple` |
 | `default_prior` | the default prior for one parameter row | a `Distribution` |
+| `param_priors` | `params_table` + `build_priors` in one call, for `update(tree, param_priors(tree))` | a nested prior `NamedTuple` |
+
+See [Fitting a composed distribution](@ref inference) for how these feed the estimation pipeline.
 
 **Reading and editing** inspect or reshape an assembled tree.
 
@@ -97,18 +100,5 @@ The deferred-leaf verbs are worked through in [Multi-strata trees and parameter 
 | A leaf that varies with a covariate | `varying`, resolved by `instantiate` | [`Varying`](@ref) |
 | A leaf with parameter uncertainty | `uncertain`, collapsed by `update` | [`Uncertain`](@ref) |
 | Guard a fitting loop against unresolved leaves | `has_varying` / `has_uncertain` | a `Bool` |
-
-## One object, both directions
-
-A composed object is a `Distributions.jl` distribution: it scores an observed record with `logpdf` and simulates a new one with `rand`, so a model is built once and used in both directions.
-
-```@example concepts
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-
-params_table(tree)
-```
 
 Read [Composing distributions](@ref composing-distributions) for each verb worked through end to end.
