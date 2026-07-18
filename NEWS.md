@@ -1,5 +1,30 @@
 ## Unreleased
 
+- **feat:** `reconstruct(d, x)` is a new generated primary for the flat-vector
+  codec — a composed distribution rebuilt straight from an estimated flat
+  vector in one call, with no intermediate `Dict`-typed accumulation (#178,
+  PR 2 of the type-domain codec design). `unflatten`/`flatten`/`flat_dimension`
+  are now themselves `@generated`: each walks the tree's TYPE once per
+  distinct shape (names, tags and groups are compile-time since PR 1) and
+  emits the slot indices as literals, producing a concretely-typed
+  (`@inferred`-stable) nested `NamedTuple` instead of the old runtime
+  `Dict{Symbol, Any}` walk. `logdensity` now routes through the generated
+  `unflatten`, and this **fixes #162**: Enzyme reverse could not compile the
+  old walk's type-unstable, heap-boxed reconstruction, and now differentiates
+  it like every other backend. Measured on four baseline tree shapes (a plain
+  chain, a tag shared across branches, a non-centred pooling group, and a
+  Resolve stick-breaking node), the generated codec is 4.7-11.9x faster and
+  allocates 4-14x less than the two-step `update(d, unflatten(d, x))` it
+  replaces on the hot path; first-call compile latency for a fresh
+  pooled+Resolve tree shape is unchanged (~0.6-0.7s, dominated by
+  `Distributions`/`Dirichlet` compilation, not the generated function itself).
+  The modifier-leaf codec path (`ModifiedDistributions`' `Affine`/`Weighted`/
+  `Transformed`/`Modified`, e.g. `thin(...)`) is deferred to PR 4 (#189): a
+  `@generated` function's generator can compile against a world snapshot
+  taken before a later-loaded package extension adds its type-level leaf-
+  protocol methods, a genuine Julia semantics gap around generated functions
+  and extensions, not a bug in this PR's scope.
+
 - **refactor!:** the composer/wrapper structs carry their layout-affecting
   names and tags in TYPE parameters rather than runtime fields, lifting
   `Sequential`/`Parallel`/`Choose`/`Resolve`/`Compete`'s outcome/step/branch
