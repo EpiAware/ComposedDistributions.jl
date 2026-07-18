@@ -80,13 +80,16 @@ end
 The peeled free-delay TYPE of a (possibly wrapped) leaf type, mirroring
 `free_leaf` at the type level. The base identity is `L` itself; `Truncated`
 peels to its untruncated inner type. A CORE (in-module) leaf wrapper adds its
-own method here, in step with its instance-based `free_leaf` method. A
-leaf-wrapper PACKAGE EXTENSION (censoring, modifiers) must NOT add a direct
-dispatch method here -- see [`register_leaf_wrapper!`](@ref) below (#189)
-instead.
+own method here, in step with its instance-based `free_leaf` method -- routed
+through [`_resolve_leaf_free_type`](@ref) below rather than recursing into
+itself, so a core wrapper directly around a REGISTERED extension leaf (e.g.
+`truncated(thin(Gamma(...)))`) peels correctly too, not just the reverse
+nesting. A leaf-wrapper PACKAGE EXTENSION (censoring, modifiers) must NOT add
+a direct dispatch method here -- see [`register_leaf_wrapper!`](@ref) below
+(#189) instead.
 " _leaf_free_type(::Type{L}) where {L} = L
-_leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _leaf_free_type(D)
-_leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _leaf_free_type(D)
+_leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_leaf_free_type(D)
+_leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_leaf_free_type(D)
 
 @doc "
 The native parameter name labels of a peeled free-delay TYPE, mirroring
@@ -106,12 +109,14 @@ _param_names_of(::Type{<:Distributions.Uniform}) = (:lower, :upper)
 The extra (modifier-owned) parameter names of a leaf TYPE, mirroring
 `extra_leaf_params`'s key set at the type level. Defaults to `()`; a CORE
 (in-module) leaf wrapper reporting a non-empty `extra_leaf_params` adds its
-own method here. A leaf-wrapper PACKAGE EXTENSION (e.g. ModifiedDistributions'
-`thin(...)`) must NOT add a direct dispatch method here -- see
-[`register_leaf_wrapper!`](@ref) below (#189) instead.
+own method here -- routed through [`_resolve_extra_names`](@ref) below rather
+than recursing into itself, for the same core-wraps-extension reason as
+`_leaf_free_type` above. A leaf-wrapper PACKAGE EXTENSION (e.g.
+ModifiedDistributions' `thin(...)`) must NOT add a direct dispatch method here
+-- see [`register_leaf_wrapper!`](@ref) below (#189) instead.
 " _extra_names_of(::Type) = ()
-_extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _extra_names_of(D)
-_extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _extra_names_of(D)
+_extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_extra_names(D)
+_extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_extra_names(D)
 
 # The native parameter arity of a peeled free-delay TYPE: the length of
 # `Distributions.params(instance)`. Every ordinary Distributions.jl leaf
@@ -173,27 +178,17 @@ _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 # an extension cannot exist before that extension is loaded).
 #
 # A CORE (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`)
-# keeps using its existing direct-dispatch `_leaf_free_type`/`_extra_names_of`
-# methods (still `Base.invokelatest`-wrapped as before) unchanged: those are
-# defined in THIS module, compiled alongside the generator itself, so there is
-# no cross-module load-order hazard for them, and the registry is only
-# consulted as a first-choice check ahead of that existing dispatch chain,
-# never a replacement for it.
-#
-# Known residual gap (not fixed here): a CORE wrapper applied directly around
-# an EXTENSION leaf (e.g. a hypothetical `truncated(thin(Gamma(...)))`, core
-# wrapping extension, rather than the supported `thin(truncated(Gamma(...)))`)
-# still resolves through the OLD dispatch-only chain at that layer, which does
-# not consult the registry either. This is not a currently-exercised
-# combination (censoring/truncation is modelled as the INNER layer, modifiers
-# as the OUTER one, throughout this codebase), and the existing safety net
-# still applies if it is ever hit: an un-peeled fallback surfaces as a loud,
-# clear `ArgumentError`/`KeyError` from `update`'s instance-based key
-# validation, not silent corruption (see the `#188` test in
-# `test/composers/codec_gen.jl`). Fixing this fully would mean routing
-# `Truncated`/`Censored`'s own recursive peel through the registry-aware
-# resolvers below too; left as a documented follow-up rather than bundled
-# here to avoid an unrelated structural change to those core-type methods.
+# still adds its own direct-dispatch `_leaf_free_type`/`_extra_names_of`
+# method (defined in THIS module, compiled alongside the generator itself, so
+# there is no cross-module load-order hazard for it) -- but that method now
+# routes its OWN recursion through `_resolve_leaf_free_type`/
+# `_resolve_extra_names` below rather than calling itself, so a core wrapper
+# placed directly around a REGISTERED extension leaf (e.g. a hypothetical
+# `truncated(thin(Gamma(...)))`, core wrapping extension -- not just the
+# supported `thin(truncated(Gamma(...)))`, extension wrapping core) peels
+# correctly too. The registry is consulted as a first-choice check ahead of
+# the core dispatch chain, and the core chain's OWN recursion is registry-aware
+# in turn, so the two compose in either nesting order and any depth of mixing.
 
 # One registered leaf-wrapper case: `pattern` is what a concrete leaf type is
 # matched against (`<:`); `free_index` is the type-parameter position holding

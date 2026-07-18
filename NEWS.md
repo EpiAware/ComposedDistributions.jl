@@ -11,8 +11,11 @@
   direct experiment (#188/#189). The hook takes plain data (a type-parameter
   index and a fixed extra-names tuple), never a callable, since even a stored
   closure hits the same world-age wall when called from a generator. A core
-  (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`) is
-  unaffected, keeping its existing direct-dispatch methods.
+  (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`) keeps its
+  own direct-dispatch method but now routes ITS recursion through the same
+  registry-aware resolver, so a core wrapper placed directly around a
+  registered extension leaf (e.g. `truncated(thin(Gamma(...)))`) peels
+  correctly too, not just the reverse nesting.
 
 - **test:** added a guard against `params_table`/codec ordering drift (#192,
   the #190 review follow-up): the runtime `params_table` walk and the

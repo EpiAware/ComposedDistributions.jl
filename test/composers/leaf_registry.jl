@@ -31,6 +31,11 @@
     Base.maximum(d::FakeThinWrap) = maximum(d.dist)
     Distributions.insupport(d::FakeThinWrap, x::Real) = insupport(d.dist, x)
     Distributions.params(d::FakeThinWrap) = params(d.dist)
+    # `cdf`/`logcdf` so `Distributions.truncated` can wrap this fixture (the
+    # core-wraps-extension nesting test below needs a REAL `Truncated{...}`
+    # type, not a hand-written type-parameter tuple).
+    Distributions.cdf(d::FakeThinWrap, x::Real) = Distributions.cdf(d.dist, x)
+    Distributions.logcdf(d::FakeThinWrap, x::Real) = Distributions.logcdf(d.dist, x)
 
     ComposedDistributions.free_leaf(d::FakeThinWrap) = ComposedDistributions.free_leaf(d.dist)
     function ComposedDistributions.rewrap_leaf(d::FakeThinWrap, inner)
@@ -107,6 +112,22 @@ end
     MixedT = FakeThinWrap{TruncT}
     @test _resolve_leaf_free_type(MixedT) == Gamma{Float64}
     @test _resolve_extra_names(MixedT) == (:fake_extra,)
+end
+
+@testitem "leaf registry: a CORE wrapper directly around a registered extension leaf peels correctly" setup=[LeafRegistryFixture] begin
+    using Distributions: Truncated
+
+    # The REVERSE nesting from the test above: Truncated(FakeThinWrap(Gamma))
+    # -- a core (in-module) wrapper placed directly around a REGISTERED
+    # extension leaf. `_leaf_free_type`'s own `Truncated` method routes its
+    # recursion through `_resolve_leaf_free_type` rather than calling itself,
+    # so this peels correctly too, not just the `extension-wraps-core`
+    # direction (mirrors the supported `thin(truncated(Gamma(...)))` order,
+    # but for the previously-unsupported `truncated(thin(Gamma(...)))` order).
+    fake = FakeThinWrap(Gamma(2.0, 1.0), 0.3)
+    TruncMixedT = typeof(truncated(fake; upper = 5.0))
+    @test _resolve_leaf_free_type(TruncMixedT) == Gamma{Float64}
+    @test _resolve_extra_names(TruncMixedT) == (:fake_extra,)
 end
 
 @testitem "leaf registry: an unregistered wrapper falls back to the identity (documented gap)" begin
