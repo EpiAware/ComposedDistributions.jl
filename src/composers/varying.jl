@@ -1,9 +1,8 @@
 # Non-stationarity (a delay that changes with calendar time, a stratum, a
 # region) is modelled here by generalising the leaf rather than adding a new
 # composer verb; see the [`Varying`](@ref) and [`instantiate`](@ref)
-# docstrings below. The full design rationale, including how this seam is
-# intended to carry the uncertain-distributions work, is in
-# `design/0001-time-and-covariate-varying-distributions.md`.
+# docstrings below and the [Time-, strata-, and covariate-varying
+# distributions](@ref varying-distributions) guide for the rationale.
 #
 # `Varying` is one of two DEFERRED LEAF types: a leaf that is not yet a concrete
 # distribution but a map to one, delegating silently to a fallback until it is
@@ -48,8 +47,7 @@ A `Context` is an open bag of covariates (a `NamedTuple`) — calendar `time`, a
 `region`/`stratum`, or (for the uncertain-distributions work) sampled parameter
 values. [`instantiate`](@ref) reads the covariate a leaf names from it. Build one
 with keyword covariates. It is open (rather than a fixed `time` field) so it can
-also carry the uncertain-distributions work's sampled parameters; see
-`design/0001-time-and-covariate-varying-distributions.md` for the rationale.
+also carry the uncertain-distributions work's sampled parameters.
 
 # Examples
 ```@example

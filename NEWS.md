@@ -1,5 +1,25 @@
 ## Unreleased
 
+- **chore:** removed the `design/` folder (#224) — its one note, the
+  time-/covariate-varying design rationale, is superseded by the landed
+  `Varying`/`instantiate` implementation and its docstrings and the
+  [Time-, strata-, and covariate-varying distributions](@ref
+  varying-distributions) guide; dangling pointers to the removed file in
+  `src/ComposedDistributions.jl`, `src/composers/varying.jl`, and that guide
+  are cleaned up alongside it.
+- **chore:** renamed `src/composers/hazard_one_of.jl` to
+  `src/composers/Compete.jl` (#230), matching the file-per-type convention
+  the other composers already follow (`Resolve.jl`, `Sequential.jl`, ...);
+  no code changes, only the file name and its in-comment references.
+- **breaking:** `_param_names` and `_leaf_ctor`, two `public` leaf-protocol
+  extension points, are renamed to `param_names` and `leaf_ctor` (#229): a
+  leading underscore reads as private, but these are a real downstream
+  extension point (a leaf-wrapper package overrides them to report parameter
+  names/rebuild a leaf whose free parameters are not its native constructor
+  arguments), and `docs/src/developer/leaf-protocol.md` already documented
+  them under the underscore-free names. The internal, type-dispatched
+  companions the generated codec uses (`_param_names_of`, `_leaf_free_type`,
+  `_extra_names_of`, ...) are unchanged and stay private.
 - **feat:** `register_leaf_wrapper!` is a new public hook so a leaf-wrapper
   package extension (ModifiedDistributions' `Affine`/`Weighted`/`Transformed`/
   `Modified`) can tell the generated flat-vector codec (`flat_dimension`,
