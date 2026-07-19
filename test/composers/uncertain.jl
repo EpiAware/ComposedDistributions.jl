@@ -188,8 +188,10 @@ end
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tree2, :onset_admit) == Gamma(3.0, 1.5)
     @test !has_uncertain(tree2)
-    # The collapsed tree scores with the ordinary surface.
-    @test isfinite(logpdf(tree2, [1.5, 0.8]))
+    # The collapsed tree scores with the ordinary surface: a sum of the two
+    # steps' own logpdfs at the collapsed (concrete) parameters.
+    @test logpdf(tree2, [1.5, 0.8]) ≈
+          logpdf(Gamma(3.0, 1.5), 1.5) + logpdf(LogNormal(0.7, 0.5), 0.8)
 
     # A wrapped uncertain leaf keeps its fixed structure through the update.
     tu = uncertain(truncated(Gamma(2.0, 1.0); upper = 10.0);
