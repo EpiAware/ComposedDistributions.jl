@@ -1,5 +1,22 @@
 ## Unreleased
 
+- **feat:** `register_leaf_wrapper!` is a new public hook so a leaf-wrapper
+  package extension (ModifiedDistributions' `Affine`/`Weighted`/`Transformed`/
+  `Modified`) can tell the generated flat-vector codec (`flat_dimension`,
+  `unflatten`, `flatten`, `reconstruct`) how to peel its wrapper types and
+  what extra parameters they own, without adding a direct dispatch method to
+  `_leaf_free_type`/`_extra_names_of` — the codec's `@generated` functions
+  cannot reliably see such a method if it is added after the generator has
+  already compiled, a Julia `@generated`-function semantics gap confirmed by
+  direct experiment (#188/#189). The hook takes plain data (a type-parameter
+  index and a fixed extra-names tuple), never a callable, since even a stored
+  closure hits the same world-age wall when called from a generator. A core
+  (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`) keeps its
+  own direct-dispatch method but now routes ITS recursion through the same
+  registry-aware resolver, so a core wrapper placed directly around a
+  registered extension leaf (e.g. `truncated(thin(Gamma(...)))`) peels
+  correctly too, not just the reverse nesting.
+
 - **test:** added a guard against `params_table`/codec ordering drift (#192,
   the #190 review follow-up): the runtime `params_table` walk and the
   generated `unflatten`/`flatten` codec are two independent, hand-maintained

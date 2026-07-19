@@ -62,6 +62,13 @@ public Product
 public flat_dimension, flatten, unflatten, reconstruct
 public ComposedLogDensity, as_logdensity, logdensity
 
+# The load-order-independent leaf-wrapper registry (#189, #178 PR 4): a
+# leaf-wrapper PACKAGE EXTENSION (censoring, modifiers) registers its type-level
+# codec hooks here (in its own `__init__`) instead of adding a direct dispatch
+# method to `_leaf_free_type`/`_extra_names_of`, which the generated codec's
+# `@generated` GENERATOR cannot see reliably once loaded after the fact.
+public register_leaf_wrapper!
+
 # The prior-driven unconstrained -> constrained transform (public but not
 # exported, like the rest of the codec): `to_constrained(prob, z)` has no
 # method until `Bijectors` is loaded, when `ComposedDistributionsBijectorsExt`

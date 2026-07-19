@@ -67,7 +67,12 @@ ComposedDistributions = {path = ".."}
 # MD's ModifiedDistributionsComposedDistributionsExt hosts the leaf protocol
 # for the modifier leaves, since this package's reverse extension is gone
 # (#170 step 2). Pinned by git until ModifiedDistributions registers.
-ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "main"}
+#
+# TEMPORARY: pinned to the feat/register-leaf-wrapper-189 branch (MD PR #99)
+# rather than `main`, since this PR's #188 fix needs MD's not-yet-merged
+# `register_leaf_wrapper!` call in its own __init__. Flip back to
+# `rev = "main"` once that PR merges -- tracked so this isn't forgotten.
+ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistributions.jl", rev = "feat/register-leaf-wrapper-189"}
 # Until EpiAwarePackageTools is registered, it is pinned by git so the env
 # resolves out of the box. Switch to a local path if you develop the kit
 # alongside this package, e.g. EpiAwarePackageTools = {path = "../../EpiAwarePackageTools.jl"}.
