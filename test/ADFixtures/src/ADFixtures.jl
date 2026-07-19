@@ -100,7 +100,7 @@ broken_scenario_names() = String[]
 # Enzyme reverse differentiated it like every other backend for a while
 # (#162).
 #
-# #190 (`#178` PR 2's actual landing) then reintroduced a DIFFERENT Enzyme
+# #190 (`#178` PR 2's actual landing) then reintroduced a different Enzyme
 # reverse failure on this same scenario: an `EnzymeInternalError` (compiler-
 # internal, not a Julia-level type/activity error) inside Enzyme's LLVM
 # `nodecayed_phis!` optimisation pass, failing within `_update(::Parallel,
@@ -185,12 +185,12 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
             (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
             [2.0, 3.0], (Constant(pool_prob),))
 
-        # Shared-tag codec: the SAME uncertain template occurs twice under one
+        # Shared-tag codec: the same uncertain template occurs twice under one
         # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to ONE
         # flat parameter and `update` places the drawn value in both
         # occurrences (mirrors `test/composers/logdensity.jl`'s "codec: shared
         # spec round-trip"). The reverse-mode gradient of that one parameter
-        # must accumulate from BOTH occurrences' data likelihoods, the
+        # must accumulate from both occurrences' data likelihoods, the
         # AD-critical path for tag dedup that #96/#146 exercised for
         # construction/unflatten but no scenario here has yet driven through
         # the full logdensity codec.
