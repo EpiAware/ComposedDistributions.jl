@@ -67,7 +67,7 @@ end
 
 # --- Type-level leaf-protocol companions ------------------------------------
 #
-# The existing leaf-protocol hooks (`free_leaf`, `_param_names`,
+# The existing leaf-protocol hooks (`free_leaf`, `param_names`,
 # `extra_leaf_params`, ...) dispatch on an INSTANCE, which the generation-time
 # walk does not have (only `typeof(d)`). These companions answer the same
 # questions from the TYPE alone; they are additive (the instance-based hooks
@@ -93,7 +93,7 @@ _leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_leaf_f
 
 @doc "
 The native parameter name labels of a peeled free-delay TYPE, mirroring
-`_param_names` at the type level (dispatch table kept in step with it).
+`param_names` at the type level (dispatch table kept in step with it).
 Returns `()` for an unmapped family, exactly like the instance-based fallback;
 `leaf_param_names`'s positional `:param_i` padding then applies at the
 generation-time layer too.
@@ -126,8 +126,8 @@ _extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_extra_
 # `Base.return_types`, code reflection of any kind is disallowed inside a
 # `@generated` function body, so this must be a structural (not inferential)
 # query. A leaf type whose `params` is NOT its own fields 1:1 (a custom
-# moment-parameterised wrapper, `_leaf_ctor`'s motivating case) needs its own
-# `_params_arity_of` method alongside its `_param_names_of`/`_leaf_ctor`
+# moment-parameterised wrapper, `leaf_ctor`'s motivating case) needs its own
+# `_params_arity_of` method alongside its `_param_names_of`/`leaf_ctor`
 # override.
 _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 
