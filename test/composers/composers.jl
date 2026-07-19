@@ -229,21 +229,23 @@ end
     # every composer must reject a repeated name, since the whole
     # name-keyed API (event, update, prune, splice, params_table, shared)
     # can only ever reach the first branch with a duplicate name.
-    @test_throws ArgumentError sequential(
+    # Each composer's own message is pinned, not just the exception type, so
+    # a swapped guard or a reworded message is caught (the #217 lesson).
+    @test_throws "Sequential step names must be unique" sequential(
         :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
-    @test_throws ArgumentError Sequential(
+    @test_throws "Sequential step names must be unique" Sequential(
         (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
-    @test_throws ArgumentError parallel(
+    @test_throws "Parallel branch names must be unique" parallel(
         :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
-    @test_throws ArgumentError Parallel(
+    @test_throws "Parallel branch names must be unique" Parallel(
         (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
-    @test_throws ArgumentError resolve(
+    @test_throws "Resolve outcome names must be unique" resolve(
         :a => (Gamma(1.0, 1.0), 0.5), :a => Gamma(2.0, 1.0))
-    @test_throws ArgumentError Resolve(
+    @test_throws "Resolve outcome names must be unique" Resolve(
         (:a, :a), (Gamma(1.0, 1.0), Gamma(2.0, 1.0)), (0.5, 0.5))
-    @test_throws ArgumentError compete(
+    @test_throws "Compete outcome names must be unique" compete(
         :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
-    @test_throws ArgumentError Compete(
+    @test_throws "Compete outcome names must be unique" Compete(
         (:a, :a), (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)))
 end
 
@@ -411,16 +413,8 @@ end
         onset_recover = Gamma(3.0, 1.0)))
     # Mirrors update/prune/splice's "no child named ...; have [...]" style
     # rather than a bare KeyError.
-    err = try
-        event(nested, :admit_path, :nonexistent)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin(":nonexistent", err.msg)
-    @test occursin(":onset_admit", err.msg)
-    @test occursin(":admit_death", err.msg)
+    unknown_child = r"(?=.*:nonexistent)(?=.*:onset_admit)(?=.*:admit_death)"
+    @test_throws unknown_child event(nested, :admit_path, :nonexistent)
     @test_throws ArgumentError event(nested, :nope)
     d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
     @test_throws ArgumentError event(d, :nope)
