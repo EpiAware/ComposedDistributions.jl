@@ -1,5 +1,15 @@
 ## Unreleased
 
+- **docs:** corrected `docs/benchmarks.md`'s claim that the performance-
+  history timeline updates "on every push to `main` and on tagged releases"
+  (#231) — `benchmark-history.yaml` is currently parked to
+  `workflow_dispatch`-only pending #41 (an unregistered, chained dependency
+  the kit's benchmark scratch-registry bootstrap does not yet resolve), so
+  the automatic trigger the page described is not actually running.
+  `docs/benchmarks_notes.md` (the file that exists for exactly this kind of
+  note) now explains the parked trigger and links #41, so a reader seeing
+  "not enough comparable revisions to compute ratios yet" understands why
+  rather than concluding the page is broken.
 - **feat:** `register_leaf_wrapper!` is a new public hook so a leaf-wrapper
   package extension (ModifiedDistributions' `Affine`/`Weighted`/`Transformed`/
   `Modified`) can tell the generated flat-vector codec (`flat_dimension`,
