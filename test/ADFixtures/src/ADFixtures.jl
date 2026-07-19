@@ -10,13 +10,19 @@ mixture marginal (differentiating through a covariate branch probability), a
 product), a `Resolve` whose branch-probability simplex is uncertain
 (differentiating through the stick-breaking reconstruction), a partially pooled
 parameter (differentiating through the non-centred `exp(mu + tau*z)`
-reconstruction), and a `Choose` scored at a selected alternative
-(differentiating through the picked branch's own `logpdf`).
+reconstruction), a `Choose` scored at a selected alternative (differentiating
+through the picked branch's own `logpdf`), and a `Censored` leaf (`#215`,
+differentiating through Distributions.jl's censored `logpdf`/`logcdf`).
 
 `:latent` covers the full `as_logdensity`/`logdensity` codec path: an
 uncertain-leaf tree (differentiating the flat-vector -> nested-NamedTuple
-codec, `unflatten`/`update`, into the data likelihood) and a centred pool
-(differentiating the `_pool_centred_logprior` term against the population).
+codec, `unflatten`/`update`, into the data likelihood), a centred pool
+(differentiating the `_pool_centred_logprior` term against the population), a
+`Shared`-tagged uncertain leaf occurring twice (differentiating through the
+tag-dedup: one flat parameter, its gradient accumulated from both
+occurrences' likelihoods), and a `Truncated`-wrapped uncertain leaf (`#215`,
+exercising the `#216` leaf-wrapper registry's codec path — `free_leaf`/
+`rewrap_leaf` — under the generated `unflatten`/`update` walk).
 
 All scenarios run across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
 backend matrix. The reference is computed with `ForwardDiff` and matched by the
@@ -29,7 +35,8 @@ module ADFixtures
 __precompile__(false)
 
 using ComposedDistributions
-using Distributions: Distributions, Gamma, LogNormal, Normal, mean, var, logpdf
+using Distributions: Distributions, Gamma, LogNormal, Normal, mean, var, logpdf,
+                     truncated, censored
 using ADTypes: ADTypes, AutoForwardDiff, AutoReverseDiff, AutoMooncake,
                AutoMooncakeForward, AutoEnzyme
 using DifferentiationInterface: DifferentiationInterface, Constant
@@ -90,10 +97,30 @@ broken_scenario_names() = String[]
 # replaced that walk with a `@generated` compile-time layout walk
 # (`codec_gen.jl`) that emits a concretely-typed (`@inferred`-stable)
 # `NamedTuple` construction with the slot indices baked in as literals, so
-# Enzyme reverse now differentiates it like every other backend (#162).
+# Enzyme reverse differentiated it like every other backend for a while
+# (#162).
+#
+# #190 (`#178` PR 2's actual landing) then reintroduced a different Enzyme
+# reverse failure on this same scenario: an `EnzymeInternalError` (compiler-
+# internal, not a Julia-level type/activity error) inside Enzyme's LLVM
+# `nodecayed_phis!` optimisation pass, failing within `_update(::Parallel,
+# ::NamedTuple, ::NamedTuple, ::Bool)` (introspection.jl) — the `ntuple(...)
+# do i ... end` closure that rebuilds a `Parallel`'s children. Every `ad`
+# CI run since #190 landed reproduces it deterministically (same 149-pass/
+# 1-error split, same failing method) on GitHub Actions' runners; it does
+# not reproduce locally on a dev machine with the exact same resolved
+# package versions (Enzyme 0.13.188, Enzyme_jll 0.0.285+0, GPUCompiler
+# 1.23.0, LLVM.jl 9.10.1) — see the #223 comment for the full
+# characterisation and a draft upstream report. Ledgered here (rather than
+# left to error CI red) so a real regression stays visible without failing
+# the suite; remove this entry once the upstream fix lands or the local
+# machine can reproduce a fix to verify.
+#
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
-    return Dict{String, Set{String}}()
+    return Dict{String, Set{String}}(
+        "Enzyme reverse" => Set(["Uncertain-leaf logdensity codec"])
+    )
 end
 
 "Per-backend scenario names too unstable to run at all."
@@ -157,6 +184,51 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
         _push!("Pool centred logdensity",
             (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
             [2.0, 3.0], (Constant(pool_prob),))
+
+        # Shared-tag codec: the same uncertain template occurs twice under one
+        # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to one
+        # flat parameter and `update` places the drawn value in both
+        # occurrences (mirrors `test/composers/logdensity.jl`'s "codec: shared
+        # spec round-trip"). The reverse-mode gradient of that one parameter
+        # must accumulate from both occurrences' data likelihoods, the
+        # AD-critical path for tag dedup that #96/#146 exercised for
+        # construction/unflatten but no scenario here has yet driven through
+        # the full logdensity codec.
+        shared_u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+        shared_tree = compose((a = shared(:g, shared_u), b = shared(:g, shared_u)))
+        shared_prob = ComposedDistributions.as_logdensity(
+            shared_tree, [[0.5, 2.0], [1.0, 3.0]])
+        _push!("Shared-tag logdensity codec",
+            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
+            [2.0], (Constant(shared_prob),))
+
+        # Truncated-wrapped uncertain leaf: `truncated(uncertain(...); upper)`
+        # pushes the wrap inside the `Uncertain` template (`wrapped_leaves.jl`,
+        # #215), so the generated codec's leaf-wrapper registry (#216:
+        # `free_leaf`/`rewrap_leaf` dispatch on `Distributions.Truncated`) is
+        # what `unflatten`/`update` walk through to reach the wrapped leaf's
+        # `mu`. No AD scenario drove a wrapped leaf through
+        # `as_logdensity`/`logdensity` before this; #215/#216 landed with
+        # value-level tests only. Truncates a `LogNormal` (not `Gamma`):
+        # `Distributions.truncated`'s normalising constant calls the wrapped
+        # leaf's `logcdf`, and `Gamma`'s routes through `StatsFuns`'
+        # `_gammalogcdf`, which has concrete `Float64`/`Float32`/`Float16`
+        # methods only (no generic fallback) and so errors under ReverseDiff's
+        # tracked reals — an upstream Distributions.jl/StatsFuns gap, not a
+        # ComposedDistributions one (flagged separately on #223). `LogNormal`'s
+        # `logcdf` goes through `normlogcdf(μ::Real, σ::Real, x::Number)`,
+        # which is genuinely generic, so it isolates the registry/codec path
+        # this scenario targets from that unrelated gap.
+        trunc_tree = compose((
+            onset = truncated(
+                uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2));
+                upper = 8.0),
+            admit = Gamma(2.0, 1.0)))
+        trunc_prob = ComposedDistributions.as_logdensity(
+            trunc_tree, [[0.5, 2.0], [1.0, 3.0]])
+        _push!("Truncated uncertain-leaf logdensity codec",
+            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
+            [0.6], (Constant(trunc_prob),))
 
         return out
     end
@@ -242,6 +314,20 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
             x -> logpdf(
                 choose(:index => Gamma(θ[1], θ[2]),
                     :sourced => Gamma(4.0, 1.5)), x; kind = :index), obs),
+        [2.0, 1.0], (Constant(obs),))
+
+    # Censored leaf marginal (#215): a `Distributions.censored` wrap on a
+    # composed child routes `logpdf` through Distributions.jl's own censored
+    # `logpdf`/`logcdf` (boundary-mass) branches, so the gradient must flow
+    # through both the interior density and the boundary `logcdf`/`logccdf`
+    # terms. No AD scenario exercised `Censored` before this; #215 landed with
+    # value-level leaf-protocol-parity tests only.
+    _push!("Censored leaf marginal logpdf",
+        (θ,
+            obs) -> sum(
+            x -> logpdf(
+                sequential(:a => censored(Gamma(θ[1], θ[2]), 0.0, 8.0),
+                    :b => LogNormal(0.5, 0.4)), [x, 1.0]), obs),
         [2.0, 1.0], (Constant(obs),))
 
     return out
