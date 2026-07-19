@@ -5,7 +5,8 @@
 # rows of DATA — edges, values, supports, priors — for a specific instance)
 # and `_unflatten_expr`/`_flatten_reads!` (the generated codec, a compile-time
 # walk that EMITS EXPRESSIONS over a TYPE). They agree today, but nothing
-# catches divergence, and `ext/ComposedDistributionsDynamicPPLExt.jl` zips
+# catches divergence, and `DistributionsInference`'s `as_turing` (the generic
+# replacement for CD's own removed `as_turing` stub, #233) zips
 # `params_table`'s estimated rows against `flatten`'s flat vector index-for-
 # index, assuming the orderings coincide.
 #
@@ -122,6 +123,8 @@ end
 
 @testitem "codec/params_table order: Convolved/Difference leaves" setup=[
     CodecConsistencyHelpers] begin
+    using ConvolvedDistributions: convolved, difference
+
     conv_leaf = convolved(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
         Gamma(1.0, 1.0))
     seq = sequential(:total => conv_leaf,

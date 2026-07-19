@@ -12,6 +12,7 @@
 @testitem "Scenario: onset→admission→death continuous chain" tags = [:scenarios] begin
     using Distributions, Random, Statistics
     using ForwardDiff
+    using ConvolvedDistributions: Convolved
 
     # Story: the line-list delay from symptom onset to hospital admission
     # (a Gamma incubation-like step) then admission to death (LogNormal), the
@@ -391,6 +392,7 @@ end
 
 @testitem "Scenario: renewal convolution through a delay chain" tags = [:scenarios] begin
     using Distributions
+    using ConvolvedDistributions: convolve_series, discretise_pmf
 
     # Story: an infection incidence series pushed through the onset→admission→
     # death delay chain to expected downstream counts — the EpiNow2-style latent
@@ -447,6 +449,7 @@ end
 
 @testitem "Scenario: difference of two observed reporting totals" tags = [:scenarios] begin
     using Distributions, Random
+    using ConvolvedDistributions: Difference, difference
 
     # Story: the gap between two observed reporting totals — an onset→admit→
     # death chain and an onset→report→confirm chain — as a Difference of the two

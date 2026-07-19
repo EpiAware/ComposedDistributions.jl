@@ -6,6 +6,7 @@
 
 @testitem "convolve_series(chain, series): vector convolution" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series, discretise_pmf
 
     chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
@@ -34,6 +35,7 @@ end
 
 @testitem "convolve_series(chain, series; events): per-event series" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series, discretise_pmf, convolved
 
     g1 = Gamma(2.0, 1.0)
     g2 = LogNormal(0.5, 0.4)
@@ -63,6 +65,7 @@ end
 
 @testitem "convolve_series(chain, series; events): endpoint == whole" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series
 
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
         :admit_death => LogNormal(0.5, 0.4))
@@ -79,6 +82,7 @@ end
 
 @testitem "convolve_series(chain, series; events): errors" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series
 
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
         :admit_death => LogNormal(0.5, 0.4))
@@ -109,6 +113,7 @@ end
 
 @testitem "convolve_series: univariate one_of marginal drives a series" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series, discretise_pmf
 
     # A Resolve / Compete marginal is a continuous univariate delay. The base
     # ConvolvedDistributions 0.2 `convolve_series` is discrete-only, so the
@@ -124,6 +129,7 @@ end
 
 @testitem "convolve_series: Compete marginal drives a series" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series, discretise_pmf
 
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
 
@@ -159,6 +165,7 @@ end
 
 @testitem "convolve_series: Parallel / Choose error informatively" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series
 
     p = parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
     series = [0.0, 1.0, 2.0]
@@ -172,6 +179,7 @@ end
 
 @testitem "difference(chain, chain): difference of observed totals" begin
     using Distributions
+    using ConvolvedDistributions: difference
 
     onset = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     report = Sequential(Gamma(1.5, 1.0), Gamma(1.0, 2.0))
@@ -188,24 +196,10 @@ end
           mean(g) - mean(observed_distribution(onset))
 end
 
-@testitem "product / Product reachable via ComposedDistributions (#139)" begin
-    using Distributions
-
-    # The Mellin product family (`Z = X * Y`) is reachable through
-    # ComposedDistributions alone, so a downstream sitting on this package sees
-    # the whole convolution surface. `product` is exported; `Product` stays
-    # unexported (Distributions clash) but is reachable module-qualified. Bare
-    # re-export only; composing a `Product` leaf into a tree is out of scope.
-    @test isdefined(ComposedDistributions, :product)
-    @test isdefined(ComposedDistributions, :Product)
-    d = product(Gamma(3.0, 1.0), LogNormal(0.0, 0.3))
-    @test d isa ComposedDistributions.Product
-    @test mean(d) ≈ 3.0 * exp(0.3^2 / 2)
-end
-
 @testitem "Convolved leaf in a tree: rand / logpdf / moments" begin
     using Distributions
     using Random
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -228,6 +222,7 @@ end
 
 @testitem "Difference leaf in a tree: logpdf flows through" begin
     using Distributions
+    using ConvolvedDistributions: difference
 
     diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
@@ -238,6 +233,7 @@ end
 @testitem "free_leaf / rewrap_leaf: a composite leaf is its own free leaf" begin
     using Distributions
     using ComposedDistributions: free_leaf, rewrap_leaf
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     # A Convolved has no outer wrapper to peel: it free-leafs to itself, and
@@ -249,6 +245,7 @@ end
 @testitem "Convolved leaf: params_table sees through to component params" begin
     using Distributions
     using ComposedDistributions: Tables
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -279,6 +276,7 @@ end
 @testitem "Difference leaf: params_table sees through to (x, y) params" begin
     using Distributions
     using ComposedDistributions: Tables
+    using ConvolvedDistributions: difference
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
@@ -296,6 +294,7 @@ end
 
 @testitem "update round-trips a Convolved leaf's component params" begin
     using Distributions
+    using ConvolvedDistributions: convolved, Convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -318,6 +317,7 @@ end
 
 @testitem "update makes a Convolved component uncertain (partial merge)" begin
     using Distributions
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -335,6 +335,7 @@ end
 
 @testitem "update round-trips a Difference leaf's (x, y) params" begin
     using Distributions
+    using ConvolvedDistributions: difference, Difference
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
@@ -353,6 +354,7 @@ end
 
 @testitem "deferred-leaf see-through: a Convolved with a varying component" begin
     using Distributions
+    using ConvolvedDistributions: convolved, Convolved
 
     # A composite rides the shared deferred-leaf walk, so a Varying COMPONENT is
     # visible to has_varying and resolved in place by instantiate (mirroring the
@@ -382,6 +384,7 @@ end
 @testitem "codec: a spec'd Convolved component counts one estimated dim" begin
     using Distributions
     using ComposedDistributions: flat_dimension, unflatten, flatten
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -404,6 +407,7 @@ end
 
 @testitem "structural edits around a Convolved leaf: prune / splice" begin
     using Distributions
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4),
@@ -428,6 +432,7 @@ end
     using Distributions
     using ComposedDistributions: flat_dimension, flatten, unflatten,
                                  as_logdensity, logdensity
+    using ConvolvedDistributions: convolved
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     u = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2))
@@ -466,6 +471,7 @@ end
 
 @testitem "uncertain(...) wrapping a Convolved/Difference template errors informatively" begin
     using Distributions
+    using ConvolvedDistributions: convolved, difference
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     # A Convolved's `params` are its components' own parameter tuples (a
@@ -481,6 +487,7 @@ end
 
 @testitem "Varying leaf mapping to Convolved distributions: instantiate then fixed" begin
     using Distributions
+    using ConvolvedDistributions: convolved
 
     conv_early = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     conv_late = convolved(Gamma(3.0, 1.0), Gamma(2.0, 1.0))
@@ -506,6 +513,7 @@ end
 
 @testitem "update at a composite leaf's own level errors informatively" begin
     using Distributions
+    using ConvolvedDistributions: convolved, difference
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))

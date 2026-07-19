@@ -8,6 +8,7 @@
 
 @testitem "recur seam: per-step kernels drive the convolution surface" begin
     using Distributions
+    using ConvolvedDistributions: convolve_series, discretise_pmf
 
     # A chain whose onset->admit delay lengthens with calendar time, so the
     # observed onset->death kernel drifts step to step.

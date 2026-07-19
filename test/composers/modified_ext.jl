@@ -169,6 +169,7 @@ end
 @testitem "Modified extension: convolve_series with an affine chain step" begin
     using Distributions
     using ModifiedDistributions: affine
+    using ConvolvedDistributions: convolve_series, discretise_pmf
 
     aff = affine(Gamma(2.0, 1.0); scale = 2.0, shift = 1.0)
     chain = Sequential(aff, Gamma(3.0, 1.0))

@@ -14,10 +14,11 @@ with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
 `rand` draws the marginal, and [`update`](@ref) collapses an uncertain leaf to
 its concrete template.
 
-Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
-convolved total via [`observed_distribution`](@ref)), so its convolution and
-quadrature surface — [`convolved`](@ref), `integrate`/`gl_integrate`
-and the solver-method types — is reachable through this package alone. No
+Hard-deps `ConvolvedDistributions` (a chain collapses to a convolved total via
+[`observed_distribution`](@ref)) and extends its `convolve_series`/`difference`
+generics for composed tree types; its own convolution/quadrature surface
+(`convolved`, `integrate`/`gl_integrate`, the solver-method types) is reached
+with a separate `using ConvolvedDistributions`, not re-exported here. No
 censoring: this is the generic composition layer.
 
 # Examples
@@ -47,15 +48,16 @@ using LogExpFunctions: log1mexp
 
 import Tables
 
-# The convolution + quadrature substrate. Re-exported below so downstream
-# packages sit on ComposedDistributions alone. Every name is imported explicitly
-# (the exported surface plus the public-but-unexported quadrature helpers).
+# The convolution + quadrature substrate. Not re-exported (#228: the re-export
+# made 14 ConvolvedDistributions-owned names part of this package's advertised
+# API, so every upstream API change was silently a CD API change too); only
+# the names this package's own composer code actually calls are imported,
+# unexported — a caller reaching ConvolvedDistributions' own surface
+# (`gl_integrate`, the solver-method types, `product`, ...) does its own
+# `using ConvolvedDistributions`.
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
-                              convolve_series, discretise_pmf, DelayPMF,
-                              Difference, difference, product, Product,
-                              AnalyticalSolver, NumericSolver, gl_integrate,
-                              GaussLegendre, integrate, AbstractSolverMethod,
-                              Convolved
+                              convolve_series, discretise_pmf, Difference,
+                              difference, Convolved, GaussLegendre, integrate
 # AD-safe survival helpers, now owned by EpiAwareADTools (ConvolvedDistributions
 # 0.2 moved the `*_ad_safe` family out under underscore-free names, #137).
 # `logccdf_ad_safe` is called by the racing-hazard node and both it and
@@ -144,22 +146,7 @@ export prune, splice
 # methods live in `ext/ComposedDistributionsFlexiChainsExt.jl`.
 export chain_to_params, param_draws, strip_prefix
 
-# A DynamicPPL model over a composed distribution's estimated parameters, built
-# as a light wrapper on the `as_logdensity` codec. No method until `DynamicPPL`
-# is loaded; the model lives in `ext/ComposedDistributionsDynamicPPLExt.jl`.
-export as_turing
-
 export observed_distribution
-
-# Re-exported ConvolvedDistributions surface, so downstream packages reach
-# convolution + quadrature through ComposedDistributions alone. The `product`
-# constructor is exported; its `Product` type stays unexported (see `public.jl`)
-# because a bare `Product` would clash with Distributions' deprecated `Product`
-# under the usual `using ComposedDistributions, Distributions` — reach it as
-# `ComposedDistributions.Product`, exactly as ConvolvedDistributions intends.
-export convolved, convolve_series, discretise_pmf, DelayPMF, Difference,
-       difference, product, AnalyticalSolver, NumericSolver, Convolved,
-       AbstractSolverMethod, GaussLegendre, integrate, gl_integrate
 
 # --- includes --------------------------------------------------------------
 
@@ -181,11 +168,6 @@ include("composers/introspection.jl")
 # `ext/ComposedDistributionsFlexiChainsExt.jl`), so this package stays
 # Turing-free until that extension is triggered.
 include("composers/readback.jl")
-# `as_turing` stub: a DynamicPPL model over a tree's estimated parameters,
-# built on the `as_logdensity` codec. No method until `DynamicPPL` is loaded
-# (see `ext/ComposedDistributionsDynamicPPLExt.jl`), so the core stays
-# Turing-free.
-include("composers/turing.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.

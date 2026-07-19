@@ -38,6 +38,7 @@
 using ComposedDistributions
 using Distributions
 using Random
+using ConvolvedDistributions: convolved
 
 # ## Composing a record
 #
@@ -214,10 +215,11 @@ rand(Xoshiro(7), resolution; outcome = true)
 #
 # Where the composers wire named branches into a tree, the combinators join two
 # whole delays algebraically.
-# [`convolved`](@ref) forms the sum `X + Y` (the total of two
-# independent delays), and [`difference`](@ref) forms the dual `X - Y`.
-# Both are re-exported from ConvolvedDistributions, so they are reachable through
-# ComposedDistributions alone.
+# `convolved` forms the sum `X + Y` (the total of two
+# independent delays), and `difference` forms the dual `X - Y`.
+# Both are ConvolvedDistributions verbs ComposedDistributions extends for
+# composed tree types; reach them with `using ConvolvedDistributions`
+# alongside `using ComposedDistributions`.
 
 total = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4));
 

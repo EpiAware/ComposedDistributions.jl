@@ -47,18 +47,14 @@ public AbstractComposedDistribution, AbstractMultiChild, AbstractOneOf
 # the per-family `test_*` checks).
 public TestUtils
 
-# The Mellin product type (`Z = X * Y`) re-exported from ConvolvedDistributions.
-# Its `product` constructor is exported, but the `Product` type stays unexported
-# because a bare `Product` would clash with Distributions' deprecated `Product`;
-# reach it as `ComposedDistributions.Product`.
-public Product
-
 # The LogDensityProblems core codec: the flat-vector <-> nested-NamedTuple
 # bijection (`flat_dimension`/`flatten`/`unflatten`), the fused flat-vector ->
 # rebuilt-distribution primary (`reconstruct`, #178 PR 2), and the assembled
 # PPL-neutral log-density (`ComposedLogDensity`/`as_logdensity`/`logdensity`).
-# A weakdep `LogDensityProblems` extension wraps `ComposedLogDensity` as a
-# standard problem; this core stays Turing/LogDensityProblems-free.
+# This core stays Turing/LogDensityProblems-free; a LogDensityProblems-
+# compatible problem over the same estimated parameters is available with no
+# glue extension here through `DistributionsInference.as_logdensity` (#220,
+# `LogDensityProblems` is a hard dependency there).
 public flat_dimension, flatten, unflatten, reconstruct
 public ComposedLogDensity, as_logdensity, logdensity
 

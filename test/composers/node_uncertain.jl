@@ -198,6 +198,7 @@ end
 @testitem "branch_probs: promote across a mixed tree with a composite leaf" begin
     using Distributions
     using ComposedDistributions: flat_dimension
+    using ConvolvedDistributions: convolved
 
     # A mixed tree: a Resolve (uncertain branch_probs via promote), a Convolved
     # composite leaf (see-through component fitting, #81), and a plain leaf.

@@ -32,32 +32,34 @@ ComposedDistributions.logdensity(prob, [2.0])
 
 Promote a fixed tree to estimate its free parameters with default priors through [`uncertain`](@ref)`(tree)` (equivalently `update(tree, param_priors(tree))`, the mechanism it is built on).
 
+This package's own `prob` is PPL-neutral but not itself a `LogDensityProblems` problem — sampling it (with or without Turing) goes through `DistributionsInference.jl`, which hosts every inference extension over the same codec (`params_table`/`flat_dimension`/`reconstruct`) so this package stays free of a `LogDensityProblems`/`DynamicPPL` dependency.
+
 ## Sampling without Turing
 
-The assembled `prob` is a `LogDensityProblems` problem once the `LogDensityProblems` extension loads, so any consumer of that interface can sample it.
+`DistributionsInference.as_logdensity(tree, data)` packages the same tree and data as a `LogDensityProblems`-compatible problem (`LogDensityProblems` is a hard dependency there, so no extension is needed).
 A gradient comes from wrapping it with `LogDensityProblemsAD` and a backend the codec differentiates under (ForwardDiff, ReverseDiff or Mooncake).
 
 ```julia
-using LogDensityProblems, LogDensityProblemsAD, ForwardDiff, AdvancedHMC
+using DistributionsInference, LogDensityProblems, LogDensityProblemsAD, ForwardDiff, AdvancedHMC
 
-prob = as_logdensity(tree, data)
+prob = DistributionsInference.as_logdensity(tree, data)
 LogDensityProblems.dimension(prob)              # 1
 grad = ADgradient(:ForwardDiff, prob)
 # hand `grad` to AdvancedHMC / DynamicHMC / Pathfinder
 ```
 
 Samplers work on an unconstrained vector, so a positive or simplex parameter needs its transform.
-[`to_constrained`](@ref)`(prob, z)` returns the constrained parameters and the log-Jacobian for an unconstrained `z`, once `Bijectors` is loaded.
+[`to_constrained`](@ref)`(prob, z)` returns the constrained parameters and the log-Jacobian for an unconstrained `z` from this package's own `prob` (`ComposedDistributions.as_logdensity(tree, data)`), once `Bijectors` is loaded — it operates on the same estimated flat-parameter layout `DistributionsInference.as_logdensity` samples.
 
 ## Sampling with Turing
 
-[`as_turing`](@ref) wraps the same log-density as a `DynamicPPL` model, so a tree is sampleable with Turing directly.
+`DistributionsInference.as_turing(tree, data)` wraps the same log-density as a `DynamicPPL` model, so a tree is sampleable with Turing directly.
 It is a light layer over the codec, with each estimated parameter a named site drawn from its own prior and the data likelihood added from the tree rebuilt at the draw.
 
 ```julia
-using Turing
+using DistributionsInference, Turing
 
-chain = sample(as_turing(tree, data), NUTS(), 1000)
+chain = sample(DistributionsInference.as_turing(tree, data), NUTS(), 1000)
 ```
 
 ## Reading the fit back
@@ -79,7 +81,7 @@ draws = param_draws(tree, chain)                 # every draw, for a posterior s
 |---|---|---|
 | [`as_logdensity`](@ref) | the PPL-neutral log-density over the estimated parameters | base package |
 | [`logdensity`](@ref) / [`flat_dimension`](@ref) | evaluate the density, count the parameters | base package |
-| `LogDensityProblems` interface | `dimension` / `logdensity` / `capabilities` for any HMC consumer | `LogDensityProblems` |
 | [`to_constrained`](@ref) | the unconstrained transform and its log-Jacobian | `Bijectors` |
-| [`as_turing`](@ref) | a `DynamicPPL` model for `sample(...)` | `DynamicPPL` |
+| `DistributionsInference.as_logdensity` | a `LogDensityProblems` problem for any HMC consumer | `DistributionsInference.jl` |
+| `DistributionsInference.as_turing` | a `DynamicPPL` model for `sample(...)` | `DistributionsInference.jl` (`DynamicPPL` ext) |
 | [`chain_to_params`](@ref) / [`update`](@ref) | read a fitted chain back onto the tree | `DynamicPPL` and `FlexiChains` |

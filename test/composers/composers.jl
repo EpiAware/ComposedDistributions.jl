@@ -689,6 +689,7 @@ end
 
 @testitem "observed_distribution / convolve re-export" begin
     using Distributions
+    using ConvolvedDistributions: convolved, Convolved
 
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     od = observed_distribution(s)
@@ -701,20 +702,6 @@ end
     # A chain with a Parallel step cannot collapse.
     @test_throws ArgumentError observed_distribution(
         Sequential(Gamma(1.0, 1.0), Parallel(Gamma(1.0, 1.0), Gamma(1.0, 1.0))))
-end
-
-@testitem "re-exported ConvolvedDistributions surface is reachable" begin
-    # These names come through ComposedDistributions' re-export, so downstream
-    # packages sit on ComposedDistributions alone.
-    @test isdefined(ComposedDistributions, :convolved)
-    @test isdefined(ComposedDistributions, :convolve_series)
-    @test isdefined(ComposedDistributions, :integrate)
-    @test isdefined(ComposedDistributions, :gl_integrate)
-    @test isdefined(ComposedDistributions, :GaussLegendre)
-    @test isdefined(ComposedDistributions, :AbstractSolverMethod)
-    @test isdefined(ComposedDistributions, :AnalyticalSolver)
-    @test isdefined(ComposedDistributions, :NumericSolver)
-    @test isdefined(ComposedDistributions, :Difference)
 end
 
 @testitem "Monte-Carlo: chain rand mean matches analytic mean" begin

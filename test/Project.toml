@@ -10,6 +10,7 @@ Bijectors = "76274a88-744f-5084-9051-94815aaf08c4"
 DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
 DifferentiationInterfaceTest = "a82114a7-5aa3-49a8-9643-716bb13727a3"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+DistributionsInference = "205dfa0f-445e-4692-a651-ee32c3bca9ae"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DynamicPPL = "366bfd00-2699-11ea-058f-f148b4cae6d8"
 EpiAwarePackageTools = "7aaea248-0d11-4a0d-a7dc-86da30abb951"
@@ -20,7 +21,6 @@ JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LogDensityProblems = "6fdf6af0-433a-55f7-b3ed-c6c6e0b8df7c"
-LogDensityProblemsAD = "996a588d-648d-4e1f-a8f0-a84b347e47b1"
 ModifiedDistributions = "664e6f8c-d74f-44d3-9f37-f82699103046"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
@@ -52,7 +52,6 @@ JET = "0.9, 0.10"
 JuliaFormatter = "2"
 LinearAlgebra = "1"
 LogDensityProblems = "2"
-LogDensityProblemsAD = "1"
 Pkg = "1"
 Random = "1"
 Statistics = "1"
@@ -77,3 +76,9 @@ ModifiedDistributions = {url = "https://github.com/EpiAware/ModifiedDistribution
 # resolves out of the box. Switch to a local path if you develop the kit
 # alongside this package, e.g. EpiAwarePackageTools = {path = "../../EpiAwarePackageTools.jl"}.
 EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}
+# Test-only: `test/composers/turing_ext.jl` exercises the params_table/codec
+# ordering coupling (#192) through `DistributionsInference.as_turing`, the
+# generic replacement for the removed CD-native `as_turing` stub (#233). Until
+# DistributionsInference is registered, pinned by git like the other
+# unregistered EpiAware deps above.
+DistributionsInference = {url = "https://github.com/EpiAware/DistributionsInference.jl", rev = "main"}

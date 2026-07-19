@@ -1,5 +1,37 @@
 ## Unreleased
 
+- **breaking:** the `ComposedDistributionsLogDensityProblemsExt` extension
+  (#220) and the `ComposedDistributionsDynamicPPLExt` extension and `as_turing`
+  stub (#233) are removed, along with the `LogDensityProblems` weakdep.
+  `DistributionsInference.jl` now hosts both: `LogDensityProblems` is a hard
+  dependency there, so `DistributionsInference.as_logdensity(tree, data)` is a
+  `LogDensityProblems`-compatible problem with no glue extension, and
+  `DistributionsInference.as_turing(tree, data)` is the generic replacement
+  for the removed `as_turing` (its own docstring notes it is "ported from
+  ComposedDistributions' `as_turing`... which this extension supersedes"). The
+  `~` site naming is unchanged (verified byte-identical dotted paths), so a
+  chain sampled from `DistributionsInference.as_turing` still reads back
+  through this package's own `chain_to_params`/`update(tree, chain)`
+  (`ext/ComposedDistributionsFlexiChainsExt.jl`, untouched — see #221 for its
+  own follow-up) with no code change needed there. This package's own
+  PPL-neutral `ComposedLogDensity`/`as_logdensity`/`logdensity` core is
+  unaffected; only the two `LogDensityProblems`/`DynamicPPL`-facing wrappers
+  around it move.
+
+- **breaking:** the `ConvolvedDistributions` surface (`convolved`,
+  `convolve_series`, `discretise_pmf`, `DelayPMF`, `Difference`, `difference`,
+  `product`, `Product`, `AnalyticalSolver`, `NumericSolver`,
+  `AbstractSolverMethod`, `GaussLegendre`, `integrate`, `gl_integrate`) is no
+  longer re-exported (#228): the re-export made 14 ConvolvedDistributions-owned
+  names part of this package's advertised API, so every upstream API change
+  was silently a CD API change too. Reach ConvolvedDistributions' own surface
+  with an explicit `using ConvolvedDistributions` alongside `using
+  ComposedDistributions`; this package's own extension methods on
+  `convolved`/`convolve_series`/`difference` for composed tree types are
+  unaffected; unqualified names it uses internally (`convolved`,
+  `convolve_series`, `discretise_pmf`, `Difference`, `difference`, `Convolved`,
+  `GaussLegendre`, `integrate`) are simply no longer exported, not removed.
+
 - **feat:** `register_leaf_wrapper!` is a new public hook so a leaf-wrapper
   package extension (ModifiedDistributions' `Affine`/`Weighted`/`Transformed`/
   `Modified`) can tell the generated flat-vector codec (`flat_dimension`,

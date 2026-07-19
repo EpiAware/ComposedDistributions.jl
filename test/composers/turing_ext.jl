@@ -1,25 +1,33 @@
-# ComposedDistributions × DynamicPPL: `as_turing(dist, data)` builds a
-# DynamicPPL model over a composed distribution's estimated parameters, a light
-# wrapper on the `as_logdensity` codec. The extension loads when DynamicPPL
-# alone is present. These tests prove (a) the model's `~` site names match the
-# FlexiChains readback exactly, so a fitted chain reads back through
-# `chain_to_params` / `update(dist, chain)` unchanged; (b) the model's total
-# log-density equals the codec's `logdensity` by construction; (c) a
-# non-centred pooled tree samples and reads back through `update(dist, chain)`
-# like any other tree; (d) a centred-pool tree is rejected with a clear
-# pointer to the codec path; and (e) a `shared(...)`-tagged parameter, tied
-# across two branches, reads back onto BOTH occurrences from the ONE sampled
-# site — the one test that exercises the params_table/codec ordering coupling
-# `ext/ComposedDistributionsDynamicPPLExt.jl` depends on (#192).
+# ComposedDistributions × DistributionsInference × DynamicPPL: CD's own
+# `as_turing` stub and `ext/ComposedDistributionsDynamicPPLExt.jl` were removed
+# (#233) as redundant with `DistributionsInference.as_turing`, the generic
+# fit-protocol replacement (DI's own extension docstring: "ported from
+# ComposedDistributions' `as_turing`... which this extension supersedes"). Its
+# `~` site names are byte-identical dotted paths to CD's own removed stub (both
+# built from `params_table`'s `edge`/`param` columns the same way), so a chain
+# sampled from `DistributionsInference.as_turing` still reads back through
+# CD's *own* FlexiChains readback (`chain_to_params`/`update(dist, chain)`,
+# `ext/ComposedDistributionsFlexiChainsExt.jl`, untouched by #233) unchanged.
+# These tests prove that end to end: (a) the model's `~` site names match the
+# FlexiChains readback exactly; (b) the model's total log-density equals CD's
+# own PPL-neutral `logdensity` by construction; (c) a non-centred pooled tree
+# samples and reads back through `update(dist, chain)` like any other tree;
+# (d) a tree with no fixed `~` prior (a centred pool, in CD's case) is
+# rejected; and (e) a `shared(...)`-tagged parameter, tied across two
+# branches, reads back onto BOTH occurrences from the ONE sampled site — the
+# one test that exercises the params_table/codec ordering coupling
+# `DistributionsInferenceComposedDistributionsExt`/CD's FlexiChains readback
+# both depend on (#192).
 
-@testitem "as_turing extension loads under DynamicPPL alone" begin
-    using ComposedDistributions, DynamicPPL
-    @test Base.get_extension(ComposedDistributions,
-        :ComposedDistributionsDynamicPPLExt) !== nothing
+@testitem "DistributionsInference's DynamicPPL extension loads" begin
+    using DistributionsInference, DynamicPPL
+    @test Base.get_extension(DistributionsInference,
+        :DistributionsInferenceDynamicPPLExt) !== nothing
 end
 
 @testitem "as_turing round-trip: NUTS chain reads back through the codec" begin
-    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using ComposedDistributions, DistributionsInference, Distributions,
+          DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
     tree = compose((
@@ -28,10 +36,12 @@ end
         admit_death = LogNormal(0.5, 0.4)))
     data = [[0.5, 2.0], [1.0, 3.0], [0.8, 2.5]]
 
-    model = as_turing(tree, data)
+    model = DistributionsInference.as_turing(tree, data)
 
-    # The model's total log-density equals the codec's `logdensity` at the
-    # corresponding constrained point (the "built on the codec" check).
+    # The model's total log-density equals CD's own codec's `logdensity` at
+    # the corresponding constrained point (the "built on the same codec"
+    # check) — DistributionsInference's translation layer delegates straight
+    # to CD's `reconstruct`/`flat_dimension`, so the two must agree exactly.
     # Conditioning every site at its value scores each prior plus the
     # `@addlogprob!` likelihood, exactly what `logdensity` sums.
     prob = ComposedDistributions.as_logdensity(tree, data)
@@ -47,7 +57,7 @@ end
     vns = Set(string.(collect(FlexiChains.parameters(chain))))
     @test "d.onset_admit.shape" in vns
 
-    # The chain reads back through the EXISTING FlexiChains machinery unchanged:
+    # The chain reads back through CD's OWN FlexiChains machinery unchanged:
     # `chain_to_params` reduces it to the nested NamedTuple, `update` rebuilds
     # the tree, collapsing the uncertain leaf.
     params = chain_to_params(tree, chain)
@@ -61,7 +71,8 @@ end
 end
 
 @testitem "as_turing round-trip: shared-tag readback lands on the right leaf" begin
-    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using ComposedDistributions, DistributionsInference, Distributions,
+          DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
 
@@ -76,7 +87,7 @@ end
         tail = LogNormal(0.5, 0.4)))
     data = [[0.5, 1.0, 2.0], [0.8, 1.5, 2.5], [0.6, 1.2, 2.1]]
 
-    model = as_turing(tree, data)
+    model = DistributionsInference.as_turing(tree, data)
 
     Random.seed!(23)
     chain = sample(model, NUTS(), 200; chain_type = VNChain, progress = false)
@@ -113,7 +124,8 @@ end
 end
 
 @testitem "as_turing round-trip: uncertain branch_probs stick coordinate" begin
-    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using ComposedDistributions, DistributionsInference, Distributions,
+          DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
     # A Resolve whose branch-probability simplex is uncertain (K = 2, so one
@@ -128,8 +140,8 @@ end
     data = [[0.8], [1.5], [2.2], [0.6]]
 
     Random.seed!(7)
-    chain = sample(as_turing(tree, data), NUTS(), 200; chain_type = VNChain,
-        progress = false)
+    chain = sample(DistributionsInference.as_turing(tree, data), NUTS(), 200;
+        chain_type = VNChain, progress = false)
 
     vns = Set(string.(collect(FlexiChains.parameters(chain))))
     @test "d.resolution.branch_probs.stick_1" in vns
@@ -144,23 +156,26 @@ end
 end
 
 @testitem "as_turing rejects a centred pooled tree" begin
-    using ComposedDistributions, Distributions
+    using ComposedDistributions, DistributionsInference, Distributions
 
     data = [[0.5, 2.0], [1.0, 3.0]]
 
     # A centred pool (a general, non-location-scale population) has a
-    # hyperparameter-dependent member prior, so no fixed `~` prior at all; its
+    # hyperparameter-dependent member prior, so no fixed `~` prior at all
+    # (translated to `prior = nothing` at the DI row level, see
+    # `DistributionsInferenceComposedDistributionsExt`'s `_di_prior`); its
     # sampling path does not exist yet, so it stays rejected.
     centred = compose((
         north = uncertain(Gamma(2.0, 1.0);
             shape = pool(:district, Gamma(2.0, 1.0); noncentred = false)),
         south = uncertain(Gamma(2.0, 1.0);
             shape = pool(:district, Gamma(2.0, 1.0); noncentred = false))))
-    @test_throws ArgumentError as_turing(centred, data)
+    @test_throws ArgumentError DistributionsInference.as_turing(centred, data)
 end
 
 @testitem "as_turing round-trip: non-centred pooled tree" begin
-    using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
+    using ComposedDistributions, DistributionsInference, Distributions,
+          DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
     # A non-centred (location-scale) pool samples correctly and the readback
@@ -171,7 +186,7 @@ end
         south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
     data = [[0.5, 2.0], [1.0, 3.0]]
 
-    model = as_turing(tree, data)
+    model = DistributionsInference.as_turing(tree, data)
 
     Random.seed!(13)
     chain = sample(model, NUTS(), 200; chain_type = VNChain, progress = false)
