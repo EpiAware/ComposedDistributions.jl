@@ -12,6 +12,7 @@
 @testitem "Scenario: onset→admission→death continuous chain" tags = [:scenarios] begin
     using Distributions, Random, Statistics
     using ForwardDiff
+    using ConvolvedDistributions: Convolved
 
     # Story: the line-list delay from symptom onset to hospital admission
     # (a Gamma incubation-like step) then admission to death (LogNormal), the
@@ -391,6 +392,11 @@ end
 
 @testitem "Scenario: renewal convolution through a delay chain" tags = [:scenarios] begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     # Story: an infection incidence series pushed through the onset→admission→
     # death delay chain to expected downstream counts — the EpiNow2-style latent
@@ -399,22 +405,36 @@ end
         :admit_death => LogNormal(0.5, 0.4))
     infections = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0, 1.0, 0.0, 0.0]
 
-    # Convolving through the chain is identical to collapsing it to its observed
-    # total, discretising that (ConvolvedDistributions 0.2 is discrete-only), and
-    # convolving the PMF — the pre-0.2 continuous output unchanged.
-    counts = convolve_series(chain, infections)
-    @test length(counts) == length(infections)
-    @test counts ≈ convolve_series(
+    # The chain's observed total is continuous, and ConvolvedDistributions is
+    # discrete-only: convolving through the chain directly delegates to
+    # ConvolvedDistributions' own "discretise first" error (#226) rather than
+    # CD picking a scheme silently.
+    @test_throws ArgumentError convolve_series(chain, infections)
+
+    # Discretise explicitly, then convolve: unchanged from the pre-#226 output.
+    counts = convolve_series(
         discretise_pmf(observed_distribution(chain), length(infections) - 1),
         infections)
+    @test length(counts) == length(infections)
 
-    # Selecting the chain's interim events gives the count series at each event;
-    # the terminal event reproduces the whole-chain result, and the first event
-    # is just the first step's convolution.
-    by_event = convolve_series(chain, infections; events = (:admit, :death))
-    @test keys(by_event) == (:admit, :death)
-    @test by_event.death ≈ counts
-    @test by_event.admit ≈ convolve_series(
+    # Selecting the chain's interim events collapses to that event's cumulative
+    # delay, which is ALSO continuous here, so it throws the same way (the
+    # events dispatch routes through the same discretise-first-required path).
+    @test_throws ArgumentError convolve_series(
+        chain, infections; events = (:admit, :death))
+
+    # The prefix collapse itself is still correct: the terminal event's
+    # cumulative delay is the whole-chain observed total, and the first
+    # event's is just the first step, ONE-to-one with the chain's own steps
+    # (`_event_prefix_delay`, exercised indirectly here via its distribution).
+    death_prefix = ComposedDistributions._event_prefix_delay(chain, :death)
+    admit_prefix = ComposedDistributions._event_prefix_delay(chain, :admit)
+    @test cdf(death_prefix, 5.0) ≈ cdf(observed_distribution(chain), 5.0)
+    @test cdf(admit_prefix, 5.0) ≈ cdf(Gamma(2.0, 1.0), 5.0)
+    @test convolve_series(discretise_pmf(death_prefix, length(infections) - 1),
+        infections) ≈ counts
+    @test convolve_series(discretise_pmf(admit_prefix, length(infections) - 1),
+        infections) ≈ convolve_series(
         discretise_pmf(Gamma(2.0, 1.0), length(infections) - 1), infections)
 end
 
@@ -447,6 +467,11 @@ end
 
 @testitem "Scenario: difference of two observed reporting totals" tags = [:scenarios] begin
     using Distributions, Random
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     # Story: the gap between two observed reporting totals — an onset→admit→
     # death chain and an onset→report→confirm chain — as a Difference of the two

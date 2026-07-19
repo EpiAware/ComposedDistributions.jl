@@ -8,6 +8,11 @@
 
 @testitem "recur seam: per-step kernels drive the convolution surface" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     # A chain whose onset->admit delay lengthens with calendar time, so the
     # observed onset->death kernel drifts step to step.

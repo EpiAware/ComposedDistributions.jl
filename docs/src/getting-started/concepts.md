@@ -10,7 +10,7 @@ The package has four layers, each building on the one before.
 - **Leaves** are any `Distributions.jl` `UnivariateDistribution`, used directly as the per-event delays.
   A leaf can also resolve later: a [`Varying`](@ref) leaf maps an observed covariate to a distribution, and an [`Uncertain`](@ref) leaf carries distribution-valued parameters.
 - **Composers** wire named leaves into an event tree ([`compose`](@ref) and the five composers).
-- **Combination and lowering** join or collapse whole delays ([`convolved`](@ref), [`difference`](@ref), [`observed_distribution`](@ref)).
+- **Combination and lowering** join or collapse whole delays (`convolved`, `difference`, [`observed_distribution`](@ref)).
 - **Parameters and edits** read and reshape an assembled tree ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref), [`splice`](@ref)).
 
 ## The verb map
@@ -34,8 +34,8 @@ The verbs fall into five families, listed here as verb, what it does, and what i
 
 | Verb | What it does | Returns |
 |---|---|---|
-| `convolved` | the sum `X + Y` | [`Convolved`](@ref) |
-| `difference` | the dual `X - Y` | [`Difference`](@ref) |
+| `convolved` | the sum `X + Y` | `Convolved` |
+| `difference` | the dual `X - Y` | `Difference` |
 | `as_mixture` | the mixture view of a one_of node | a `MixtureModel` |
 | `observed_distribution` | collapses a chain to its convolved total | a convolved leaf |
 
@@ -88,8 +88,8 @@ The deferred-leaf verbs are worked through in [Multi-strata trees and parameter 
 | Racing outcomes (first to fire wins) | `compete` | [`Compete`](@ref) |
 | A data field selects the sub-model | `choose` | [`Choose`](@ref) |
 | Tie a leaf across branches | `shared` / `tie` | one shared parameter group |
-| Sum of two independent delays | `convolved` | [`Convolved`](@ref) |
-| Difference of two delays | `difference` | [`Difference`](@ref) |
+| Sum of two independent delays | `convolved` | `Convolved` |
+| Difference of two delays | `difference` | `Difference` |
 | Mixture view of a one_of node | `as_mixture` | a `MixtureModel` |
 | Collapse a chain to its total | `observed_distribution` | the convolved marginal |
 | The free-parameter inventory | `params_table` | a Tables.jl table |
