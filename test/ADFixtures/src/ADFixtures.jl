@@ -108,7 +108,7 @@ broken_scenario_names() = String[]
 # do i ... end` closure that rebuilds a `Parallel`'s children. Every `ad`
 # CI run since #190 landed reproduces it deterministically (same 149-pass/
 # 1-error split, same failing method) on GitHub Actions' runners; it does
-# NOT reproduce locally on a dev machine with the exact same resolved
+# not reproduce locally on a dev machine with the exact same resolved
 # package versions (Enzyme 0.13.188, Enzyme_jll 0.0.285+0, GPUCompiler
 # 1.23.0, LLVM.jl 9.10.1) — see the #223 comment for the full
 # characterisation and a draft upstream report. Ledgered here (rather than
@@ -186,7 +186,7 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
             [2.0, 3.0], (Constant(pool_prob),))
 
         # Shared-tag codec: the same uncertain template occurs twice under one
-        # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to ONE
+        # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to one
         # flat parameter and `update` places the drawn value in both
         # occurrences (mirrors `test/composers/logdensity.jl`'s "codec: shared
         # spec round-trip"). The reverse-mode gradient of that one parameter
