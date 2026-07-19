@@ -12,10 +12,21 @@
   index and a fixed extra-names tuple), never a callable, since even a stored
   closure hits the same world-age wall when called from a generator. A core
   (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`) keeps its
-  own direct-dispatch method but now routes ITS recursion through the same
+  own direct-dispatch method but now routes its recursion through the same
   registry-aware resolver, so a core wrapper placed directly around a
   registered extension leaf (e.g. `truncated(thin(Gamma(...)))`) peels
   correctly too, not just the reverse nesting.
+- **chore:** removed the `design/` folder (#224) — its one note, the
+  time-/covariate-varying design rationale, is superseded by the landed
+  `Varying`/`instantiate` implementation and its docstrings and the
+  [Time-, strata-, and covariate-varying distributions](@ref
+  varying-distributions) guide; dangling pointers to the removed file in
+  `src/ComposedDistributions.jl`, `src/composers/varying.jl`, and that guide
+  are cleaned up alongside it.
+- **chore:** renamed `src/composers/hazard_one_of.jl` to
+  `src/composers/Compete.jl` (#230), matching the file-per-type convention
+  the other composers already follow (`Resolve.jl`, `Sequential.jl`, ...);
+  no code changes, only the file name and its in-comment references.
 
 - **test:** added a guard against `params_table`/codec ordering drift (#192,
   the #190 review follow-up): the runtime `params_table` walk and the
