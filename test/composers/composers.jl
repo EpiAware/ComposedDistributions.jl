@@ -105,6 +105,19 @@ end
     @test_throws ArgumentError as_mixture(r)
 end
 
+@testitem "Choose: whole-tree mean/var/std are ill-defined" begin
+    using Distributions
+
+    ch = choose(:a => Gamma(1.5, 1.0), :b => Gamma(2.0, 1.0))
+    # A Choose has no single layout (data-selects the active alternative), so
+    # a whole-tree moment is ill-defined; only the chosen alternative's own
+    # moment is available.
+    @test_throws "mean(::Choose) needs a selection" mean(ch)
+    @test_throws "var(::Choose) needs a selection" var(ch)
+    @test_throws "std(::Choose) needs a selection" std(ch)
+    @test mean(event(ch, :a)) ≈ mean(Gamma(1.5, 1.0))
+end
+
 @testitem "Compete: racing hazard marginal, derived win probs, rand" begin
     using Distributions, Random
 
@@ -244,7 +257,7 @@ end
 end
 
 @testitem "compose: NamedTuple, table and matrix build equal stacks" begin
-    using Distributions
+    using Distributions, Random
 
     nt = (r1 = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],
         r2 = [Gamma(1.0, 1.0), Gamma(3.0, 1.0)])
@@ -254,8 +267,15 @@ end
         chain = [1, 1, 2, 2])
     mat = [Gamma(2.0, 1.0) LogNormal(0.5, 0.4); Gamma(1.0, 1.0) Gamma(3.0, 1.0)]
     @test compose(nt) == compose(table) == compose(mat)
-    # compose always returns a composer, never a bare leaf.
-    @test compose((a = Gamma(2.0, 1.0),)) isa Parallel
+    # compose always returns a composer, never a bare leaf; a single-branch
+    # Parallel scores, moments and draws like the wrapped leaf alone.
+    single = compose((a = Gamma(2.0, 1.0),))
+    @test single isa Parallel
+    @test logpdf(single, [1.5]) ≈ logpdf(Gamma(2.0, 1.0), 1.5)
+    @test mean(single).a ≈ mean(Gamma(2.0, 1.0))
+    @test minimum(single).a == minimum(Gamma(2.0, 1.0))
+    @test maximum(single).a == maximum(Gamma(2.0, 1.0))
+    @test rand(Xoshiro(3), single).a == rand(Xoshiro(3), Gamma(2.0, 1.0))
 end
 
 @testitem "compose: varargs-pairs spelling matches the NamedTuple spelling" begin
@@ -493,6 +513,38 @@ end
     # Splice inserts an after step.
     sp = splice(tree, :admit_death; after = :report => Gamma(1.0, 2.0))
     @test event(sp, :admit_death) isa Sequential
+end
+
+@testitem "structural edits: prune/splice boundary guards" begin
+    using Distributions
+
+    # A Sequential/Parallel can't be pruned down to zero children.
+    single = compose((only = Gamma(2.0, 1.0),))
+    @test_throws "Parallel needs at least one remaining child" prune(
+        single, :only)
+
+    # A Resolve/Choose can't be pruned below two remaining outcomes.
+    two_arm = resolve(:a => (Gamma(1.5, 1.0), 0.4), :b => (Gamma(2.0, 1.0), 0.6))
+    @test_throws "Resolve needs at least two remaining outcomes" prune(
+        compose((res = two_arm,)), :res, :a)
+    two_alt = choose(:a => Gamma(1.5, 1.0), :b => Gamma(2.0, 1.0))
+    @test_throws "Choose needs at least two remaining alternatives" prune(
+        compose((ch = two_alt,)), :ch, :a)
+
+    # Pruning a path that bottoms out at a leaf (not a composer) has no child
+    # to drop.
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    @test_throws "has no child to drop" prune(tree, :onset_admit, :bogus)
+
+    # prune/splice both reject an empty path.
+    @test_throws "prune needs a non-empty path" prune(tree, ())
+    @test_throws "splice needs a non-empty path" splice(
+        tree, (); after = :x => Gamma(1.0, 1.0))
+
+    # splice needs at least one of before/after.
+    @test_throws "splice needs a `before` and/or `after` step" splice(
+        tree, :admit_death)
 end
 
 @testitem "structural edits through a nested Compete: update, prune, tie" begin

@@ -85,7 +85,12 @@ end
     @test p[1] ≈ 0.3                 # stick_1
     @test p[2] ≈ 0.6 * (1 - 0.3)     # stick_2 * remaining
     @test p[3] ≈ (1 - 0.3) * (1 - 0.6)
-    @test isfinite(logpdf(collapsed, 1.5))
+    # The collapsed Resolve's logpdf is the p-weighted mixture of the three
+    # delays' own densities, not just some finite number.
+    @test logpdf(collapsed, 1.5) ≈ log(
+        p[1] * pdf(Gamma(1.5, 1.0), 1.5) +
+        p[2] * pdf(Gamma(2.0, 1.5), 1.5) +
+        p[3] * pdf(Gamma(1.0, 1.0), 1.5))
 end
 
 @testitem "branch_probs: stick Betas reproduce the Dirichlet" begin
