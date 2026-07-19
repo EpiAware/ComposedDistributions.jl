@@ -12,7 +12,8 @@
 # Light tutorials emit `@example` blocks that Documenter runs in-process; keep
 # cheap tutorials here.
 const LIGHT_TUTORIALS = ["composing-distributions.jl",
-    "competing-outcomes.jl", "linear-chain.jl", "strata-uncertainty.jl"]
+    "competing-outcomes.jl", "linear-chain.jl", "strata-uncertainty.jl",
+    "event-skeletons.jl"]
 
 # Heavy tutorials (live MCMC fits, multi-backend AD, plotting) are each
 # executed once in a fresh subprocess so native/memory state cannot accumulate.
@@ -30,7 +31,8 @@ const TUTORIAL_STUBS = [
     "composing-distributions.md" => "# [Composing distributions](@id composing-distributions)",
     "competing-outcomes.md" => "# [Competing outcomes: resolve versus compete](@id competing-outcomes)",
     "linear-chain.md" => "# [Delay chains and the linear chain trick](@id linear-chain)",
-    "strata-uncertainty.md" => "# [Multi-strata trees and parameter uncertainty](@id strata-uncertainty)"
+    "strata-uncertainty.md" => "# [Multi-strata trees and parameter uncertainty](@id strata-uncertainty)",
+    "event-skeletons.md" => "# [Event skeletons: reusable topologies with `@events`](@id event-skeletons)"
 ]
 
 # Regexes for URLs to skip during the (full-build) linkcheck, e.g. a page
