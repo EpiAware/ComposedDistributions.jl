@@ -227,7 +227,7 @@ _is_composer_node(::Any) = false
 # inventories with, so "compatible" means "the params table would treat them
 # alike".
 function _tie_signature(leaf)
-    return (_leaf_ctor(leaf), _leaf_param_names(leaf))
+    return (leaf_ctor(leaf), _leaf_param_names(leaf))
 end
 
 @doc "

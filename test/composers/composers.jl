@@ -728,7 +728,7 @@ end
     @test mean(totals) ≈ mean(s) atol = 0.05
 end
 
-@testitem "_leaf_ctor: a leaf whose params are not its native ctor args" begin
+@testitem "leaf_ctor: a leaf whose params are not its native ctor args" begin
     using Distributions
     using ComposedDistributions
 
@@ -756,13 +756,13 @@ end
 
     # The two coordinate hooks: the moments are the free parameters, and the
     # rebuild closes over the family the value tuple does not carry.
-    ComposedDistributions._param_names(::MomentLeaf) = (:mean, :sd)
-    function ComposedDistributions._leaf_ctor(::MomentLeaf{D}) where {D}
+    ComposedDistributions.param_names(::MomentLeaf) = (:mean, :sd)
+    function ComposedDistributions.leaf_ctor(::MomentLeaf{D}) where {D}
         return (vals...) -> MomentLeaf{D}((vals[1], vals[2]))
     end
 
     # The default hook is unchanged for a native family.
-    @test ComposedDistributions._leaf_ctor(Gamma(2.0, 1.0)) === Gamma
+    @test ComposedDistributions.leaf_ctor(Gamma(2.0, 1.0)) === Gamma
 
     # Why the hook is needed: the UnionAll is not positionally callable.
     @test_throws MethodError MomentLeaf(8.0, 2.0)
@@ -796,10 +796,10 @@ end
     # The hook must be transparent through a wrapper, or the override is
     # bypassed for exactly the leaves that matter: an `uncertain` leaf carrying
     # the prior, and a truncated one. `free_leaf` peels to the moment leaf, so
-    # `_leaf_ctor` must recurse rather than read the peeled type directly.
+    # `leaf_ctor` must recurse rather than read the peeled type directly.
     for wrapped in (truncated(leaf; upper = 30.0), u, shared(:m, leaf))
-        @test ComposedDistributions._leaf_ctor(wrapped) ===
-              ComposedDistributions._leaf_ctor(leaf)
+        @test ComposedDistributions.leaf_ctor(wrapped) ===
+              ComposedDistributions.leaf_ctor(leaf)
     end
 
     # And reconstruction really works through those wrappers.

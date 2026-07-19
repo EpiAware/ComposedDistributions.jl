@@ -27,6 +27,14 @@
   `src/composers/Compete.jl` (#230), matching the file-per-type convention
   the other composers already follow (`Resolve.jl`, `Sequential.jl`, ...);
   no code changes, only the file name and its in-comment references.
+- **chore:** renamed the public `_param_names`/`_leaf_ctor` leaf-protocol
+  hooks to `param_names`/`leaf_ctor` (#229) — a leading underscore reads as
+  "internal" in Julia, the opposite of what `public.jl` was declaring, and
+  `docs/src/developer/leaf-protocol.md` already documented the clean names.
+  The old underscored names remain as `const` aliases (the same function
+  object, following the existing `uncertain_specs`/`_uncertain_specs`
+  pattern), so an existing override such as
+  `ComposedDistributions._param_names(::MyLeaf) = ...` keeps working.
 
 - **test:** added a guard against `params_table`/codec ordering drift (#192,
   the #190 review follow-up): the runtime `params_table` walk and the
