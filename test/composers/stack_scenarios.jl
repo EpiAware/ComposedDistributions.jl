@@ -10,6 +10,7 @@
 # bug (a wrong distribution, an unnormalised weight, a dropped step) fails.
 
 @testitem "Scenario: onset→admission→death continuous chain" tags = [:scenarios] begin
+    using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ForwardDiff
 
@@ -140,6 +141,7 @@ end
 end
 
 @testitem "Scenario: death-vs-discharge case-fatality Resolve" tags = [:scenarios] begin
+    using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ForwardDiff
 
@@ -255,6 +257,7 @@ end
 end
 
 @testitem "Scenario: chain resolving to a death-or-discharge outcome" tags = [:scenarios] begin
+    using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ForwardDiff
 
@@ -351,6 +354,7 @@ end
 end
 
 @testitem "Scenario: deep compose of chain, parallel and Resolve" tags = [:scenarios] begin
+    using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ForwardDiff
 
@@ -419,6 +423,7 @@ end
 end
 
 @testitem "Scenario: shared incubation tied across two branches" tags = [:scenarios] begin
+    using ComposedDistributions: update
     using Distributions, Random
 
     # Story: two reporting branches that share ONE incubation period — tie makes

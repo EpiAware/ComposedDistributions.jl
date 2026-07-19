@@ -8,6 +8,7 @@
 # back.
 
 @testitem "update(tree, chain) has no dispatch ambiguity against update(tree, table)" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random, Test
     using FlexiChains: FlexiChains, VNChain
 
@@ -53,6 +54,7 @@
 end
 
 @testitem "chain_to_params / param_draws / update(template, chain) round-trip" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
@@ -169,6 +171,7 @@ end
 end
 
 @testitem "chain_to_params collapses an Uncertain leaf; a Varying leaf keeps varying" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: VNChain
 
@@ -208,6 +211,7 @@ end
 end
 
 @testitem "chain_to_params reads uncertain branch_probs stick coordinates" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
@@ -257,6 +261,7 @@ end
 end
 
 @testitem "chain_to_params reads a non-centred pooled tree (fixed population)" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
@@ -310,6 +315,7 @@ end
 end
 
 @testitem "chain_to_params reads pooled hyperparameters once per group" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
@@ -366,6 +372,7 @@ end
 end
 
 @testitem "chain_to_params reads two distinct pooling groups in one tree" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
@@ -443,6 +450,7 @@ end
 end
 
 @testitem "chain_to_params reads a pooled parameter inside a shared leaf" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
@@ -504,6 +512,7 @@ end
 end
 
 @testitem "chain_to_params rejects a pool/root-edge name collision (#177)" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 

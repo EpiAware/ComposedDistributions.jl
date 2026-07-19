@@ -4,6 +4,7 @@
 # design pass).
 
 @testitem "update(tree, table): params_table round-trips and edits" begin
+    using ComposedDistributions: update
     using Distributions, Tables
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -32,6 +33,7 @@
 end
 
 @testitem "update(tree, table): a `prior` column promotes to uncertain" begin
+    using ComposedDistributions: update
     using Distributions, Tables
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -48,6 +50,7 @@ end
 end
 
 @testitem "update(tree, table): dispatch safety against Real vectors and DI rows" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((

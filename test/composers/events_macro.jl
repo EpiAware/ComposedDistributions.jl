@@ -7,6 +7,7 @@
 # `@events`.
 
 @testitem "@events: a → chain fills to a Sequential" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -27,6 +28,7 @@
 end
 
 @testitem "@events: a bare expression (no begin block) works" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events a → b
@@ -35,6 +37,7 @@ end
 end
 
 @testitem "@events: a | node fills to Resolve on (dist, prob) tuples" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -56,6 +59,7 @@ end
 end
 
 @testitem "@events: the residual last branch is a Resolve" begin
+    using ComposedDistributions: update
     using Distributions
 
     # The headline form: death carries a probability, discharge omits it and
@@ -76,6 +80,7 @@ end
 end
 
 @testitem "@events: a | node fills to Compete on bare distributions" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -92,6 +97,7 @@ end
 end
 
 @testitem "@events: a mixed | fill throws" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -106,6 +112,7 @@ end
 end
 
 @testitem "@events: a & node fills to Parallel" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -123,6 +130,7 @@ end
 end
 
 @testitem "@events: an unfilled hole throws naming it" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -139,6 +147,7 @@ end
 end
 
 @testitem "@events: an unknown fill key throws" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -155,6 +164,7 @@ end
 end
 
 @testitem "@events: ModifiedDistributions leaf fills compose (design test)" begin
+    using ComposedDistributions: update
     using Distributions
     using ModifiedDistributions
     using ModifiedDistributions: affine, get_dist
@@ -184,6 +194,7 @@ end
 end
 
 @testitem "@events: an @uncertain leaf fill stays uncertain" begin
+    using ComposedDistributions: update
     using Distributions
 
     skel = @events begin
@@ -198,6 +209,7 @@ end
 end
 
 @testitem "@events: the realistic tree builds, rands and scores" begin
+    using ComposedDistributions: update
     using Distributions
     using Random
 

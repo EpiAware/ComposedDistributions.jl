@@ -19,6 +19,7 @@
 end
 
 @testitem "as_turing round-trip: NUTS chain reads back through the codec" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
@@ -61,6 +62,7 @@ end
 end
 
 @testitem "as_turing round-trip: shared-tag readback lands on the right leaf" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
@@ -113,6 +115,7 @@ end
 end
 
 @testitem "as_turing round-trip: uncertain branch_probs stick coordinate" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 
@@ -160,6 +163,7 @@ end
 end
 
 @testitem "as_turing round-trip: non-centred pooled tree" begin
+    using ComposedDistributions: update
     using ComposedDistributions, Distributions, DynamicPPL, Turing, Random
     using FlexiChains: FlexiChains, VNChain
 

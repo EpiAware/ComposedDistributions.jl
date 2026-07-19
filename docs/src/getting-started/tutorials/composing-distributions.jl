@@ -36,6 +36,7 @@
 # We use Distributions for the delay distributions and Random for reproducibility.
 
 using ComposedDistributions
+using ComposedDistributions: update
 using Distributions
 using Random
 

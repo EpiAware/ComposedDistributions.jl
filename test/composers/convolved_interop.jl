@@ -295,6 +295,7 @@ end
 end
 
 @testitem "update round-trips a Convolved leaf's component params" begin
+    using ComposedDistributions: update
     using Distributions
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
@@ -317,6 +318,7 @@ end
 end
 
 @testitem "update makes a Convolved component uncertain (partial merge)" begin
+    using ComposedDistributions: update
     using Distributions
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
@@ -334,6 +336,7 @@ end
 end
 
 @testitem "update round-trips a Difference leaf's (x, y) params" begin
+    using ComposedDistributions: update
     using Distributions
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
@@ -380,6 +383,7 @@ end
 end
 
 @testitem "codec: a spec'd Convolved component counts one estimated dim" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension, unflatten, flatten
 
@@ -425,6 +429,7 @@ end
 end
 
 @testitem "Convolved leaf under the codec: fixed components add no estimated dim" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension, flatten, unflatten,
                                  as_logdensity, logdensity
@@ -505,6 +510,7 @@ end
 end
 
 @testitem "update at a composite leaf's own level errors informatively" begin
+    using ComposedDistributions: update
     using Distributions
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))

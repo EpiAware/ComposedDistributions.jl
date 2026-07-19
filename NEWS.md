@@ -1,5 +1,12 @@
 ## Unreleased
 
+- **breaking:** `update` is now `public`, not `export`ed (#221). Several
+  ecosystem packages (and plenty outside it) have their own `update`-shaped
+  verb; exporting a name this generic risked the same ambiguous-binding
+  clash #233 hit with `as_turing` when two packages both export a same-named
+  generic function. Reach it as `ComposedDistributions.update` or with
+  `using ComposedDistributions: update`.
+
 - **docs:** corrected `docs/benchmarks.md`'s claim that the performance-
   history timeline updates "on every push to `main` and on tagged releases"
   (#231) — `benchmark-history.yaml` is currently parked to

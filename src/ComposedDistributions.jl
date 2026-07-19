@@ -127,7 +127,11 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
 # `event` fetches a child or descends a path. `param_priors` is the tree-level
 # front-door over `build_priors`; `inspect` is the opt-in detailed tree print.
-export params_table, event_names, event_tree, event, update, build_priors,
+# `update` is `public`, not exported (see `public.jl`): several ecosystem
+# packages have their own `update`-shaped verb, and exporting it risks the
+# same ambiguous-binding clash #233 hit with `as_turing` when two packages
+# both export a same-named generic (#221).
+export params_table, event_names, event_tree, event, build_priors,
        default_prior, param_priors, inspect
 
 # Structural edits on a composed tree. `update` (the `path => new_node` method)

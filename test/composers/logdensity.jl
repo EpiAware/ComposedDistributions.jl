@@ -9,6 +9,7 @@
 # specs' and data log-densities correctly.
 
 @testitem "codec: estimated flatten/unflatten round-trip" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension
 
@@ -38,6 +39,7 @@
 end
 
 @testitem "codec: a fully fixed tree estimates nothing" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension,
                                  as_logdensity, logdensity
@@ -60,6 +62,7 @@ end
 end
 
 @testitem "codec: shared spec round-trip" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension
 
@@ -115,6 +118,7 @@ end
 end
 
 @testitem "logdensity: sum of specs + data likelihood" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, as_logdensity, logdensity,
                                  _spec_priors
@@ -188,6 +192,7 @@ end
 end
 
 @testitem "update: flat vector shorthand equals unflatten then update" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten
 
@@ -208,6 +213,7 @@ end
 end
 
 @testitem "update: flat vector dimension mismatch throws like unflatten" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten
 
@@ -221,6 +227,7 @@ end
 end
 
 @testitem "update: flat vector accepts duck-typed containers" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten
 
