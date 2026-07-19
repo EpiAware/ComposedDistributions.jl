@@ -1,5 +1,17 @@
 ## Unreleased
 
+- **test:** three new AD gradient scenarios close coverage gaps in the
+  `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
+  `Shared`-tagged uncertain leaf driven through the full `logdensity` codec
+  (tag-dedup's reverse-mode gradient accumulation was untested), a
+  `Truncated`-wrapped uncertain leaf through the #216 leaf-wrapper registry's
+  codec path, and a `Censored` leaf marginal (#215 landed with value-level
+  tests only for both wrappers). Also ledgers a real, currently-CI-red
+  regression: Enzyme reverse has crashed with an internal LLVM compiler
+  error (`EnzymeInternalError` in `nodecayed_phis!`) on the "Uncertain-leaf
+  logdensity codec" scenario since #190, reproducing on every CI run but not
+  locally — declared broken in `backend_broken_scenarios()` so CI reflects
+  the real state instead of failing outright (#223).
 - **docs:** corrected `docs/benchmarks.md`'s claim that the performance-
   history timeline updates "on every push to `main` and on tagged releases"
   (#231) — `benchmark-history.yaml` is currently parked to
