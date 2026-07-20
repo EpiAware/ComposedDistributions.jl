@@ -72,14 +72,7 @@ end
     # apart rather than one silently misread as the other.
     di_shaped_rows = [(name = :onset_admit_shape, value = 2.0,
         prior = LogNormal(log(2.0), 0.2), support = (0.0, Inf))]
-    err = try
-        update(tree, di_shaped_rows)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin("edge", err.msg) && occursin("param", err.msg)
+    @test_throws r"(?=.*edge)(?=.*param)" update(tree, di_shaped_rows)
 
     # A non-table, non-vector, non-NamedTuple second argument still errors
     # clearly (not a bare, unhelpful MethodError).
