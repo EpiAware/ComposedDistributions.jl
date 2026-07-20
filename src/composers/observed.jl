@@ -5,12 +5,12 @@ The univariate scalar a downstream observation observes for a composer.
 An observation model observes one quantity, so lowering a composer first reduces
 it to that quantity:
 
-- a [`Convolved`](@ref) or [`Resolve`](@ref) is already univariate (the
+- a `Convolved` or [`Resolve`](@ref) is already univariate (the
   observed sum, resp. the marginal time-to-resolution) and is returned
   unchanged;
 - a [`Sequential`](@ref) chain's observed quantity is the total elapsed time
   from origin to the terminal event, the convolution of its steps, returned as
-  a [`Convolved`](@ref).
+  a `Convolved`.
 
 A [`Parallel`](@ref) has several independent endpoints and so no single observed
 scalar; it is not lowered here.
@@ -24,7 +24,7 @@ observed_distribution(seq)
 ```
 
 # See also
-- [`convolved`](@ref): the chain-step convolution
+- `convolved`: the chain-step convolution
 "
 observed_distribution(d::UnivariateDistribution) = d
 

@@ -6,19 +6,26 @@
 
 @testitem "convolve_series(chain, series): vector convolution" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    out = convolve_series(chain, series)
-    # ConvolvedDistributions 0.2 is discrete-only, so the chain collapses to its
-    # continuous observed total and discretises it explicitly; the composed path
-    # is identical to discretising the total by hand and convolving the PMF (and
-    # so reproduces the pre-0.2 continuous output exactly).
+    # The chain collapses to a continuous observed total, and
+    # ConvolvedDistributions 0.2 is discrete-only: both the collapse-then-
+    # convolve convenience and the bare collapsed total are rejected the same
+    # way (#226) — CD does not pick a discretisation scheme on the caller's
+    # behalf.
     obs = observed_distribution(chain)
-    @test out == convolve_series(discretise_pmf(obs, length(series) - 1), series)
-    # The bare continuous total is now rejected: it must be discretised first.
+    @test_throws ArgumentError convolve_series(chain, series)
     @test_throws ArgumentError convolve_series(obs, series)
+
+    # Discretise explicitly, then convolve.
+    out = convolve_series(discretise_pmf(obs, length(series) - 1), series)
     @test length(out) == length(series)
     # First step ties directly to the observed-total CDF over the first grid
     # bin (the lag-0 interval mass times the first series value).
@@ -27,13 +34,19 @@
     # A nested chain collapses through to the same flat total.
     nested = Sequential(Sequential(Gamma(2.0, 1.0), Gamma(1.0, 1.0)),
         LogNormal(0.5, 0.4))
-    @test convolve_series(nested, series) == convolve_series(
+    @test_throws ArgumentError convolve_series(nested, series)
+    @test convolve_series(
         discretise_pmf(observed_distribution(nested), length(series) - 1),
-        series)
+        series) isa AbstractVector
 end
 
 @testitem "convolve_series(chain, series; events): per-event series" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     g1 = Gamma(2.0, 1.0)
     g2 = LogNormal(0.5, 0.4)
@@ -42,43 +55,75 @@ end
         :death_report => g3)
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    # An interim event's series is the series convolved through the cumulative
-    # delay of the prefix leading to it (collapse the prefix by hand).
-    admit = convolve_series(chain, series; events = :admit)
-    @test admit ==
-          convolve_series(discretise_pmf(g1, length(series) - 1), series)
-    death = convolve_series(chain, series; events = :death)
-    @test death == convolve_series(
-        discretise_pmf(convolved([g1, g2]), length(series) - 1), series)
+    # Every step here is continuous, so an interim event's cumulative prefix
+    # delay is continuous too and hits the same discretise-first error as the
+    # whole chain (#226) — for a single name, a tuple, and a vector alike.
+    @test_throws ArgumentError convolve_series(chain, series; events = :admit)
+    @test_throws ArgumentError convolve_series(chain, series; events = :death)
+    @test_throws ArgumentError convolve_series(
+        chain, series; events = (:admit, :report))
+    @test_throws ArgumentError convolve_series(
+        chain, series; events = [:admit, :death])
 
-    # A tuple of names returns a NamedTuple keyed by the names; a vector too.
-    nt = convolve_series(chain, series; events = (:admit, :report))
-    @test nt isa NamedTuple{(:admit, :report)}
-    @test nt.admit == admit
-    @test nt.report == convolve_series(
+    # The prefix collapse itself is still correct: discretise each interim
+    # event's cumulative delay by hand and convolve, matching the equivalent
+    # hand-built prefix.
+    admit = convolve_series(discretise_pmf(g1, length(series) - 1), series)
+    death = convolve_series(
+        discretise_pmf(convolved([g1, g2]), length(series) - 1), series)
+    report = convolve_series(
         discretise_pmf(convolved([g1, g2, g3]), length(series) - 1), series)
-    vt = convolve_series(chain, series; events = [:admit, :death])
-    @test vt.admit == admit && vt.death == death
+    admit_prefix = ComposedDistributions._event_prefix_delay(chain, :admit)
+    death_prefix = ComposedDistributions._event_prefix_delay(chain, :death)
+    report_prefix = ComposedDistributions._event_prefix_delay(chain, :report)
+    @test convolve_series(discretise_pmf(admit_prefix, length(series) - 1),
+        series) ≈ admit
+    @test convolve_series(discretise_pmf(death_prefix, length(series) - 1),
+        series) ≈ death
+    @test convolve_series(discretise_pmf(report_prefix, length(series) - 1),
+        series) ≈ report
 end
 
 @testitem "convolve_series(chain, series; events): endpoint == whole" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
         :admit_death => LogNormal(0.5, 0.4))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    # Selecting the terminal event reproduces the plain whole-chain result.
-    @test convolve_series(chain, series; events = :death) ==
-          convolve_series(chain, series)
+    # Selecting the terminal event and the plain whole-chain call both hit the
+    # same continuous-delay error, and — once discretised by hand — the same
+    # result: the terminal event's cumulative prefix delay is the whole-chain
+    # observed total.
+    @test_throws ArgumentError convolve_series(chain, series; events = :death)
+    @test_throws ArgumentError convolve_series(chain, series)
+    death_prefix = ComposedDistributions._event_prefix_delay(chain, :death)
+    @test cdf(death_prefix, 5.0) ≈ cdf(observed_distribution(chain), 5.0)
+    @test convolve_series(discretise_pmf(death_prefix, length(series) - 1),
+        series) ≈ convolve_series(
+        discretise_pmf(observed_distribution(chain), length(series) - 1), series)
+
     # A positional-default chain names its events :event_i; the endpoint matches.
     pos = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
-    @test convolve_series(pos, series; events = event_names(pos)[end]) ==
-          convolve_series(pos, series)
+    @test_throws ArgumentError convolve_series(
+        pos, series; events = event_names(pos)[end])
+    pos_prefix = ComposedDistributions._event_prefix_delay(
+        pos, event_names(pos)[end])
+    @test cdf(pos_prefix, 5.0) ≈ cdf(observed_distribution(pos), 5.0)
 end
 
 @testitem "convolve_series(chain, series; events): errors" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
         :admit_death => LogNormal(0.5, 0.4))
@@ -102,31 +147,41 @@ end
 
 @testitem "convolve_series: univariate one_of marginal drives a series" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
-    # A Resolve / Compete marginal is a continuous univariate delay. The base
-    # ConvolvedDistributions 0.2 `convolve_series` is discrete-only, so the
-    # one_of bridge discretises the marginal for it; the result matches
-    # discretising and convolving that marginal delay directly.
+    # A Resolve / Compete marginal is a continuous univariate delay, so the
+    # one_of bridge hits the same discretise-first error convolving through a
+    # chain does (#226) — it collapses and delegates, nothing more.
     r = resolve(:recover => (Gamma(2.0, 1.0), 0.7),
         :die => (Gamma(1.5, 2.0), 0.3))
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
-    @test convolve_series(r, series) == convolve_series(
+    @test_throws ArgumentError convolve_series(r, series)
+    out = convolve_series(
         discretise_pmf(observed_distribution(r), length(series) - 1), series)
-    @test length(convolve_series(r, series)) == length(series)
+    @test length(out) == length(series)
 end
 
 @testitem "convolve_series: Compete marginal drives a series" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
 
-    # A Compete's observed quantity is its marginal any-event (first-event) time,
-    # a continuous univariate delay, so the one_of bridge discretises it before
-    # convolving; `observed_distribution` returns it unchanged.
+    # A Compete's observed quantity is its marginal any-event (first-event)
+    # time, a continuous univariate delay, so it hits the same discretise-
+    # first error; `observed_distribution` returns it unchanged.
     c = Compete(:recover => Gamma(2.0, 1.0), :die => Gamma(1.5, 2.0))
-    out = convolve_series(c, series)
     @test observed_distribution(c) === c
-    @test out == convolve_series(
+    @test_throws ArgumentError convolve_series(c, series)
+    out = convolve_series(
         discretise_pmf(observed_distribution(c), length(series) - 1), series)
     @test length(out) == length(series)
     @test all(>=(0), out)
@@ -142,8 +197,8 @@ end
     # revises; if that changes these outputs, reconcile at the update-branch.
     cf = Compete(:recover => truncated(Gamma(2.0, 1.0); lower = 1.0),
         :die => truncated(Gamma(1.5, 2.0); lower = 2.0))
-    outf = convolve_series(cf, series)
-    @test outf == convolve_series(
+    @test_throws ArgumentError convolve_series(cf, series)
+    outf = convolve_series(
         discretise_pmf(observed_distribution(cf), length(series) - 1), series)
     @test length(outf) == length(series)
     @test all(>=(0), outf)
@@ -152,6 +207,11 @@ end
 
 @testitem "convolve_series: Parallel / Choose error informatively" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     p = parallel(:admit => Gamma(2.0, 1.0), :notif => LogNormal(1.0, 0.5))
     series = [0.0, 1.0, 2.0]
@@ -165,6 +225,11 @@ end
 
 @testitem "difference(chain, chain): difference of observed totals" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     onset = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     report = Sequential(Gamma(1.5, 1.0), Gamma(1.0, 2.0))
@@ -181,23 +246,34 @@ end
           mean(g) - mean(observed_distribution(onset))
 end
 
-@testitem "product / Product reachable via ComposedDistributions (#139)" begin
+@testitem "product / Product: no longer re-exported via ComposedDistributions (#228)" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
-    # The Mellin product family (`Z = X * Y`) is reachable through
-    # ComposedDistributions alone, so a downstream sitting on this package sees
-    # the whole convolution surface. `product` is exported; `Product` stays
-    # unexported (Distributions clash) but is reachable module-qualified. Bare
-    # re-export only; composing a `Product` leaf into a tree is out of scope.
-    @test isdefined(ComposedDistributions, :product)
-    @test isdefined(ComposedDistributions, :Product)
+    # #139 re-exported ConvolvedDistributions' surface through this package;
+    # #228 dropped that (a downstream now sits on ConvolvedDistributions
+    # directly for its own verbs — this package extends `convolve_series`/
+    # `difference` for composed tree types, but does not re-export the base
+    # names). Regression guard: `product`/`Product` are not reachable off
+    # `ComposedDistributions` any more, only off `ConvolvedDistributions`.
+    @test !isdefined(ComposedDistributions, :product)
+    @test !isdefined(ComposedDistributions, :Product)
     d = product(Gamma(3.0, 1.0), LogNormal(0.0, 0.3))
-    @test d isa ComposedDistributions.Product
+    @test d isa ConvolvedDistributions.Product
     @test mean(d) ≈ 3.0 * exp(0.3^2 / 2)
 end
 
 @testitem "Convolved leaf in a tree: rand / logpdf / moments" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
     using Random
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
@@ -221,6 +297,11 @@ end
 
 @testitem "Difference leaf in a tree: logpdf flows through" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
@@ -230,6 +311,11 @@ end
 
 @testitem "free_leaf / rewrap_leaf: a composite leaf is its own free leaf" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
     using ComposedDistributions: free_leaf, rewrap_leaf
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
@@ -241,6 +327,11 @@ end
 
 @testitem "Convolved leaf: params_table sees through to component params" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
     using ComposedDistributions: Tables
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
@@ -271,6 +362,11 @@ end
 
 @testitem "Difference leaf: params_table sees through to (x, y) params" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
     using ComposedDistributions: Tables
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
@@ -289,6 +385,11 @@ end
 
 @testitem "update round-trips a Convolved leaf's component params" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -311,6 +412,11 @@ end
 
 @testitem "update makes a Convolved component uncertain (partial merge)" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
@@ -328,6 +434,11 @@ end
 
 @testitem "update round-trips a Difference leaf's (x, y) params" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
@@ -346,6 +457,11 @@ end
 
 @testitem "deferred-leaf see-through: a Convolved with a varying component" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     # A composite rides the shared deferred-leaf walk, so a Varying COMPONENT is
     # visible to has_varying and resolved in place by instantiate (mirroring the
@@ -374,6 +490,11 @@ end
 
 @testitem "codec: a spec'd Convolved component counts one estimated dim" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
     using ComposedDistributions: flat_dimension, unflatten, flatten
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
@@ -397,6 +518,11 @@ end
 
 @testitem "structural edits around a Convolved leaf: prune / splice" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4),
@@ -419,6 +545,11 @@ end
 
 @testitem "Convolved leaf under the codec: fixed components add no estimated dim" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
     using ComposedDistributions: flat_dimension, flatten, unflatten,
                                  as_logdensity, logdensity
 
@@ -459,6 +590,11 @@ end
 
 @testitem "uncertain(...) wrapping a Convolved/Difference template errors informatively" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     # A Convolved's `params` are its components' own parameter tuples (a
@@ -474,6 +610,11 @@ end
 
 @testitem "Varying leaf mapping to Convolved distributions: instantiate then fixed" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     conv_early = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     conv_late = convolved(Gamma(3.0, 1.0), Gamma(2.0, 1.0))
@@ -499,6 +640,11 @@ end
 
 @testitem "update at a composite leaf's own level errors informatively" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))

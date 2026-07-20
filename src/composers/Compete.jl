@@ -1,6 +1,6 @@
 @doc "
 
-Resolve risks by racing hazards: the dual of [`convolved`](@ref)
+Resolve risks by racing hazards: the dual of `convolved`
 under MINIMUM instead of sum.
 
 Given cause-specific delay distributions `D_1, ..., D_n`, `Compete`
@@ -32,7 +32,7 @@ leaf races without a package-specific interface.
 - [`compete`](@ref): the constructor (bare delays; no branch probabilities).
 - [`Resolve`](@ref): the fixed-probability mixture sibling.
 - `Distributions.probs`: the derived per-cause winning probabilities.
-- [`convolved`](@ref): the sum dual (events in series).
+- `convolved`: the sum dual (events in series).
 "
 struct Compete{names, D <: Tuple} <: AbstractOneOf
     "Tuple of the cause-specific delay distributions."

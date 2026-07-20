@@ -65,7 +65,8 @@ Overall mean of a composed distribution (the simple \"mean delay\").
 
 `mean(d)` behaves like a normal delay distribution's mean. For a
 univariate-collapsible composer (a [`Sequential`](@ref) chain, a
-[`Convolved`](@ref), a [`Resolve`](@ref)) it returns the SCALAR mean of the
+`Convolved` (ConvolvedDistributions.jl), a [`Resolve`](@ref)) it returns the
+scalar mean of the
 overall observed delay — the mean of [`observed_distribution`](@ref)`(d)` (the
 convolved total for a chain, the marginal time-to-resolution for a `Resolve`).
 For a genuinely multivariate [`Parallel`](@ref) (several independent observed
