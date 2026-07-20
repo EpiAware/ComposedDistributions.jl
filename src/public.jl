@@ -34,6 +34,19 @@ public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 # `shared_tag` above.
 public pool_group, pool_noncentred
 
+# The centred-pooling internals DistributionsInference's fit-protocol
+# extension reaches by qualified reference (#212): `_centred_pool_rows(d)`
+# collects a tree's centred pooled `(path, param, pool)` rows once at
+# `as_logdensity`-construction time; `_pool_centred_logprior(rows, nt)` scores
+# them against their reconstructed population inside `extra_logprior`;
+# `CentredPoolPrior` is the marker `parameter_rows` pattern-matches on to
+# report a centred pooled row's prior as `nothing` (its prior is
+# population-dependent, not fixed). `public`, not `export`ed, matching the
+# rest of the codec/pool internals reached this way — this is now an
+# acknowledged, intentional part of CD's surface rather than an accident of
+# Julia's qualification rules. No behaviour change.
+public _centred_pool_rows, _pool_centred_logprior, CentredPoolPrior
+
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf

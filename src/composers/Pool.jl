@@ -254,11 +254,25 @@ function _collapse_population(pop::Uncertain, hyper::NamedTuple)
 end
 _collapse_population(pop::UnivariateDistribution, ::NamedTuple) = pop
 
-# The centred latent's prior marker, carried on the `prior` column of a centred
-# pooled parameter's row. It is not a fixed distribution (the population depends
-# on the estimated hyperparameters), so `logdensity` scores it separately
-# (`_pool_centred_logprior`) and skips it in the fixed per-row prior sum. A
-# non-`nothing` entry, so the row still counts as estimated.
+@doc "
+The centred latent's prior marker, carried on the `prior` column of a
+centred-pooled parameter's row.
+
+Not a fixed distribution: a centred-pooled member's population depends on the
+estimated hyperparameters, so its prior term is scored separately
+([`_pool_centred_logprior`](@ref)) rather than through the fixed per-row prior
+sum [`logdensity`](@ref) otherwise uses. A non-`nothing` marker, so the row
+still counts as ESTIMATED (see [`params_table`](@ref)).
+
+# Fields
+- `pool`: the [`Pool`](@ref) spec this member's parameter belongs to (its
+  population and group).
+
+# See also
+- [`_centred_pool_rows`](@ref): collects a tree's centred-pooled rows.
+- [`_pool_centred_logprior`](@ref): scores them.
+- [`pool`](@ref): the public constructor for a [`Pool`](@ref) spec.
+"
 struct CentredPoolPrior{P <: Pool}
     pool::P
 end
@@ -396,7 +410,34 @@ end
 # (`_centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
 # no per-evaluation cost.
 
-# The centred pooled parameters' `(path, param, pool)` triples, in table order.
+@doc "
+The centred-pooled parameters' `(path, param, pool)` triples, in table order.
+
+`_centred_pool_rows(dist)` walks `dist`'s [`params_table`](@ref) once (in
+[`as_logdensity`](@ref)-construction order, not per gradient evaluation, so a
+tree with only non-centred or no pooling adds no per-evaluation cost),
+collecting every row whose prior is a [`CentredPoolPrior`](@ref) marker, split
+into its edge path, parameter name, and the [`Pool`](@ref) spec it belongs to.
+[`_pool_centred_logprior`](@ref) scores the returned rows against a
+reconstructed draw.
+
+# Arguments
+- `dist`: the composed distribution tree.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((
+    north = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions._centred_pool_rows(tree)
+```
+
+# See also
+- [`_pool_centred_logprior`](@ref): scores the rows this collects.
+- [`CentredPoolPrior`](@ref): the marker matched against.
+"
 function _centred_pool_rows(dist)
     tbl = params_table(dist)
     prcol = Tables.getcolumn(tbl, :prior)
@@ -410,8 +451,35 @@ function _centred_pool_rows(dist)
     return rows
 end
 
-# Sum each centred member's log-density against its population reconstructed at
-# the current hyperparameters (read from the flattened draw `nt`).
+@doc "
+Sum each centred-pooled member's log-density against its population
+reconstructed at the current hyperparameters.
+
+`_pool_centred_logprior(rows, nt)` scores every `(path, param, pool)` row from
+[`_centred_pool_rows`](@ref) against `pool`'s population, collapsed at the
+hyperparameters read off the flattened draw `nt` ([`unflatten`](@ref)'s
+output), at the member's own value (also read from `nt` at `path`/`param`).
+Returns `0.0` for an empty `rows` (a tree with no centred pooling).
+
+# Arguments
+- `rows`: the `(path, param, pool)` triples from [`_centred_pool_rows`](@ref).
+- `nt`: the flattened draw (a nested `NamedTuple`) the rows are read from.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((
+    north = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+rows = ComposedDistributions._centred_pool_rows(tree)
+nt = ComposedDistributions.unflatten(tree, [0.3, 0.6])
+ComposedDistributions._pool_centred_logprior(rows, nt)
+```
+
+# See also
+- [`_centred_pool_rows`](@ref): collects `rows` once per tree.
+"
 function _pool_centred_logprior(rows, nt)
     isempty(rows) && return 0.0
     return sum(rows) do (path, param, pool)
