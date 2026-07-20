@@ -34,6 +34,16 @@ public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 # `shared_tag` above.
 public pool_group, pool_noncentred
 
+# The centred-pooling extra-prior surface (#212): DistributionsInference.jl's
+# `extra_logprior` for a composed tree scores a centred-pooled parameter's
+# population-dependent term by calling these three directly. `CentredPoolPrior`
+# is the marker `parameter_rows` pattern-matches on to translate a
+# centred-pooled row's prior to `nothing`; `_centred_pool_rows` collects the
+# rows carrying that marker; `_pool_centred_logprior` scores them against the
+# unflattened parameter tree. No behaviour change — declaring what was already
+# reachable, unrestricted, by qualified name.
+public CentredPoolPrior, _centred_pool_rows, _pool_centred_logprior
+
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf

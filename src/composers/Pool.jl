@@ -254,11 +254,22 @@ function _collapse_population(pop::Uncertain, hyper::NamedTuple)
 end
 _collapse_population(pop::UnivariateDistribution, ::NamedTuple) = pop
 
-# The centred latent's prior marker, carried on the `prior` column of a centred
-# pooled parameter's row. It is not a fixed distribution (the population depends
-# on the estimated hyperparameters), so `logdensity` scores it separately
-# (`_pool_centred_logprior`) and skips it in the fixed per-row prior sum. A
-# non-`nothing` entry, so the row still counts as estimated.
+@doc "
+The centred latent's prior marker, carried on the `prior` column of a centred
+pooled parameter's row.
+
+It is not a fixed distribution (the population depends on the estimated
+hyperparameters), so [`logdensity`](@ref) scores it separately
+([`_pool_centred_logprior`](@ref)) and skips it in the fixed per-row prior sum.
+A non-`nothing` entry, so the row still counts as estimated.
+
+Reached by qualified name from outside this package — DistributionsInference.jl's
+fit-protocol extension pattern-matches on this marker to translate a
+centred-pooled row's prior to `nothing` (#212).
+
+See also: [`_centred_pool_rows`](@ref), [`_pool_centred_logprior`](@ref),
+[`pool`](@ref)
+"
 struct CentredPoolPrior{P <: Pool}
     pool::P
 end
@@ -396,7 +407,32 @@ end
 # (`_centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
 # no per-evaluation cost.
 
-# The centred pooled parameters' `(path, param, pool)` triples, in table order.
+@doc raw"
+
+The centred pooled parameters' `(path, param, pool)` triples, in table order.
+
+Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
+construction time), so a tree with only non-centred (or no) pooling adds no
+per-evaluation cost. Reached by qualified name from outside this package —
+DistributionsInference.jl's fit-protocol extension calls this directly to
+find the rows [`_pool_centred_logprior`](@ref) needs to score (#212).
+
+# Arguments
+- the composed tree whose centred-pooled rows are collected.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions._centred_pool_rows(tree)
+```
+
+# See also
+- [`CentredPoolPrior`](@ref), [`_pool_centred_logprior`](@ref)
+"
 function _centred_pool_rows(dist)
     tbl = params_table(dist)
     prcol = Tables.getcolumn(tbl, :prior)
@@ -410,8 +446,35 @@ function _centred_pool_rows(dist)
     return rows
 end
 
-# Sum each centred member's log-density against its population reconstructed at
-# the current hyperparameters (read from the flattened draw `nt`).
+@doc raw"
+
+Sum each centred member's log-density against its population reconstructed at
+the current hyperparameters (read from the flattened draw `nt`).
+
+Reached by qualified name from outside this package — DistributionsInference.jl's
+fit-protocol extension calls this to score a composed tree's centred-pooled
+population term (#212).
+
+# Arguments
+- `rows`: the `(path, param, pool)` triples from [`_centred_pool_rows`](@ref).
+- `nt`: the nested `NamedTuple` from `unflatten` at the same draw.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+rows = ComposedDistributions._centred_pool_rows(tree)
+x = fill(0.5, ComposedDistributions.flat_dimension(tree))
+nt = ComposedDistributions.unflatten(tree, x)
+ComposedDistributions._pool_centred_logprior(rows, nt)
+```
+
+# See also
+- [`_centred_pool_rows`](@ref), [`CentredPoolPrior`](@ref)
+"
 function _pool_centred_logprior(rows, nt)
     isempty(rows) && return 0.0
     return sum(rows) do (path, param, pool)
