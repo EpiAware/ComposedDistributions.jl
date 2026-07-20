@@ -17,10 +17,10 @@
 # `ConvolvedDistributions.convolve_series`: for a discrete delay that convolves
 # directly; for a continuous delay (the common case — a chain's collapsed total
 # is a `Convolved`) that throws upstream's own "discretise first" error rather
-# than CD choosing a scheme on the caller's behalf (#226) — discretise
-# explicitly with `ConvolvedDistributions.discretise_pmf(delay, maxlag)` (or a
-# CensoredDistributions.jl double-interval-censored PMF for a day-binned
-# primary) and convolve that.
+# than CD choosing a scheme on the caller's behalf (#226) — ConvolvedDistributions
+# no longer discretises continuous delays itself (Convolved#68/#73); build the
+# PMF with CensoredDistributions.jl (which owns primary and interval censoring)
+# and convolve that.
 
 # --- vector (timeseries) convolution driven by a composed chain --------------
 
@@ -39,12 +39,11 @@ a composed delay rather than a bare distribution.
 
 A chain's observed total is usually continuous (e.g. a `Convolved` sum of
 `Gamma`/`LogNormal` steps), and ConvolvedDistributions is discrete-convolution
--only: it throws, naming `ConvolvedDistributions.discretise_pmf(delay, maxlag)`
-(interval-censored-secondary; exact primary) or a
-CensoredDistributions.jl double-interval-censored PMF (day-binned primary) as
-the two ways to discretise first, then `convolve_series(pmf, series)`. This
-method does not choose a scheme on the caller's behalf (#226) — it collapses
-the tree and delegates, nothing more.
+-only: it throws, naming CensoredDistributions.jl (which owns primary and
+interval censoring, including double-interval-censored masses for a
+day-binned primary) as the way to build a PMF first, then
+`convolve_series(pmf, series)`. This method does not choose a scheme on the
+caller's behalf (#226) — it collapses the tree and delegates, nothing more.
 
 Pass `events` to convolve the series to a chosen INTERIM event of the chain
 rather than its endpoint. A single event name returns the count series at that
@@ -71,7 +70,12 @@ using ComposedDistributions, ConvolvedDistributions, Distributions
 
 chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
 infections = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
-pmf = discretise_pmf(observed_distribution(chain), length(infections) - 1)
+maxlag = length(infections) - 1
+# Standing in for what CensoredDistributions.jl would build for the chain's
+# own (continuous) observed total: a caller-owned PMF, here from a discrete
+# distribution's own masses.
+masses = pdf.(NegativeBinomial(5, 0.5), 0:maxlag)
+pmf = ConvolvedDistributions.DelayPMF(masses, 1.0)
 expected_counts = convolve_series(pmf, infections)
 
 # The count series at named interim events (here the prefix to each event).

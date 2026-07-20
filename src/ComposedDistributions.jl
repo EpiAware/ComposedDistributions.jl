@@ -51,7 +51,7 @@ import Tables
 # The convolution + quadrature substrate CD's own interop methods build on
 # (see composers/convolved_interop.jl and hazard_one_of.jl) — not re-exported
 # (#228): a caller reaches ConvolvedDistributions' own surface (`convolved`,
-# `product`, `discretise_pmf`, the solver types, ...) with its own
+# `product`, `DelayPMF`, the solver types, ...) with its own
 # `using ConvolvedDistributions`. Only the names CD extends or constructs
 # internally are imported here.
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
