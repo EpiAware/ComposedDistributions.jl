@@ -116,8 +116,9 @@ broken_scenario_names() = String[]
 # recursive `map` over the paired children/names tuples rather than an
 # index-driven `ntuple` closure, on the theory that this sidesteps the LLVM
 # phi-node shape the crash needed; the scenario is unledgered here on that
-# basis, verified by the `ad`/Enzyme reverse CI job on the PR that lands
-# this change. If that job is not green, this entry must be restored.
+# basis, and the `ad`/Enzyme reverse CI job on the PR landing this change
+# is the verification. If that job is not green, this entry must be
+# restored.
 #
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
