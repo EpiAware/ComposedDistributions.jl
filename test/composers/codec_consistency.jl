@@ -5,9 +5,10 @@
 # rows of DATA — edges, values, supports, priors — for a specific instance)
 # and `_unflatten_expr`/`_flatten_reads!` (the generated codec, a compile-time
 # walk that EMITS EXPRESSIONS over a TYPE). They agree today, but nothing
-# catches divergence, and `ext/ComposedDistributionsDynamicPPLExt.jl` zips
-# `params_table`'s estimated rows against `flatten`'s flat vector index-for-
-# index, assuming the orderings coincide.
+# catches divergence, and DistributionsInference.jl's generic `as_turing`
+# (via its ComposedDistributions fit-protocol extension) zips `params_table`'s
+# estimated rows against `flatten`'s flat vector index-for-index, assuming the
+# orderings coincide.
 #
 # Full unification (rewriting both as one shared, pluggable walker — a
 # "collect runtime rows" instantiation and a "generate an expression" one) is
@@ -20,9 +21,10 @@
 # can only hold if table order and codec order are the same bijection onto
 # the tree's estimated parameters. A silent divergence (a reordering, a skip
 # that disagrees between the two walks) breaks this immediately. Pool's
-# ordering is deliberately not re-covered here: `test/composers/turing_ext.jl`'s
-# non-centred pooled round-trip already exercises it end-to-end through real
-# NUTS sampling and readback.
+# ordering is deliberately not re-covered here: DistributionsInference.jl's
+# `test/composed_ext.jl` non-centred pooled round-trip (ported from this
+# package's own former `turing_ext.jl`, #221/#233) already exercises it end
+# to end through real NUTS sampling and readback.
 #
 # `param_names` (introspection.jl) and `_param_names_of` (codec_gen.jl) were
 # the other duplicated piece the issue names. Unlike the two walks, these are
@@ -86,8 +88,8 @@ end
     # in what the table's rows MEAN (not just their values), which the
     # same-row-count comparison this helper relies on cannot express. That
     # ordering is already covered end to end, through real NUTS sampling and
-    # readback, by "as_turing round-trip: uncertain branch_probs stick
-    # coordinate" in turing_ext.jl.
+    # readback, by DistributionsInference.jl's "as_turing round-trip:
+    # Dirichlet branch_probs stick coordinate" (test/composed_ext.jl).
     fixed = resolve(:a => (uncertain(Gamma(2.0, 1.0);
                 shape = LogNormal(0.0, 0.3)), 0.4),
         :b => (uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)), 0.6))
@@ -122,6 +124,12 @@ end
 
 @testitem "codec/params_table order: Convolved/Difference leaves" setup=[
     CodecConsistencyHelpers] begin
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
+
     conv_leaf = convolved(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
         Gamma(1.0, 1.0))
     seq = sequential(:total => conv_leaf,

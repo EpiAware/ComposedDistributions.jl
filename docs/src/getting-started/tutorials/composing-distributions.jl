@@ -37,6 +37,7 @@
 
 using ComposedDistributions
 using ComposedDistributions: update
+using ConvolvedDistributions
 using Distributions
 using Random
 
@@ -215,10 +216,10 @@ rand(Xoshiro(7), resolution; outcome = true)
 #
 # Where the composers wire named branches into a tree, the combinators join two
 # whole delays algebraically.
-# [`convolved`](@ref) forms the sum `X + Y` (the total of two
-# independent delays), and [`difference`](@ref) forms the dual `X - Y`.
-# Both are re-exported from ConvolvedDistributions, so they are reachable through
-# ComposedDistributions alone.
+# `convolved` forms the sum `X + Y` (the total of two independent delays),
+# and `difference` forms the dual `X - Y`. Both are ConvolvedDistributions'
+# own verbs, extended here for composed tree operands (a bare distribution
+# works unchanged too).
 
 total = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4));
 
@@ -343,8 +344,8 @@ unique(params_table(tied).edge)
 # | `resolve(:a => (d1, p1), :b => (d2, p2))` | a [`Resolve`](@ref) node; the last prob may be omitted as the residual | builds |
 # | `compete(:a => d1, :b => d2)` | a [`Compete`](@ref) racing-hazard node (the winning probability derived from the hazards) | builds |
 # | `choose(:a => d1, :b => d2)` | a [`Choose`](@ref) disjunction (data picks the branch) | builds |
-# | `convolved(d1, d2)` | a [`Convolved`](@ref) sum `X + Y` | builds |
-# | `difference(d1, d2)` | a [`Difference`](@ref) `X - Y` | builds |
+# | `convolved(d1, d2)` | a `Convolved` sum `X + Y` | builds |
+# | `difference(d1, d2)` | a `Difference` `X - Y` | builds |
 # | `shared(:tag, d)` | tag a leaf as a tied parameter group | leaf wrap |
 # | `tie(d, paths...; name)` | tie leaves at `paths` into one group | yes |
 # | `update(d, (a = (shape = 3,),))` | replace free parameter values | yes |
@@ -376,7 +377,7 @@ unique(params_table(tied).edge)
 # - The composers nest, including a composer as a chain step.
 # - One object scores records and simulates them: `logpdf` reads a record,
 #   `rand` generates one.
-# - [`convolved`](@ref) and [`difference`](@ref) combine two whole
+# - `convolved` and `difference` combine two whole
 #   delays algebraically.
 # - `mean` and `var` read the composed marginal moments, and
 #   [`observed_distribution`](@ref) collapses a chain to its convolved total.

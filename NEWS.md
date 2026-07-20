@@ -28,6 +28,42 @@
   note) now explains the parked trigger and links #41, so a reader seeing
   "not enough comparable revisions to compute ratios yet" understands why
   rather than concluding the page is broken.
+- **breaking:** removed the `ComposedDistributionsLogDensityProblemsExt`
+  weakdep extension and the `as_turing`/`ComposedDistributionsDynamicPPLExt`
+  surface (#220, #233). Both duplicated machinery DistributionsInference.jl
+  already provides generically over any fit-protocol object (`as_logdensity`
+  implementing `LogDensityProblems` directly; `as_turing` building the
+  DynamicPPL model), via its `ComposedDistributions` fit-protocol extension —
+  `export as_turing` also collided with DistributionsInference's own exported
+  `as_turing` when both packages were loaded together. Use
+  `DistributionsInference.as_logdensity`/`as_turing` instead; this package's
+  own Turing-free `ComposedLogDensity`/`as_logdensity`/`logdensity` core is
+  unchanged (still `public`, not exported) and is what DistributionsInference
+  builds on.
+
+- **breaking:** stopped re-exporting ConvolvedDistributions' surface
+  (`convolved`, `product`/`Product`, `discretise_pmf`, `DelayPMF`,
+  `AnalyticalSolver`, `NumericSolver`, `GaussLegendre`, `AbstractSolverMethod`,
+  `integrate`, `gl_integrate`; #228) — a caller now reaches these with its own
+  `using ConvolvedDistributions`. `convolve_series`/`difference`/`Convolved`/
+  `Difference` stay reachable: this package extends/constructs them itself
+  for composed tree types.
+
+- **breaking:** `convolve_series(chain, series)` (and the `Resolve`/`Compete`
+  marginal form) no longer discretises a continuous observed delay for you
+  with an implicit interval-censored-secondary scheme; it collapses the tree
+  and delegates straight to `ConvolvedDistributions.convolve_series`, which
+  throws for a continuous delay and asks you to discretise first (#226) — the
+  same contract a bare distribution already has under ConvolvedDistributions
+  0.2. Discretise explicitly with `ConvolvedDistributions.discretise_pmf(delay,
+  maxlag)` (or a CensoredDistributions.jl double-interval-censored PMF for a
+  day-binned primary) and pass the result to `convolve_series(pmf, series)`.
+  The `interval` keyword is dropped from the chain-argument methods to match.
+  A replacement composed-chain convenience is tracked as a
+  CensoredDistributions.jl extension
+  (EpiAware/CensoredDistributions.jl#886) rather than carried here, since the
+  discretisation scheme is a censoring choice.
+
 - **feat:** `register_leaf_wrapper!` is a new public hook so a leaf-wrapper
   package extension (ModifiedDistributions' `Affine`/`Weighted`/`Transformed`/
   `Modified`) can tell the generated flat-vector codec (`flat_dimension`,

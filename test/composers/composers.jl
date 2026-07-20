@@ -736,8 +736,13 @@ end
     @test unique(params_table(tied).edge) == [:g]
 end
 
-@testitem "observed_distribution / convolve re-export" begin
+@testitem "observed_distribution / convolve interop" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     od = observed_distribution(s)
@@ -752,18 +757,29 @@ end
         Sequential(Gamma(1.0, 1.0), Parallel(Gamma(1.0, 1.0), Gamma(1.0, 1.0))))
 end
 
-@testitem "re-exported ConvolvedDistributions surface is reachable" begin
-    # These names come through ComposedDistributions' re-export, so downstream
-    # packages sit on ComposedDistributions alone.
-    @test isdefined(ComposedDistributions, :convolved)
-    @test isdefined(ComposedDistributions, :convolve_series)
-    @test isdefined(ComposedDistributions, :integrate)
-    @test isdefined(ComposedDistributions, :gl_integrate)
-    @test isdefined(ComposedDistributions, :GaussLegendre)
-    @test isdefined(ComposedDistributions, :AbstractSolverMethod)
-    @test isdefined(ComposedDistributions, :AnalyticalSolver)
-    @test isdefined(ComposedDistributions, :NumericSolver)
-    @test isdefined(ComposedDistributions, :Difference)
+@testitem "ConvolvedDistributions surface is no longer re-exported (#228)" begin
+    # #139 re-exported these names so a downstream sat on ComposedDistributions
+    # alone; #228 dropped the re-export (own package boundary, own `using`).
+    # `Base.isexported` (not `isdefined`) is the right check: `convolve_series`/
+    # `Difference`/`Convolved`/`convolved`/`GaussLegendre`/`integrate` stay
+    # defined internally (this package extends/constructs them), just no
+    # longer exported, which is what a downstream `using ComposedDistributions`
+    # actually sees.
+    @test !Base.isexported(ComposedDistributions, :convolved)
+    @test !Base.isexported(ComposedDistributions, :convolve_series)
+    @test !Base.isexported(ComposedDistributions, :integrate)
+    @test !Base.isexported(ComposedDistributions, :gl_integrate)
+    @test !Base.isexported(ComposedDistributions, :GaussLegendre)
+    @test !Base.isexported(ComposedDistributions, :AbstractSolverMethod)
+    @test !Base.isexported(ComposedDistributions, :AnalyticalSolver)
+    @test !Base.isexported(ComposedDistributions, :NumericSolver)
+    @test !Base.isexported(ComposedDistributions, :Difference)
+    # Genuinely gone (not merely unexported): dropped from the internal
+    # import entirely since CD never constructs/extends them itself.
+    @test !isdefined(ComposedDistributions, :gl_integrate)
+    @test !isdefined(ComposedDistributions, :AbstractSolverMethod)
+    @test !isdefined(ComposedDistributions, :AnalyticalSolver)
+    @test !isdefined(ComposedDistributions, :NumericSolver)
 end
 
 @testitem "Monte-Carlo: chain rand mean matches analytic mean" begin

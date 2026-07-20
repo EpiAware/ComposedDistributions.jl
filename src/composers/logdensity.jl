@@ -1,10 +1,12 @@
 # PPL-neutral assembled `ComposedLogDensity` spec, over the generated flat
 # <-> nested codec (`unflatten`/`flatten`/`flat_dimension`/`reconstruct`, now
 # in `codec_gen.jl`). Turing-free: no DynamicPPL/LogDensityProblems dependency
-# here, only `params_table`, the uncertain specs and `update`. A thin
-# `LogDensityProblems` weakdep extension (deferred; see the package tracker)
-# wraps `ComposedLogDensity` for AdvancedHMC/DynamicHMC/Pathfinder-style
-# samplers on top of this.
+# here, only `params_table`, the uncertain specs and `update`.
+# DistributionsInference.jl's `FitLogDensity`/`as_logdensity` (built on this
+# core via the fit protocol — `parameter_rows`/`reconstruct`) implements the
+# `LogDensityProblems` interface directly and hosts the DynamicPPL/`as_turing`
+# wrapper; this package no longer carries its own weakdep glue for either
+# (#220, #233).
 
 # The estimated rows of a params table: those whose `prior` column carries an
 # uncertain spec. Under uncertain-first these are the free (estimated)
@@ -49,10 +51,12 @@ object by default), the observed `data`, and a `loglik` reducer scoring `data`
 against the reconstructed distribution. Build it with [`as_logdensity`](@ref);
 evaluate it on a flat vector with [`logdensity`](@ref).
 
-It is the spec a `LogDensityProblems` weakdep extension wraps as a standard
-problem (sampleable by AdvancedHMC / DynamicHMC / Pathfinder); the flat layout
-is [`params_table`](@ref)`(dist)`'s row order restricted to the estimated
-(spec'd) parameters throughout.
+For a `LogDensityProblems`-conformant problem (sampleable by AdvancedHMC /
+DynamicHMC / Pathfinder) or a `DynamicPPL`/Turing model, use
+DistributionsInference.jl's own `as_logdensity`/`as_turing` instead — they are
+built on this same core (via the fit protocol) and need no glue extension in
+this package. The flat layout here is [`params_table`](@ref)`(dist)`'s row
+order restricted to the estimated (spec'd) parameters throughout.
 
 # Fields
 - `dist`: the template composed distribution (the structure to reconstruct).
