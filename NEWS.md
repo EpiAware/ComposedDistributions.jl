@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
+  extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
+  `update(template, chain)` surface (#221). DistributionsInference.jl already
+  hosts a generic, tested replacement (`readback`/`readback_draws`, built on
+  its own fit-protocol extension) that round-trips a composed tree — pooled,
+  shared-tag, or Dirichlet-`branch_probs` — through a real chain with no
+  ComposedDistributions-specific code; this package carrying its own 388-line
+  parallel tree-walk duplicated that machinery rather than adding anything.
+  Drops the `FlexiChains` and `DynamicPPL` weakdeps entirely (neither has any
+  other user left in this package). Use `DistributionsInference.readback`/
+  `readback_draws` instead; see the [fitting guide](@ref inference).
 - **breaking:** `update` is now `public`, not `export`ed (#221). Several
   ecosystem packages (and plenty outside it) have their own `update`-shaped
   verb; exporting a name this generic risked the same ambiguous-binding

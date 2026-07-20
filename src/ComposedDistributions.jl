@@ -140,14 +140,6 @@ export params_table, event_names, event_tree, event, build_priors,
 # inserts a step (topology edits).
 export prune, splice
 
-# Inference-readback verbs: read a fitted chain's parameters back onto a
-# composed-distribution template. `chain_to_params` reduces a chain to the
-# nested NamedTuple `update` consumes; `param_draws` keeps every draw;
-# `strip_prefix` drops the outer submodel prefix from a chain's parameter
-# names. No method until both `DynamicPPL` and `FlexiChains` are loaded; the
-# methods live in `ext/ComposedDistributionsFlexiChainsExt.jl`.
-export chain_to_params, param_draws, strip_prefix
-
 export observed_distribution
 
 # --- includes --------------------------------------------------------------
@@ -165,11 +157,6 @@ include("composers/nesting.jl")
 include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
-# Inference-readback verb stubs (`chain_to_params` / `param_draws` /
-# `strip_prefix`): declared here with no method (see
-# `ext/ComposedDistributionsFlexiChainsExt.jl`), so this package stays
-# Turing-free until that extension is triggered.
-include("composers/readback.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.

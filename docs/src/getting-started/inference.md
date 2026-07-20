@@ -61,15 +61,15 @@ chain = sample(DistributionsInference.as_turing(tree, data), NUTS(), 1000)
 
 ## Reading the fit back
 
-The site names match the readback, so a fitted chain reduces straight back onto the template.
-[`chain_to_params`](@ref) reduces the draws to a nested parameter `NamedTuple`, and [`update`](@ref) rebuilds the tree at those values, collapsing every uncertain leaf.
+Chain readback is DistributionsInference.jl's, not this package's own (#221): `DistributionsInference.readback` reduces a fitted chain straight to a rebuilt tree, collapsing every uncertain leaf; `readback_draws` keeps every draw for a posterior summary.
+Both work generically over the fit-protocol core above, so the same two calls read back a tree fitted through `as_logdensity` or through `as_turing`.
 
 ```julia
-using FlexiChains
+using DistributionsInference, FlexiChains
 
-fit = update(tree, chain)                        # the fitted tree
-event(fit, :onset_admit)                         # a concrete Gamma
-draws = param_draws(tree, chain)                 # every draw, for a posterior summary
+fit = DistributionsInference.readback(tree, chain)      # the fitted tree
+event(fit, :onset_admit)                                # a concrete Gamma
+draws = DistributionsInference.readback_draws(tree, chain)   # every draw
 ```
 
 ## The tools
@@ -81,4 +81,4 @@ draws = param_draws(tree, chain)                 # every draw, for a posterior s
 | `DistributionsInference.as_logdensity` | the same core wrapped as a `LogDensityProblems` problem, generically | `DistributionsInference` |
 | `DistributionsInference.to_constrained`-equivalent transform | the unconstrained transform and its log-Jacobian | `DistributionsInference` + `Bijectors` |
 | `DistributionsInference.as_turing` | a `DynamicPPL` model for `sample(...)` | `DistributionsInference` + `DynamicPPL` |
-| [`chain_to_params`](@ref) / [`update`](@ref) | read a fitted chain back onto the tree | `DynamicPPL` and `FlexiChains` |
+| `DistributionsInference.readback` / `readback_draws` | read a fitted chain back onto the tree | `DistributionsInference` + `FlexiChains` |
