@@ -152,7 +152,8 @@ struct Resolve{names, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     #
     # The bounds (each prob in `[0, 1]`) and structure (at least two outcomes;
     # names, delays and branch_probs of equal length) hold on every path,
-    # including the DynamicPPL extension that rebuilds a `Resolve` from branch
+    # including an external caller (e.g. DistributionsInference's `readback`/
+    # `as_turing`) that rebuilds a `Resolve` through `update` from branch
     # probabilities sampled independently from priors. Those sampled probs are
     # in `[0, 1]` but need not sum to one (the AD-safe `_one_of_logmix`
     # scorer handles an unnormalised weight set), so the sum-to-one requirement

@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
+  extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
+  `update(template, chain)` surface (#221). DistributionsInference.jl already
+  hosts a generic, tested replacement (`readback`/`readback_draws`, built on
+  its own fit-protocol extension) that round-trips a composed tree — pooled,
+  shared-tag, or Dirichlet-`branch_probs` — through a real chain with no
+  ComposedDistributions-specific code; this package carrying its own 388-line
+  parallel tree-walk duplicated that machinery rather than adding anything.
+  Drops the `FlexiChains` and `DynamicPPL` weakdeps entirely (neither has any
+  other user left in this package). Use `DistributionsInference.readback`/
+  `readback_draws` instead; see the [fitting guide](@ref inference).
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec
