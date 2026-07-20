@@ -417,3 +417,14 @@ end
     # cross-stratum spread is far smaller than the unpooled strata's.
     @test pooled_spread < 0.4 * unpooled_spread
 end
+
+@testitem "pool: centred-pooling internals are declared public (#212)" begin
+    # DistributionsInferenceComposedDistributionsExt's `extra_logprior` reaches
+    # these by qualified reference; #212 asks for an acknowledged `public`
+    # declaration (not exported) rather than an accident of Julia's
+    # qualification rules.
+    for name in (:_centred_pool_rows, :_pool_centred_logprior, :CentredPoolPrior)
+        @test Base.ispublic(ComposedDistributions, name)
+        @test !Base.isexported(ComposedDistributions, name)
+    end
+end
