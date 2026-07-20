@@ -24,7 +24,7 @@ ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
 Bijectors = "0.13, 0.14, 0.15, 0.16"
-ConvolvedDistributions = "0.2"
+ConvolvedDistributions = "0.2, 1"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
 EpiAwareADTools = "0.1"

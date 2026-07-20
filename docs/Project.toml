@@ -27,7 +27,7 @@ ADFixtures = {path = "../test/ADFixtures"}
 EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}
 
 [compat]
-ConvolvedDistributions = "0.2"
+ConvolvedDistributions = "0.2, 1"
 DifferentiationInterfaceTest = "0.9, 0.10"
 Markdown = "1"
 Statistics = "1"
