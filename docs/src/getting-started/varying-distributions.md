@@ -4,8 +4,6 @@ A composed tree is *stationary* by default: every leaf is a fixed `Distributions
 Real delays are often **non-stationary** — an onset→admission delay shortens over a wave, a case-fatality ratio drifts, a delay differs by region.
 `ComposedDistributions` models this by generalising the **leaf**, not by adding a new composer verb: a leaf becomes a map from a *context* to a distribution, and [`instantiate`](@ref) resolves a whole tree against a context.
 
-The design rationale (why non-stationarity lives here and not in the convolution layer, and how it relates to the uncertain-distributions work) is written up in `design/0001-time-and-covariate-varying-distributions.md`.
-
 !!! note "Two cases of one concept"
     [`Varying`](@ref) and [`Uncertain`](@ref) are the two *deferred leaves*.
     See [Concepts](@ref concepts) for how they differ (observed covariate vs latent parameter) and share one resolution walk.
@@ -122,4 +120,3 @@ mean.(kernels)                             # the kernel mean drifts with time
 ## Learning more
 
 - The full interface: [`Varying`](@ref), [`varying`](@ref), [`Context`](@ref), [`with_covariates`](@ref), [`instantiate`](@ref) in the [Public API](@ref public-api).
-- The design rationale and open questions: `design/0001-time-and-covariate-varying-distributions.md`.

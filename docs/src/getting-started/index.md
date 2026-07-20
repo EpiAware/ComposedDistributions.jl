@@ -128,6 +128,7 @@ See [Concepts](@ref concepts) for how it relates to its sibling
 - Find the right verb by intent on the [Concepts](@ref concepts) page.
 - Work through the composers end to end in [Composing distributions](@ref composing-distributions).
 - See mutually exclusive outcomes in [Competing outcomes](@ref competing-outcomes) and multi-step delays in [Delay chains and the linear chain trick](@ref linear-chain).
+- Reuse one topology across pathogens or settings with [`@events`](@ref) in [Event skeletons](@ref event-skeletons).
 - Want the full interface? See the [Public API](@ref public-api).
 - Want the packages ComposedDistributions works alongside? See
   [Related packages](../index.md) on the home page.

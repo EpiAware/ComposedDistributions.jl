@@ -31,7 +31,7 @@ abstract type AbstractOneOf <:
 
 # Outcome names, one per one_of outcome. Both concrete types carry `names` as a
 # type parameter (see the per-type `component_names` methods below and in
-# `hazard_one_of.jl`).
+# `Compete.jl`).
 _n_branches(c::AbstractOneOf) = length(component_names(c))
 
 @doc "
@@ -825,7 +825,7 @@ _one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 #
 # - a `Resolve` node (below): draws the resolved outcome from the branch
 #   probabilities and the time from that outcome's own delay;
-# - a `Compete` node (in `hazard_one_of.jl`): draws a racing-hazard outcome, a
+# - a `Compete` node (in `Compete.jl`): draws a racing-hazard outcome, a
 #   latent time per cause with the `argmin` cause and its `min` time returned.
 #   That is the generative dual of the `Compete` `logpdf` (`f_j ∏_{k≠j} S_k`)
 #   and of the forward `convolve_series` stream, so the Monte Carlo
@@ -975,7 +975,7 @@ end
 
 # ----------------------------------------------------------------------------
 # Fixed-probability outcome probabilities (the Compete duals live in
-# hazard_one_of.jl)
+# Compete.jl)
 # ----------------------------------------------------------------------------
 
 @doc "

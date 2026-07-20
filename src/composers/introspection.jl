@@ -360,7 +360,7 @@ compatible leaves. Prefer a callable struct over an anonymous closure.
 ```@example
 using ComposedDistributions, Distributions
 
-ctor = ComposedDistributions._leaf_ctor(Gamma(2.0, 1.0))
+ctor = ComposedDistributions.leaf_ctor(Gamma(2.0, 1.0))
 ctor(3.0, 1.5)
 ```
 
@@ -368,7 +368,7 @@ ctor(3.0, 1.5)
 - [`free_leaf`](@ref): peel to the inner free delay.
 - [`rewrap_leaf`](@ref): re-apply the fixed structure around a rebuilt delay.
 "
-function _leaf_ctor(leaf)
+function leaf_ctor(leaf)
     inner = free_leaf(leaf)
     # A bare leaf: its own type constructor rebuilds it. Reached only when no
     # override applies, since an override is the more specific method.
@@ -376,10 +376,16 @@ function _leaf_ctor(leaf)
     # A wrapper (`Truncated`, `Uncertain`, `Shared`, a censored or modified
     # leaf): recurse rather than read the peeled type directly, so an inner
     # leaf's override is honoured through the wrapper. `_leaf_param_names` peels
-    # and then dispatches `_param_names` for the same reason; the two must agree
+    # and then dispatches `param_names` for the same reason; the two must agree
     # or a wrapped leaf would report one set of names and rebuild from another.
-    return _leaf_ctor(inner)
+    return leaf_ctor(inner)
 end
+
+# The underscored alias retained for the package's existing internal callers
+# and the leaf-wrapper method definitions (censoring / modifiers); `const`
+# makes it the same function object, so dropping the underscore is
+# source-compatible.
+const _leaf_ctor = leaf_ctor
 
 @doc raw"
 
@@ -508,7 +514,7 @@ so the common families are mapped explicitly here; anything unmapped falls back
 to `:param_1, :param_2, ...`.
 
 A leaf type whose free parameters are not the native family's overrides this, in
-step with [`_leaf_ctor`](@ref): the two together fix the coordinates that
+step with [`leaf_ctor`](@ref): the two together fix the coordinates that
 `params_table`, `uncertain`, `build_priors` and the flat codec work in. A
 moment-parameterised wrapper naming a mean and a standard deviation, rather than
 a shape and a scale, is the motivating case.
@@ -520,24 +526,30 @@ a shape and a scale, is the motivating case.
 ```@example
 using ComposedDistributions, Distributions
 
-ComposedDistributions._param_names(Gamma(2.0, 1.0))
+ComposedDistributions.param_names(Gamma(2.0, 1.0))
 ```
 
 # See also
-- [`_leaf_ctor`](@ref): the matching rebuild.
+- [`leaf_ctor`](@ref): the matching rebuild.
 "
-_param_names(::Distributions.Normal) = (:mu, :sigma)
-_param_names(::Distributions.LogNormal) = (:mu, :sigma)
-_param_names(::Distributions.Gamma) = (:shape, :scale)
-_param_names(::Distributions.Weibull) = (:shape, :scale)
-_param_names(::Distributions.Exponential) = (:scale,)
-_param_names(::Distributions.Uniform) = (:lower, :upper)
-_param_names(::Any) = ()
+param_names(::Distributions.Normal) = (:mu, :sigma)
+param_names(::Distributions.LogNormal) = (:mu, :sigma)
+param_names(::Distributions.Gamma) = (:shape, :scale)
+param_names(::Distributions.Weibull) = (:shape, :scale)
+param_names(::Distributions.Exponential) = (:scale,)
+param_names(::Distributions.Uniform) = (:lower, :upper)
+param_names(::Any) = ()
+
+# The underscored alias retained for the package's existing internal callers
+# and the leaf-wrapper method definitions (censoring / modifiers); `const`
+# makes it the same function object, so dropping the underscore is
+# source-compatible.
+const _param_names = param_names
 
 @doc raw"
 The estimable parameter names of a (possibly wrapped) leaf.
 
-The inner free delay's `_param_names`, padding with positional fallbacks
+The inner free delay's `param_names`, padding with positional fallbacks
 (`:param_1`, ...) so every value has a label even when the family is unmapped,
 then the names of any [`extra_leaf_params`](@ref) appended in order. A censored
 or modified leaf delegates to its free delay (`free_leaf`), so the fixed wrapper
@@ -562,7 +574,7 @@ ComposedDistributions.leaf_param_names(Gamma(2.0, 1.0))
 function leaf_param_names(leaf)
     inner = free_leaf(leaf)
     vals = params(inner)
-    base = _param_names(inner)
+    base = param_names(inner)
     n = length(vals)
     names = ntuple(n) do i
         i <= length(base) ? base[i] : Symbol(:param_, i)
@@ -861,7 +873,7 @@ _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 # `_reconstruct_leaf` but is Turing-free; argument checks are kept on (this is
 # building a concrete distribution, not a gradient hot path).
 function _update_leaf(leaf, vals::Tuple)
-    ctor = _leaf_ctor(leaf)
+    ctor = leaf_ctor(leaf)
     # The trailing values are the modifier-owned extra parameters (the trailing
     # rows the walker emits, one per `extra_leaf_params` entry): rebuild the
     # inner delay from the leading native params, then re-attach the updated

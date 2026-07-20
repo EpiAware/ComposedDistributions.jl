@@ -34,17 +34,23 @@
     @test tf.specs == u.specs
     @test params(tf.template)[2] == 1.0
 
-    # Validation.
-    @test_throws ArgumentError uncertain(Gamma(2.0, 1.0);
-        rate = LogNormal(0.0, 1.0))
-    @test_throws ArgumentError uncertain(Gamma(2.0, 1.0); shape = "no")
-    @test_throws ArgumentError uncertain(Gamma(2.0, 1.0))
-    @test_throws ArgumentError uncertain(Gamma;
+    # Validation — each guard's message is pinned, not just its type, so a
+    # swapped guard order or a reworded message is caught (the #217 lesson).
+    delay = Gamma(2.0, 1.0)
+    @test_throws "unknown parameter :rate" uncertain(
+        delay; rate = LogNormal(0.0, 1.0))
+    @test_throws "the value for :shape must be a Real" uncertain(
+        delay; shape = "no")
+    @test_throws "needs at least one distribution-valued parameter" uncertain(
+        delay)
+    @test_throws "missing :scale" uncertain(Gamma;
         shape = LogNormal(log(2.0), 0.2))
     # Positional form needs one argument per parameter.
-    @test_throws ArgumentError uncertain(Gamma, LogNormal(log(2.0), 0.2))
+    @test_throws "needs one positional argument per parameter" uncertain(
+        Gamma, LogNormal(log(2.0), 0.2))
     # Nesting goes in the specs, not the template.
-    @test_throws ArgumentError Uncertain(u, (; shape = LogNormal(0.0, 1.0)))
+    @test_throws "template of an Uncertain must be a concrete" Uncertain(
+        u, (; shape = LogNormal(0.0, 1.0)))
 end
 
 @testitem "uncertain: equality, hash, show" begin
@@ -188,8 +194,10 @@ end
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tree2, :onset_admit) == Gamma(3.0, 1.5)
     @test !has_uncertain(tree2)
-    # The collapsed tree scores with the ordinary surface.
-    @test isfinite(logpdf(tree2, [1.5, 0.8]))
+    # The collapsed tree scores with the ordinary surface: a sum of the two
+    # steps' own logpdfs at the collapsed (concrete) parameters.
+    @test logpdf(tree2, [1.5, 0.8]) ≈
+          logpdf(Gamma(3.0, 1.5), 1.5) + logpdf(LogNormal(0.7, 0.5), 0.8)
 
     # A wrapped uncertain leaf keeps its fixed structure through the update.
     tu = uncertain(truncated(Gamma(2.0, 1.0); upper = 10.0);

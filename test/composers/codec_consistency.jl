@@ -26,19 +26,19 @@
 # package's own former `turing_ext.jl`, #221/#233) already exercises it end
 # to end through real NUTS sampling and readback.
 #
-# `_param_names` (introspection.jl) and `_param_names_of` (codec_gen.jl) were
+# `param_names` (introspection.jl) and `_param_names_of` (codec_gen.jl) were
 # the other duplicated piece the issue names. Unlike the two walks, these are
-# NOT safely mergeable: `_param_names` is public API (`public.jl`), dispatched
+# NOT safely mergeable: `param_names` is public API (`public.jl`), dispatched
 # on an INSTANCE, and designed for a downstream leaf-wrapper package to
 # override for its own type — a real extension point, not an internal detail.
 # `_param_names_of` dispatches on a TYPE because the generated codec builds a
 # NamedTuple whose keys must be compile-time literals, at a point
-# (macro-expansion) with no instance to call `_param_names` on at all; this is
+# (macro-expansion) with no instance to call `param_names` on at all; this is
 # already documented in codec_gen.jl as a deliberate, ADDITIVE companion
 # ("the instance-based hooks are untouched... kept in lockstep"), not an
 # oversight. Making the runtime walk call `_param_names_of` instead would
-# silently drop a downstream package's `_param_names` override; making
-# `_param_names` itself type-dispatched would be a breaking change to a
+# silently drop a downstream package's `param_names` override; making
+# `param_names` itself type-dispatched would be a breaking change to a
 # published protocol no current package uses yet but could. Neither is mine to
 # do unilaterally, so this file adds the guard instead: a direct comparison of
 # the two tables for every family both cover.
@@ -176,7 +176,7 @@ end
     @test _assert_codec_matches_table(nested) == :ok
 end
 
-@testitem "_param_names / _param_names_of: the two name tables agree" begin
+@testitem "param_names / _param_names_of: the two name tables agree" begin
     using Distributions
     using ComposedDistributions: _param_names_of
 
@@ -192,10 +192,10 @@ end
         (Exponential(1.0), Exponential),
         (Uniform(0.0, 1.0), Uniform))
     for (inst, T) in cases
-        @test ComposedDistributions._param_names(inst) == _param_names_of(T)
+        @test ComposedDistributions.param_names(inst) == _param_names_of(T)
     end
 
     # The unmapped-family fallback also agrees (both return an empty tuple).
-    @test ComposedDistributions._param_names(Poisson(3.0)) == () ==
+    @test ComposedDistributions.param_names(Poisson(3.0)) == () ==
           _param_names_of(Poisson)
 end

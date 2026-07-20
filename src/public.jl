@@ -27,14 +27,14 @@ public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 public pool_group, pool_noncentred
 
 # The parameter-coordinate contract. A leaf's free parameters are named by
-# `_param_names` and rebuilt by `_leaf_ctor`; together they fix the coordinates
+# `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
 # whose free parameters are its native constructor arguments needs neither. A
 # leaf that reports different parameters — a moment-parameterised wrapper naming
 # a mean and a standard deviation rather than a shape and a scale — overrides
 # both, so a prior lands on the moment rather than on the native parameter that
 # only implies it.
-public _param_names, _leaf_ctor
+public param_names, leaf_ctor
 
 # The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
 # root the composer nodes subtype; `AbstractMultiChild` groups the positional
@@ -59,10 +59,10 @@ public flat_dimension, flatten, unflatten, reconstruct
 public ComposedLogDensity, as_logdensity, logdensity
 
 # The load-order-independent leaf-wrapper registry (#189, #178 PR 4): a
-# leaf-wrapper PACKAGE EXTENSION (censoring, modifiers) registers its type-level
+# leaf-wrapper package extension (censoring, modifiers) registers its type-level
 # codec hooks here (in its own `__init__`) instead of adding a direct dispatch
 # method to `_leaf_free_type`/`_extra_names_of`, which the generated codec's
-# `@generated` GENERATOR cannot see reliably once loaded after the fact.
+# `@generated` generator cannot see reliably once loaded after the fact.
 public register_leaf_wrapper!
 
 # The prior-driven unconstrained -> constrained transform (public but not

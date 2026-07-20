@@ -128,14 +128,7 @@ end
     skel = @events begin
         a → b → c
     end
-    err = try
-        update(skel; a = Gamma(2.0, 1.0), b = LogNormal(0.5, 0.4))
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin("c", sprint(showerror, err))
+    @test_throws "c" update(skel; a = Gamma(2.0, 1.0), b = LogNormal(0.5, 0.4))
 end
 
 @testitem "@events: an unknown fill key throws" begin

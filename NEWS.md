@@ -1,5 +1,27 @@
 ## Unreleased
 
+- **test:** three new AD gradient scenarios close coverage gaps in the
+  `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
+  `Shared`-tagged uncertain leaf driven through the full `logdensity` codec
+  (tag-dedup's reverse-mode gradient accumulation was untested), a
+  `Truncated`-wrapped uncertain leaf through the #216 leaf-wrapper registry's
+  codec path, and a `Censored` leaf marginal (#215 landed with value-level
+  tests only for both wrappers). Also ledgers a real, currently-CI-red
+  regression: Enzyme reverse has crashed with an internal LLVM compiler
+  error (`EnzymeInternalError` in `nodecayed_phis!`) on the "Uncertain-leaf
+  logdensity codec" scenario since #190, reproducing on every CI run but not
+  locally — declared broken in `backend_broken_scenarios()` so CI reflects
+  the real state instead of failing outright (#223).
+- **docs:** corrected `docs/benchmarks.md`'s claim that the performance-
+  history timeline updates "on every push to `main` and on tagged releases"
+  (#231) — `benchmark-history.yaml` is currently parked to
+  `workflow_dispatch`-only pending #41 (an unregistered, chained dependency
+  the kit's benchmark scratch-registry bootstrap does not yet resolve), so
+  the automatic trigger the page described is not actually running.
+  `docs/benchmarks_notes.md` (the file that exists for exactly this kind of
+  note) now explains the parked trigger and links #41, so a reader seeing
+  "not enough comparable revisions to compute ratios yet" understands why
+  rather than concluding the page is broken.
 - **breaking:** removed the `ComposedDistributionsLogDensityProblemsExt`
   weakdep extension and the `as_turing`/`ComposedDistributionsDynamicPPLExt`
   surface (#220, #233). Both duplicated machinery DistributionsInference.jl
@@ -48,10 +70,29 @@
   index and a fixed extra-names tuple), never a callable, since even a stored
   closure hits the same world-age wall when called from a generator. A core
   (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`) keeps its
-  own direct-dispatch method but now routes ITS recursion through the same
+  own direct-dispatch method but now routes its recursion through the same
   registry-aware resolver, so a core wrapper placed directly around a
   registered extension leaf (e.g. `truncated(thin(Gamma(...)))`) peels
   correctly too, not just the reverse nesting.
+- **chore:** removed the `design/` folder (#224) — its one note, the
+  time-/covariate-varying design rationale, is superseded by the landed
+  `Varying`/`instantiate` implementation and its docstrings and the
+  [Time-, strata-, and covariate-varying distributions](@ref
+  varying-distributions) guide; dangling pointers to the removed file in
+  `src/ComposedDistributions.jl`, `src/composers/varying.jl`, and that guide
+  are cleaned up alongside it.
+- **chore:** renamed `src/composers/hazard_one_of.jl` to
+  `src/composers/Compete.jl` (#230), matching the file-per-type convention
+  the other composers already follow (`Resolve.jl`, `Sequential.jl`, ...);
+  no code changes, only the file name and its in-comment references.
+- **chore:** renamed the public `_param_names`/`_leaf_ctor` leaf-protocol
+  hooks to `param_names`/`leaf_ctor` (#229) — a leading underscore reads as
+  "internal" in Julia, the opposite of what `public.jl` was declaring, and
+  `docs/src/developer/leaf-protocol.md` already documented the clean names.
+  The old underscored names remain as `const` aliases (the same function
+  object, following the existing `uncertain_specs`/`_uncertain_specs`
+  pattern), so an existing override such as
+  `ComposedDistributions._param_names(::MyLeaf) = ...` keeps working.
 
 - **test:** added a guard against `params_table`/codec ordering drift (#192,
   the #190 review follow-up): the runtime `params_table` walk and the

@@ -18,8 +18,8 @@
     @test event(ur, :disch) == Gamma(2.0, 1.5)
 
     # A Dirichlet whose length does not match the outcome count is rejected.
-    @test_throws ArgumentError update(r, (branch_probs = Dirichlet([1.0, 1.0,
-        1.0]),))
+    @test_throws "must have one weight per outcome" update(
+        r, (branch_probs = Dirichlet([1.0, 1.0, 1.0]),))
 
     # Attaching also works on a named node inside a tree.
     tree = compose((resolution = r, tail = LogNormal(0.5, 0.4)))
@@ -85,7 +85,12 @@ end
     @test p[1] ≈ 0.3                 # stick_1
     @test p[2] ≈ 0.6 * (1 - 0.3)     # stick_2 * remaining
     @test p[3] ≈ (1 - 0.3) * (1 - 0.6)
-    @test isfinite(logpdf(collapsed, 1.5))
+    # The collapsed Resolve's logpdf is the p-weighted mixture of the three
+    # delays' own densities, not just some finite number.
+    @test logpdf(collapsed, 1.5) ≈ log(
+        p[1] * pdf(Gamma(1.5, 1.0), 1.5) +
+        p[2] * pdf(Gamma(2.0, 1.5), 1.5) +
+        p[3] * pdf(Gamma(1.0, 1.0), 1.5))
 end
 
 @testitem "branch_probs: stick Betas reproduce the Dirichlet" begin
@@ -235,16 +240,19 @@ end
         :disch => (Gamma(2.0, 1.5), 0.7))
     # Merge mode (partial): a non-Dirichlet distribution at the branch_probs
     # slot errors.
-    @test_throws ArgumentError update(r, (branch_probs = Beta(1.0, 1.0),))
+    @test_throws "merge mode must be a `Dirichlet`" update(
+        r, (branch_probs = Beta(1.0, 1.0),))
     # A strict update covers every leaf; a non-NamedTuple branch_probs errors.
     full = (death = (shape = 1.5, scale = 1.0),
         disch = (shape = 2.0, scale = 1.5))
-    @test_throws ArgumentError update(r, merge(full, (branch_probs = 0.5,)))
+    @test_throws "strict `branch_probs` update must be a NamedTuple" update(
+        r, merge(full, (branch_probs = 0.5,)))
     # A fixed node accepts a concrete per-outcome replacement (strict).
     r2 = update(r, merge(full, (branch_probs = (death = 0.4, disch = 0.6),)))
     @test !has_uncertain(r2)
     @test collect(values(probs(r2))) ≈ [0.4, 0.6]
     # Direct construction with a non-Dirichlet prior is rejected.
-    @test_throws ArgumentError Resolve((:a, :b),
-        (Gamma(1.0, 1.0), Gamma(1.0, 1.0)), (0.3, 0.7), Normal(0.0, 1.0))
+    @test_throws "branch-probability prior must be a `Dirichlet`" Resolve(
+        (:a, :b), (Gamma(1.0, 1.0), Gamma(1.0, 1.0)), (0.3, 0.7),
+        Normal(0.0, 1.0))
 end

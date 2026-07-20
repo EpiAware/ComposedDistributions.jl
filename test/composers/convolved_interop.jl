@@ -130,15 +130,8 @@ end
     series = [0.0, 1.0, 2.0]
 
     # An unknown event name lists the valid events.
-    err = try
-        convolve_series(chain, series; events = :nope)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin("valid events", err.msg)
-    @test occursin("admit", err.msg) && occursin("death", err.msg)
+    @test_throws r"(?=.*valid events)(?=.*admit)(?=.*death)" convolve_series(
+        chain, series; events = :nope)
 
     # The origin has no elapsed delay, so it is not a convolvable event.
     @test_throws ArgumentError convolve_series(
@@ -660,21 +653,15 @@ end
     # `component_i` segment) does not silently vanish: it hits the shared
     # unexpected-key check and errors, listing the component keys. This holds
     # for a distribution (a mis-aimed bid to make it uncertain) ...
-    err = try
-        update(seq, (total = (shape = Normal(1.0, 2.0),),
+    @test_throws r"(?=.*component_1)(?=.*component_2)" update(
+        seq, (total = (shape = Normal(1.0, 2.0),),
             report = (mu = 0.1, sigma = 0.2)))
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin("component_1", err.msg) && occursin("component_2", err.msg)
 
     # ... and for a `Real` re-pin (no no-op survives: a Real at a valid
     # component path pins that component, see the round-trip testitem, but a
     # Real at the composite level with no component segment errors just the same).
-    @test_throws ArgumentError update(seq,
-        (total = (shape = 9.0,), report = (mu = 0.1, sigma = 0.2)))
+    @test_throws r"(?=.*component_1)(?=.*component_2)" update(
+        seq, (total = (shape = 9.0,), report = (mu = 0.1, sigma = 0.2)))
 
     # Same contract for a Difference composite.
     diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))

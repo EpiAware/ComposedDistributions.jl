@@ -105,6 +105,19 @@ end
     @test_throws ArgumentError as_mixture(r)
 end
 
+@testitem "Choose: whole-tree mean/var/std are ill-defined" begin
+    using Distributions
+
+    ch = choose(:a => Gamma(1.5, 1.0), :b => Gamma(2.0, 1.0))
+    # A Choose has no single layout (data-selects the active alternative), so
+    # a whole-tree moment is ill-defined; only the chosen alternative's own
+    # moment is available.
+    @test_throws "mean(::Choose) needs a selection" mean(ch)
+    @test_throws "var(::Choose) needs a selection" var(ch)
+    @test_throws "std(::Choose) needs a selection" std(ch)
+    @test mean(event(ch, :a)) ≈ mean(Gamma(1.5, 1.0))
+end
+
 @testitem "Compete: racing hazard marginal, derived win probs, rand" begin
     using Distributions, Random
 
@@ -216,21 +229,23 @@ end
     # every composer must reject a repeated name, since the whole
     # name-keyed API (event, update, prune, splice, params_table, shared)
     # can only ever reach the first branch with a duplicate name.
-    @test_throws ArgumentError sequential(
+    # Each composer's own message is pinned, not just the exception type, so
+    # a swapped guard or a reworded message is caught (the #217 lesson).
+    @test_throws "Sequential step names must be unique" sequential(
         :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
-    @test_throws ArgumentError Sequential(
+    @test_throws "Sequential step names must be unique" Sequential(
         (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
-    @test_throws ArgumentError parallel(
+    @test_throws "Parallel branch names must be unique" parallel(
         :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
-    @test_throws ArgumentError Parallel(
+    @test_throws "Parallel branch names must be unique" Parallel(
         (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)), (:a, :a))
-    @test_throws ArgumentError resolve(
+    @test_throws "Resolve outcome names must be unique" resolve(
         :a => (Gamma(1.0, 1.0), 0.5), :a => Gamma(2.0, 1.0))
-    @test_throws ArgumentError Resolve(
+    @test_throws "Resolve outcome names must be unique" Resolve(
         (:a, :a), (Gamma(1.0, 1.0), Gamma(2.0, 1.0)), (0.5, 0.5))
-    @test_throws ArgumentError compete(
+    @test_throws "Compete outcome names must be unique" compete(
         :a => Gamma(1.0, 1.0), :a => LogNormal(0.0, 1.0))
-    @test_throws ArgumentError Compete(
+    @test_throws "Compete outcome names must be unique" Compete(
         (:a, :a), (Gamma(1.0, 1.0), LogNormal(0.0, 1.0)))
 end
 
@@ -244,7 +259,7 @@ end
 end
 
 @testitem "compose: NamedTuple, table and matrix build equal stacks" begin
-    using Distributions
+    using Distributions, Random
 
     nt = (r1 = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],
         r2 = [Gamma(1.0, 1.0), Gamma(3.0, 1.0)])
@@ -254,8 +269,15 @@ end
         chain = [1, 1, 2, 2])
     mat = [Gamma(2.0, 1.0) LogNormal(0.5, 0.4); Gamma(1.0, 1.0) Gamma(3.0, 1.0)]
     @test compose(nt) == compose(table) == compose(mat)
-    # compose always returns a composer, never a bare leaf.
-    @test compose((a = Gamma(2.0, 1.0),)) isa Parallel
+    # compose always returns a composer, never a bare leaf; a single-branch
+    # Parallel scores, moments and draws like the wrapped leaf alone.
+    single = compose((a = Gamma(2.0, 1.0),))
+    @test single isa Parallel
+    @test logpdf(single, [1.5]) ≈ logpdf(Gamma(2.0, 1.0), 1.5)
+    @test mean(single).a ≈ mean(Gamma(2.0, 1.0))
+    @test minimum(single).a == minimum(Gamma(2.0, 1.0))
+    @test maximum(single).a == maximum(Gamma(2.0, 1.0))
+    @test rand(Xoshiro(3), single).a == rand(Xoshiro(3), Gamma(2.0, 1.0))
 end
 
 @testitem "compose: varargs-pairs spelling matches the NamedTuple spelling" begin
@@ -391,16 +413,8 @@ end
         onset_recover = Gamma(3.0, 1.0)))
     # Mirrors update/prune/splice's "no child named ...; have [...]" style
     # rather than a bare KeyError.
-    err = try
-        event(nested, :admit_path, :nonexistent)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    @test occursin(":nonexistent", err.msg)
-    @test occursin(":onset_admit", err.msg)
-    @test occursin(":admit_death", err.msg)
+    unknown_child = r"(?=.*:nonexistent)(?=.*:onset_admit)(?=.*:admit_death)"
+    @test_throws unknown_child event(nested, :admit_path, :nonexistent)
     @test_throws ArgumentError event(nested, :nope)
     d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
     @test_throws ArgumentError event(d, :nope)
@@ -493,6 +507,38 @@ end
     # Splice inserts an after step.
     sp = splice(tree, :admit_death; after = :report => Gamma(1.0, 2.0))
     @test event(sp, :admit_death) isa Sequential
+end
+
+@testitem "structural edits: prune/splice boundary guards" begin
+    using Distributions
+
+    # A Sequential/Parallel can't be pruned down to zero children.
+    single = compose((only = Gamma(2.0, 1.0),))
+    @test_throws "Parallel needs at least one remaining child" prune(
+        single, :only)
+
+    # A Resolve/Choose can't be pruned below two remaining outcomes.
+    two_arm = resolve(:a => (Gamma(1.5, 1.0), 0.4), :b => (Gamma(2.0, 1.0), 0.6))
+    @test_throws "Resolve needs at least two remaining outcomes" prune(
+        compose((res = two_arm,)), :res, :a)
+    two_alt = choose(:a => Gamma(1.5, 1.0), :b => Gamma(2.0, 1.0))
+    @test_throws "Choose needs at least two remaining alternatives" prune(
+        compose((ch = two_alt,)), :ch, :a)
+
+    # Pruning a path that bottoms out at a leaf (not a composer) has no child
+    # to drop.
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    @test_throws "has no child to drop" prune(tree, :onset_admit, :bogus)
+
+    # prune/splice both reject an empty path.
+    @test_throws "prune needs a non-empty path" prune(tree, ())
+    @test_throws "splice needs a non-empty path" splice(
+        tree, (); after = :x => Gamma(1.0, 1.0))
+
+    # splice needs at least one of before/after.
+    @test_throws "splice needs a `before` and/or `after` step" splice(
+        tree, :admit_death)
 end
 
 @testitem "structural edits through a nested Compete: update, prune, tie" begin
@@ -744,7 +790,7 @@ end
     @test mean(totals) ≈ mean(s) atol = 0.05
 end
 
-@testitem "_leaf_ctor: a leaf whose params are not its native ctor args" begin
+@testitem "leaf_ctor: a leaf whose params are not its native ctor args" begin
     using Distributions
     using ComposedDistributions
 
@@ -772,13 +818,13 @@ end
 
     # The two coordinate hooks: the moments are the free parameters, and the
     # rebuild closes over the family the value tuple does not carry.
-    ComposedDistributions._param_names(::MomentLeaf) = (:mean, :sd)
-    function ComposedDistributions._leaf_ctor(::MomentLeaf{D}) where {D}
+    ComposedDistributions.param_names(::MomentLeaf) = (:mean, :sd)
+    function ComposedDistributions.leaf_ctor(::MomentLeaf{D}) where {D}
         return (vals...) -> MomentLeaf{D}((vals[1], vals[2]))
     end
 
     # The default hook is unchanged for a native family.
-    @test ComposedDistributions._leaf_ctor(Gamma(2.0, 1.0)) === Gamma
+    @test ComposedDistributions.leaf_ctor(Gamma(2.0, 1.0)) === Gamma
 
     # Why the hook is needed: the UnionAll is not positionally callable.
     @test_throws MethodError MomentLeaf(8.0, 2.0)
@@ -812,10 +858,10 @@ end
     # The hook must be transparent through a wrapper, or the override is
     # bypassed for exactly the leaves that matter: an `uncertain` leaf carrying
     # the prior, and a truncated one. `free_leaf` peels to the moment leaf, so
-    # `_leaf_ctor` must recurse rather than read the peeled type directly.
+    # `leaf_ctor` must recurse rather than read the peeled type directly.
     for wrapped in (truncated(leaf; upper = 30.0), u, shared(:m, leaf))
-        @test ComposedDistributions._leaf_ctor(wrapped) ===
-              ComposedDistributions._leaf_ctor(leaf)
+        @test ComposedDistributions.leaf_ctor(wrapped) ===
+              ComposedDistributions.leaf_ctor(leaf)
     end
 
     # And reconstruction really works through those wrappers.

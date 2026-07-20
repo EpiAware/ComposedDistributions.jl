@@ -61,7 +61,7 @@ using ConvolvedDistributions: ConvolvedDistributions, convolved,
 # 0.2 moved the `*_ad_safe` family out under underscore-free names, #137).
 # `logccdf_ad_safe` is called by the racing-hazard node and both it and
 # `ccdf_ad_safe` are extended for `Compete` (the methods are defined
-# fully-qualified in hazard_one_of.jl, so the module name is imported too).
+# fully-qualified in Compete.jl, so the module name is imported too).
 using EpiAwareADTools: EpiAwareADTools, logccdf_ad_safe
 
 # Docstring-template helpers, imported here (centralised) and used by the
@@ -120,8 +120,7 @@ export Pool, pool
 
 # Context-indexed (non-stationary) leaves: a `Varying` leaf varies with a
 # covariate (time, strata, ...); `instantiate(tree, Context(...))` resolves a tree
-# against a context to a concrete stationary tree. See
-# `design/0001-time-and-covariate-varying-distributions.md`.
+# against a context to a concrete stationary tree.
 export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
        has_varying
 
@@ -155,7 +154,7 @@ include("composers/Resolve.jl")
 # Racing-hazard one_of node (the `min`-of-delays dual of convolve). After
 # Resolve since it builds on `AbstractOneOf` / the `_n_branches` / `_is_no_event`
 # helpers.
-include("composers/hazard_one_of.jl")
+include("composers/Compete.jl")
 include("composers/Choose.jl")
 # Shared nesting machinery, defined once all composer types exist.
 include("composers/nesting.jl")

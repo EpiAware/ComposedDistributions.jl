@@ -29,6 +29,9 @@ The verbs fall into five families, listed here as verb, what it does, and what i
 | `choose` | a data field picks the branch | [`Choose`](@ref) |
 | `shared` | tags a leaf as a tied parameter group at build time | a tied leaf |
 | `tie` | ties leaves at named paths into one parameter group | a tied tree |
+| `@events` | a readable `→`/`\|`/`&` operator diagram of a topology, structure only, filled later with `update` | [`EventSkeleton`](@ref) |
+
+`@events` is worked through in [Event skeletons](@ref event-skeletons).
 
 **Combination and lowering** joins or collapses whole delays.
 
@@ -88,6 +91,7 @@ The deferred-leaf verbs are worked through in [Multi-strata trees and parameter 
 | Racing outcomes (first to fire wins) | `compete` | [`Compete`](@ref) |
 | A data field selects the sub-model | `choose` | [`Choose`](@ref) |
 | Tie a leaf across branches | `shared` / `tie` | one shared parameter group |
+| A topology reused across pathogens or settings | `@events` + `update(skeleton; ...)` | [`EventSkeleton`](@ref) |
 | Sum of two independent delays | `convolved` | `Convolved` |
 | Difference of two delays | `difference` | `Difference` |
 | Mixture view of a one_of node | `as_mixture` | a `MixtureModel` |
