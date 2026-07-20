@@ -480,6 +480,7 @@ end
 end
 
 @testitem "update: replace parameters from a nested NamedTuple" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -491,6 +492,7 @@ end
 end
 
 @testitem "structural edits: update node, prune, splice" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -542,6 +544,7 @@ end
 end
 
 @testitem "structural edits through a nested Compete: update, prune, tie" begin
+    using ComposedDistributions: update
     using Distributions
 
     node = compete(:immediate => Gamma(2.0, 1.0),
@@ -791,6 +794,7 @@ end
 end
 
 @testitem "leaf_ctor: a leaf whose params are not its native ctor args" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions
 

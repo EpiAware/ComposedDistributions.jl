@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **breaking:** `update` is now `public`, not `export`ed (#221). Several
+  ecosystem packages (and plenty outside it) have their own `update`-shaped
+  verb; exporting a name this generic risked the same ambiguous-binding
+  clash #233 hit with `as_turing` when two packages both export a same-named
+  generic function. Reach it as `ComposedDistributions.update` or with
+  `using ComposedDistributions: update`.
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec

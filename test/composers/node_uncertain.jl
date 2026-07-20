@@ -4,6 +4,7 @@
 # parameter on `Compete` / `Choose`. See issue #89.
 
 @testitem "branch_probs: update attaches a Dirichlet spec" begin
+    using ComposedDistributions: update
     using Distributions
 
     r = resolve(:death => (Gamma(1.5, 1.0), 0.3),
@@ -30,6 +31,7 @@
 end
 
 @testitem "branch_probs: params_table emits stick rows with Beta priors" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -63,6 +65,7 @@ end
 end
 
 @testitem "branch_probs: codec round-trip and collapse to a simplex" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension
 
@@ -94,6 +97,7 @@ end
 end
 
 @testitem "branch_probs: stick Betas reproduce the Dirichlet" begin
+    using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ComposedDistributions: unflatten
 
@@ -123,6 +127,7 @@ end
 end
 
 @testitem "branch_probs: promote attaches a flat Dirichlet" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -145,6 +150,7 @@ end
 end
 
 @testitem "branch_probs: ForwardDiff gradient matches finite differences" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: as_logdensity, logdensity, flat_dimension
     using ForwardDiff
@@ -168,6 +174,7 @@ end
 end
 
 @testitem "Compete has no node-level free parameter" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -185,6 +192,7 @@ end
 end
 
 @testitem "Choose selector is data, not a parameter" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -201,6 +209,7 @@ end
 end
 
 @testitem "branch_probs: promote across a mixed tree with a composite leaf" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,
@@ -234,6 +243,7 @@ end
 end
 
 @testitem "branch_probs: update rejects ill-typed branch_probs values" begin
+    using ComposedDistributions: update
     using Distributions
 
     r = resolve(:death => (Gamma(1.5, 1.0), 0.3),
