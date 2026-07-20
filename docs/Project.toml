@@ -28,7 +28,7 @@ EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.
 
 [compat]
 ConvolvedDistributions = "0.2, 1"
-DifferentiationInterfaceTest = "0.9, 0.10"
+DifferentiationInterfaceTest = "0.9, 0.10, 0.11"
 Markdown = "1"
 Statistics = "1"
 Distributions = "0.25"
