@@ -1201,8 +1201,15 @@ function _update(d::Union{Sequential, Parallel}, params::NamedTuple, shared,
         merge::Bool)
     names = component_names(d)
     _check_child_keys(params, names, nameof(typeof(d)), shared)
-    parts = ntuple(length(names)) do i
-        _update(d.components[i], _child_params(params, names[i]), shared, merge)
+    # A structurally-recursive `map` over the paired (heterogeneous) children/
+    # names tuples, not an `ntuple(...) do i ... end` closure indexing
+    # `d.components[i]`: each element is built by direct tuple destructuring
+    # rather than an index-driven loop body, which is what an `ntuple` closure
+    # lowers to before full inlining. Same result; see #223 for why the shape
+    # matters (an Enzyme/LLVM-internal crash reverse-differentiating the old
+    # form on CI runners, not reproducible locally).
+    parts = map(d.components, names) do child, name
+        _update(child, _child_params(params, name), shared, merge)
     end
     return _rebuild(d, parts)
 end
