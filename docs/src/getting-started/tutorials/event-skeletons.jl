@@ -23,6 +23,7 @@
 # [Competing outcomes](@ref competing-outcomes).
 
 using ComposedDistributions
+using ComposedDistributions: update
 using Distributions
 using Random
 

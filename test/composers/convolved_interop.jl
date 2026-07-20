@@ -384,6 +384,7 @@ end
 end
 
 @testitem "update round-trips a Convolved leaf's component params" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,
@@ -411,6 +412,7 @@ end
 end
 
 @testitem "update makes a Convolved component uncertain (partial merge)" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,
@@ -433,6 +435,7 @@ end
 end
 
 @testitem "update round-trips a Difference leaf's (x, y) params" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,
@@ -489,6 +492,7 @@ end
 end
 
 @testitem "codec: a spec'd Convolved component counts one estimated dim" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,
@@ -544,6 +548,7 @@ end
 end
 
 @testitem "Convolved leaf under the codec: fixed components add no estimated dim" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,
@@ -639,6 +644,7 @@ end
 end
 
 @testitem "update at a composite leaf's own level errors informatively" begin
+    using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   discretise_pmf, DelayPMF, Difference,

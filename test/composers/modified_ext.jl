@@ -56,6 +56,7 @@ end
 end
 
 @testitem "Modified extension: thin factor round-trips through update" begin
+    using ComposedDistributions: update
     using Distributions
     using ModifiedDistributions
     using ModifiedDistributions: thin, affine, get_dist
@@ -216,6 +217,7 @@ end
 end
 
 @testitem "Modified extension: extra param survives an unsupplied round-trip" begin
+    using ComposedDistributions: update
     using Distributions, Random
     using ModifiedDistributions: thin, get_dist
     import ComposedDistributions: extra_leaf_params

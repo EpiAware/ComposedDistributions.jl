@@ -36,7 +36,9 @@ recorded as arriving then) — both plain Distributions.jl wrappers used here
 as ordinary leaves.
 
 ```@example overview
-using ComposedDistributions, Distributions, Random
+using ComposedDistributions
+using ComposedDistributions: update
+using Distributions, Random
 
 cfr = 0.12   # case-fatality ratio among admitted cases
 

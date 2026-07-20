@@ -1,5 +1,13 @@
 # Public API declarations for Julia 1.11+ (public but not exported).
 
+# `update`: the tree-edit / value-replace / uncertain-collapse verb (see the
+# umbrella docstring on `function update end` in `composers/introspection.jl`).
+# `public`, not `export`ed (#221): several ecosystem packages (and plenty
+# outside it) have their own `update`-shaped verb, and exporting a name this
+# generic risks the same ambiguous-binding clash #233 hit with `as_turing`
+# when two packages both export a same-named generic function.
+public update
+
 # The composer node/leaf extension contract: a new node implements
 # `child_nleaves` / `child_logpdf` / `child_rand!`, and a new leaf wrapper
 # `free_leaf` / `rewrap_leaf`. `component_names` reads a node's child names.
