@@ -759,8 +759,8 @@ end
     # alone; #228 dropped the re-export (own package boundary, own `using`).
     # `Base.isexported` (not `isdefined`) is the right check: `convolve_series`/
     # `Difference`/`Convolved`/`convolved`/`GaussLegendre`/`integrate` stay
-    # DEFINED internally (this package extends/constructs them), just no
-    # longer EXPORTED, which is what a downstream `using ComposedDistributions`
+    # defined internally (this package extends/constructs them), just no
+    # longer exported, which is what a downstream `using ComposedDistributions`
     # actually sees.
     @test !Base.isexported(ComposedDistributions, :convolved)
     @test !Base.isexported(ComposedDistributions, :convolve_series)

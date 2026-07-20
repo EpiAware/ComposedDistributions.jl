@@ -1,4 +1,4 @@
-# End-to-end scenario tests: realistic CONTINUOUS delay stacks driven through
+# End-to-end scenario tests: realistic continuous delay stacks driven through
 # the whole composition-verb surface at once. Each testitem is one named,
 # epi-flavoured stack (the comment names the modelling story) and asserts the
 # verbs work TOGETHER and CORRECTLY on it — construction (both spellings), rand
@@ -418,14 +418,14 @@ end
     @test length(counts) == length(infections)
 
     # Selecting the chain's interim events collapses to that event's cumulative
-    # delay, which is ALSO continuous here, so it throws the same way (the
+    # delay, which is also continuous here, so it throws the same way (the
     # events dispatch routes through the same discretise-first-required path).
     @test_throws ArgumentError convolve_series(
         chain, infections; events = (:admit, :death))
 
     # The prefix collapse itself is still correct: the terminal event's
     # cumulative delay is the whole-chain observed total, and the first
-    # event's is just the first step, ONE-to-one with the chain's own steps
+    # event's is just the first step, one-to-one with the chain's own steps
     # (`_event_prefix_delay`, exercised indirectly here via its distribution).
     death_prefix = ComposedDistributions._event_prefix_delay(chain, :death)
     admit_prefix = ComposedDistributions._event_prefix_delay(chain, :admit)

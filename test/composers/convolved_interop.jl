@@ -15,7 +15,7 @@
     chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    # The chain collapses to a CONTINUOUS observed total, and
+    # The chain collapses to a continuous observed total, and
     # ConvolvedDistributions 0.2 is discrete-only: both the collapse-then-
     # convolve convenience and the bare collapsed total are rejected the same
     # way (#226) — CD does not pick a discretisation scheme on the caller's
@@ -98,7 +98,7 @@ end
 
     # Selecting the terminal event and the plain whole-chain call both hit the
     # same continuous-delay error, and — once discretised by hand — the same
-    # result: the terminal event's cumulative prefix delay IS the whole-chain
+    # result: the terminal event's cumulative prefix delay is the whole-chain
     # observed total.
     @test_throws ArgumentError convolve_series(chain, series; events = :death)
     @test_throws ArgumentError convolve_series(chain, series)

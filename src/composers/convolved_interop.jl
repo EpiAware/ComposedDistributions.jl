@@ -15,7 +15,7 @@
 # method unchanged. `difference` reuses it directly. `convolve_series` collapses
 # to the observed total delay and hands it straight to
 # `ConvolvedDistributions.convolve_series`: for a discrete delay that convolves
-# directly; for a CONTINUOUS delay (the common case — a chain's collapsed total
+# directly; for a continuous delay (the common case — a chain's collapsed total
 # is a `Convolved`) that throws upstream's own "discretise first" error rather
 # than CD choosing a scheme on the caller's behalf (#226) — discretise
 # explicitly with `ConvolvedDistributions.discretise_pmf(delay, maxlag)` (or a
@@ -33,11 +33,11 @@ vector, collapses the [`Sequential`](@ref) chain to its observed total delay
 ([`observed_distribution`](@ref), the convolution of the chain steps) and
 hands it straight to `ConvolvedDistributions.convolve_series`. With `series`
 the expected events at unit-spaced times `0, 1, ..., t` (e.g. infections), a
-DISCRETE observed delay gives the expected downstream event counts at the
+discrete observed delay gives the expected downstream event counts at the
 same times — the EpiNow2-style latent / renewal observation layer, driven by
 a composed delay rather than a bare distribution.
 
-A chain's observed total is usually CONTINUOUS (e.g. a `Convolved` sum of
+A chain's observed total is usually continuous (e.g. a `Convolved` sum of
 `Gamma`/`LogNormal` steps), and ConvolvedDistributions is discrete-convolution
 -only: it throws, naming `ConvolvedDistributions.discretise_pmf(delay, maxlag)`
 (interval-censored-secondary; exact primary) or a
@@ -96,8 +96,8 @@ end
 # marginal time to the resolving event — so `observed_distribution` returns it
 # unchanged, and the collapse is handed to `ConvolvedDistributions.convolve_series`
 # unchanged too — but `observed_distribution(d) === d` here (an AbstractOneOf
-# IS its own marginal), so a naive `convolve_series(observed_distribution(d),
-# series)` re-dispatches to THIS SAME method and recurses forever. `invoke`
+# is its own marginal), so a naive `convolve_series(observed_distribution(d),
+# series)` re-dispatches to this same method and recurses forever. `invoke`
 # forces dispatch as `ContinuousUnivariateDistribution` (the supertype
 # `AbstractOneOf` claims, #29), landing on ConvolvedDistributions' own
 # continuous-rejection method (discrete convolves; continuous throws

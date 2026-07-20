@@ -3,7 +3,7 @@
 # LogDensityProblems dependency here or anywhere in this package (#220, #233)
 # — DistributionsInference.jl wraps this core as a standard
 # `LogDensityProblems` problem / DynamicPPL model generically, via the fit
-# protocol. Uncertain-first: the flat vector spans EXACTLY the spec'd
+# protocol. Uncertain-first: the flat vector spans exactly the spec'd
 # (estimated) parameters, so a fixed leaf contributes nothing and a tree with
 # no uncertain leaves estimates nothing. The load-bearing checks are the codec
 # round-trip over the estimated subset and that `logdensity` sums the specs'

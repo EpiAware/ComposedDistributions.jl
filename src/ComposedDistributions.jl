@@ -49,7 +49,7 @@ using LogExpFunctions: log1mexp
 import Tables
 
 # The convolution + quadrature substrate CD's own interop methods build on
-# (see composers/convolved_interop.jl and hazard_one_of.jl) — NOT re-exported
+# (see composers/convolved_interop.jl and hazard_one_of.jl) — not re-exported
 # (#228): a caller reaches ConvolvedDistributions' own surface (`convolved`,
 # `product`, `discretise_pmf`, the solver types, ...) with its own
 # `using ConvolvedDistributions`. Only the names CD extends or constructs
