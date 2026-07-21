@@ -1,5 +1,18 @@
 ## Unreleased
 
+- **fix:** a racing-hazard (`Compete`) node's `probs`/`mean`/`var` no longer
+  return a badly wrong split (off by 100%, potentially naming the wrong
+  winning cause) when the shared quadrature window is wide (#294). The fixed
+  64-node Gauss-Legendre rule over the FULL window starved the region where
+  the mass actually sits once the window was wide -- a genuinely heavy-tailed
+  cause with a finite but huge quantile (e.g. `Pareto(0.5, 1.0)`), or an
+  ordinary composite cause whose moment-based fallback window was itself
+  large. The quadrature is now panelled at each cause's own quantile (or,
+  lacking a `quantile` method, moment) markers, so node density follows the
+  mass regardless of which cause's tail set the window, mirroring the
+  quantile-panelled approach ConvolvedDistributions already uses for its own
+  analogous convolution quadrature. `_HazardCauseDelay`'s `cdf` (the forward
+  convolve stream) benefits the same way.
 - **chore:** renamed the two `public`-declared centred-pooling internals from
   `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
   `pool_centred_logprior` (org naming convention: a leading underscore marks
