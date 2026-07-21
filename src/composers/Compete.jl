@@ -298,6 +298,17 @@ sub-density over the marginal support. The probabilities are sub-stochastic-free
 leave residual survival at `+∞` (a defective cause) sums to less than one, the
 deficit being the never-resolved mass.
 
+!!! warning \"Accuracy for a wide quadrature window\"
+    The quadrature runs on a fixed 64-node rule over whatever window the
+    causes resolve to (see `_hazard_quad_window`). For a genuinely
+    heavy-tailed cause, or an ordinary composite/convolved cause whose
+    moment-based fallback window is itself large, that window can be wide
+    enough that the returned split is badly wrong -- not merely imprecise,
+    off by 100% and potentially naming the wrong winning cause -- while
+    still looking like a valid split (finite, in `[0, 1]`, summing to
+    `<= 1`). Never throws or returns `NaN` for such a cause, but does not
+    yet guarantee accuracy either; see #294.
+
 # Arguments
 - `c`: the [`Compete`](@ref) node whose derived per-cause winning split to read.
 
@@ -365,9 +376,19 @@ end
 # moment-based window (`mean + 10*std`) when a cause has no `quantile` method
 # (e.g. a composite/convolved cause) or its `0.9999` quantile is itself
 # non-finite; a cause with neither a usable `quantile` nor usable moments
-# (e.g. a defective node, whose TRUE upper quantile is infinite) is ignored
+# (e.g. a defective node, whose true upper quantile is infinite) is ignored
 # rather than letting it poison the shared window. Errors only if no cause
 # has any usable bound.
+#
+# This only guards against a crash (a thrown MethodError or a non-finite
+# window). It does NOT guard the shared quadrature's ACCURACY: `probs`'s
+# fixed 64-node Gauss-Legendre rule integrates over whatever window this
+# returns, and for a wide window (a genuinely heavy-tailed cause, or an
+# ordinary composite/convolved cause whose `mean + 10*std` fallback is
+# itself large) the 64-node answer can be badly wrong -- not merely
+# imprecise, off by 100% including the wrong cause winning -- while still
+# looking like a valid split (finite, in [0, 1], summing to <= 1). See #294
+# for worked examples and the tracked fix.
 function _hazard_quad_window(c::Compete)
     windows = filter(isfinite, map(_component_quad_window, c.delays))
     isempty(windows) && throw(ArgumentError(
