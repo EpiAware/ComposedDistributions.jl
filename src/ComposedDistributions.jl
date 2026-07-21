@@ -142,6 +142,9 @@ export prune, splice
 
 export observed_distribution
 
+# Distribution-level elapsed distance between two named events of a chain.
+export elapsed_between
+
 # --- includes --------------------------------------------------------------
 
 include("composers/Sequential.jl")
@@ -215,6 +218,10 @@ include("composers/observed.jl")
 # / update walks it extends to see through a composite leaf) and Uncertain.jl
 # (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")
+# Distribution-level elapsed-distance accessors over a named chain: after
+# observed.jl (`_observed_leaves`), introspection.jl (`event_names`) and the
+# `convolved` re-export, whose public verbs it reads.
+include("composers/event_intervals.jl")
 # Per-edge delay moments: after the composers it walks and observed.jl.
 include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the

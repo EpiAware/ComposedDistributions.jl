@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **feat:** `elapsed_between(chain, from, to)` (and the origin-to-`to` form
+  `elapsed_between(chain, to)`) returns the LAW of the elapsed distance between
+  two named events of a `Sequential` chain, as an ordinary univariate
+  distribution — the convolution of the steps strictly between the two events
+  (#274). This is the distribution-level counterpart to the sample-level
+  difference of two event positions, and deliberately NOT `difference`: two
+  events on one chain descend from a shared origin, so `difference(chain, chain)`
+  would double-count the shared leading steps, whereas `elapsed_between`
+  convolves only the intervening steps. A branching chain, an out-of-order or
+  unknown event pair, an uncertain-leaf chain, or a non-chain operand is
+  rejected with a clear error.
 - **chore:** renamed the two `public`-declared centred-pooling internals from
   `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
   `pool_centred_logprior` (org naming convention: a leading underscore marks
