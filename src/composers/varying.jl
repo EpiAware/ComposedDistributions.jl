@@ -367,3 +367,161 @@ has_varying(d::Shared) = has_varying(d.dist)
 function has_varying(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
     return any(has_varying, _node_children(d))
 end
+
+# --- required_covariates / missing_covariates -------------------------------
+#
+# `has_varying` (above) only answers *that* a covariate is still needed;
+# these name *which* one(s), keyed to the node paths that read them, so a
+# fitting loop can validate a data source's columns up front rather than
+# discovering a gap reactively, one covariate at a time, mid-`instantiate`.
+# A dedicated tree walk (not routed through `_node_children`) since it needs
+# per-position edge names (`component_names`), like `params_table`'s walk.
+
+@doc "
+
+The covariate names a composed distribution's [`Varying`](@ref) leaves and
+data-selected [`Choose`](@ref) disjunctions will read, keyed to the node paths
+that read them.
+
+Returns a `Dict{Symbol, Vector{Symbol}}`: each key is a covariate name a
+[`Varying`](@ref) leaf's `covariate` field or a [`Choose`](@ref)'s `selector`
+names, and each value is the dotted edge path (the same `edge` namespace
+[`params_table`](@ref) uses) of every node that reads it. A stationary tree
+(no `Varying` leaf, no data-selected `Choose`) returns an empty `Dict`.
+
+Pair with [`missing_covariates`](@ref) to check a [`Context`](@ref) up front,
+reporting every covariate a fitting loop still needs instead of discovering
+each one reactively, one at a time, mid-[`instantiate`](@ref).
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = varying(t -> Gamma(2.0, 1.0 + 0.1t)),
+    admit = LogNormal(0.5, 0.4)))
+required_covariates(tree)
+```
+
+# See also
+- [`required_parameters`](@ref): the symmetric sibling over unpinned parameters.
+- [`missing_covariates`](@ref): check a [`Context`](@ref) against this set.
+- [`has_varying`](@ref): the boolean guard this generalises.
+"
+function required_covariates(d)
+    acc = Dict{Symbol, Vector{Symbol}}()
+    _walk_covariates!(acc, d, ())
+    return acc
+end
+
+function _walk_covariates!(acc, d::Union{Sequential, Parallel}, path)
+    for (name, child) in zip(component_names(d), d.components)
+        _walk_covariates!(acc, child, (path..., name))
+    end
+    return nothing
+end
+
+# A `Choose` itself reads a covariate (its `selector`, a data-selected
+# disjunction) in addition to whatever its alternatives read; its own
+# requirement is labelled with a `:selector` suffix (mirroring how
+# `params_table` labels a `Resolve`'s own `branch_probs` row), so a root-level
+# `Choose` reports a real edge name instead of an empty path.
+function _walk_covariates!(acc, d::Choose, path)
+    push!(get!(acc, d.selector, Symbol[]), _join_path((path..., :selector)))
+    for (name, alt) in zip(component_names(d), d.alternatives)
+        _walk_covariates!(acc, alt, (path..., name))
+    end
+    return nothing
+end
+
+function _walk_covariates!(acc, c::AbstractOneOf, path)
+    for (name, delay) in zip(component_names(c), c.delays)
+        _is_no_event(delay) && continue
+        _walk_covariates!(acc, delay, (path..., name))
+    end
+    return nothing
+end
+
+function _walk_covariates!(acc, d::Varying, path)
+    push!(get!(acc, d.covariate, Symbol[]), _join_path(path))
+    return nothing
+end
+
+# Fixed-structure wrappers are transparent: a `Varying` leaf nested under a
+# `Truncated`/`Censored`/`Shared` wrapper still reports its covariate.
+_walk_covariates!(acc, d::Truncated, path) = _walk_covariates!(acc, d.untruncated, path)
+function _walk_covariates!(acc, d::Distributions.Censored, path)
+    return _walk_covariates!(acc, d.uncensored, path)
+end
+_walk_covariates!(acc, d::Shared, path) = _walk_covariates!(acc, d.dist, path)
+
+_walk_covariates!(acc, ::UnivariateDistribution, path) = nothing
+
+@doc "
+
+The unpinned (estimated) parameters a composed distribution's
+[`params_table`](@ref) still needs, as `(edge, param)` pairs.
+
+The symmetric sibling of [`required_covariates`](@ref): where that lists the
+covariate columns a tree's [`Varying`](@ref)/[`Choose`](@ref) leaves still
+need from a [`Context`](@ref), this lists the parameters an [`uncertain`](@ref)
+leaf still needs a value for (every [`params_table`](@ref) row whose `prior`
+is not `nothing`). A fully concrete (pinned) tree returns an empty vector.
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    admit = LogNormal(0.5, 0.4)))
+required_parameters(tree)
+```
+
+# See also
+- [`required_covariates`](@ref): the symmetric sibling over covariate columns.
+- [`params_table`](@ref): the full parameter inventory this reads.
+"
+function required_parameters(d)
+    tbl = params_table(d)
+    return [(edge = e, param = p)
+            for (e, p, prior) in zip(tbl.edge, tbl.param, tbl.prior)
+            if prior !== nothing]
+end
+
+@doc "
+
+The covariate names [`required_covariates`](@ref)`(d)` lists that a
+[`Context`](@ref) does not carry.
+
+`missing_covariates(d, ctx)` returns the (possibly empty) vector of covariate
+names required by `d` but absent from `ctx`, so a caller can validate a data
+source up front — confirming every needed covariate column is present before
+the first [`instantiate`](@ref) — rather than discovering a gap reactively,
+one covariate at a time, mid-resolution.
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to inspect.
+- `ctx`: the [`Context`](@ref) to check.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = varying(t -> Gamma(2.0, 1.0 + 0.1t)),
+    admit = LogNormal(0.5, 0.4)))
+missing_covariates(tree, Context(region = \"a\"))
+missing_covariates(tree, Context(time = 4.0))
+```
+
+# See also
+- [`required_covariates`](@ref): the full set this checks against.
+- [`instantiate`](@ref): resolve a tree once its covariates are all present.
+"
+function missing_covariates(d, ctx::AbstractContext)
+    return [name for name in keys(required_covariates(d)) if !_has_covariate(ctx, name)]
+end

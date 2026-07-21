@@ -16,6 +16,15 @@
   take a single record or a `Vector` of records (batch) and keep the transform
   in unitless distance from the origin, reusing the value-name layout the
   package already derives so a caller never reconstructs the topology by hand.
+- **feat:** `required_covariates(tree)` lists the covariate names a tree's
+  [`Varying`](@ref) leaves and data-selected [`Choose`](@ref) disjunctions
+  will read, keyed to the node paths that read them; `required_parameters
+  (tree)` is its symmetric sibling over unpinned (estimated) parameters,
+  reading off [`params_table`](@ref); `missing_covariates(tree, ctx)` checks
+  a [`Context`](@ref) against the former, so a caller can validate a data
+  source's columns up front — reporting every missing covariate at once —
+  instead of discovering a gap reactively, one covariate at a time, mid-
+  `instantiate` (#266).
 - **fix:** scoring a named record with an unobserved (`missing`) step or
   branch on a `Sequential`/`Parallel` composer no longer throws (#271). The
   named-record path previously built a `Vector{Float64}` and called `Float64`
