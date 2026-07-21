@@ -16,9 +16,11 @@
 # operator diagram, an [`EventSkeleton`](@ref) with named holes and no
 # distributions, then fill the holes with [`update`](@ref) as many times as
 # there are settings.
-# This tutorial builds a hospital pathway skeleton, fills it for two pathogens,
-# adds a parallel branch and a literature-uncertain delay, and shows what
-# `update` validates along the way.
+# This tutorial builds a hospital pathway skeleton and fills it several ways:
+# two pathogens, a racing-hazard outcome, a parallel branch, a nested outcome
+# path, a delay tied across branches, a literature-uncertain delay, and a
+# region-varying delay.
+# It then edits a filled tree and bulk-updates it from its parameter table.
 # It builds on [Composing distributions](@ref composing-distributions) and
 # [Competing outcomes](@ref competing-outcomes).
 
@@ -146,6 +148,46 @@ parallel_tree
 
 event(parallel_tree, :admission_and_notification, :notification)
 
+# ## Nesting a chain inside an outcome
+#
+# An outcome is not always a single leaf: a death arm might itself run through
+# an intensive-care step first.
+# A parenthesised `→` chain nests straight inside a `|` branch, so the topology
+# stays one diagram.
+
+nested_skeleton = @events begin
+    onset → admission → ((icu → death) | discharge)
+end
+
+# A branch that is itself a multi-step chain has no single probability to carry,
+# so the fill can only read it as a racing hazard: a `|` group with any nested
+# chain builds a [`Compete`](@ref), and the death arm contributes its own icu
+# and death steps.
+
+nested_tree = update(nested_skeleton;
+    onset = Gamma(2.0, 1.0),
+    admission = LogNormal(0.5, 0.4),
+    icu = Gamma(1.2, 1.0),
+    death = Gamma(1.5, 1.0),
+    discharge = Gamma(2.0, 1.5))
+
+event(nested_tree, :death_or_discharge, :death)
+
+# ## Tying a delay across branches
+#
+# When two branches share one delay parameter, fill both holes with a
+# [`shared`](@ref) leaf carrying the same tag.
+# The two occurrences are then treated as one free parameter:
+# [`params_table`](@ref) lists the `delay` group once rather than once per
+# branch.
+
+tied = update(parallel_skeleton;
+    onset = Gamma(2.0, 1.0),
+    admission = shared(:delay, Gamma(1.0, 1.0)),
+    notification = shared(:delay, Gamma(1.0, 1.0)))
+
+params_table(tied)
+
 # ## An uncertain fill
 #
 # A fill value is any valid leaf, not only a plain distribution: an
@@ -167,6 +209,92 @@ has_uncertain(uncertain_tree)
 
 params_table(uncertain_tree)
 
+# ## A region-varying fill
+#
+# A delay that changes with a covariate fills a hole with a [`varying`](@ref)
+# leaf: a map from the covariate level to a distribution, plus a reference used
+# until the tree is resolved.
+
+regional = varying(
+    region -> region == :south ? Gamma(2.4, 1.0) : Gamma(2.0, 1.0);
+    covariate = :region, reference = Gamma(2.0, 1.0))
+
+varying_tree = update(skeleton;
+    onset = regional,
+    admission = LogNormal(0.5, 0.4),
+    death = (Gamma(1.5, 1.0), cfr),
+    discharge = Gamma(2.0, 1.5))
+
+has_varying(varying_tree)
+
+# [`instantiate`](@ref) resolves the tree against a [`Context`](@ref), looking
+# the covariate up and swapping in the level's distribution.
+
+south = instantiate(varying_tree, Context(region = :south))
+
+event(south, :onset)
+
+# ## Editing a filled tree
+#
+# A filled skeleton is an ordinary composed tree, so the topology edits apply to
+# it directly: reuse a skeleton for the common case, then adjust the one tree
+# that differs rather than writing a new diagram.
+# [`splice`](@ref) inserts a step around a node, here a reporting delay after
+# admission.
+
+with_report = splice(pathogen_a, :admission;
+    after = :admission_report => Gamma(1.0, 2.0))
+
+event(with_report, :admission, :admission_report)
+
+# [`update`](@ref)`(tree, path => node)` replaces a node in place, keeping the
+# shape; here it retunes the admission delay.
+
+retuned = update(pathogen_a, :admission => LogNormal(0.7, 0.3))
+
+event(retuned, :admission)
+
+# [`prune`](@ref) drops an outcome and renormalises the remaining branch
+# probabilities.
+# A `Resolve` keeps at least two outcomes, so pruning needs a three-way split to
+# drop from.
+
+triage_skeleton = @events begin
+    onset → admission → (death | discharge | transfer)
+end
+
+triage = update(triage_skeleton;
+    onset = Gamma(2.0, 1.0),
+    admission = LogNormal(0.5, 0.4),
+    death = (Gamma(1.5, 1.0), 0.12),
+    discharge = (Gamma(2.0, 1.5), 0.68),
+    transfer = (Gamma(1.0, 1.0), 0.20))
+
+dropped = prune(triage, :death_or_discharge_or_transfer, :transfer)
+
+probs(event(dropped, :death_or_discharge_or_transfer))
+
+# ## Bulk edits through the parameter table
+#
+# [`params_table`](@ref) is a Tables.jl table, and
+# [`update`](@ref)`(tree, table)` folds one back in, so the table is a
+# round-trip edit surface: read it, change a `value` (or a whole column, in a
+# `DataFrame` or a spreadsheet), and apply it in one call.
+# Re-applying the unchanged table is a no-op.
+
+tbl = params_table(pathogen_a)
+
+update(pathogen_a, tbl) == pathogen_a
+
+# Editing the `value` column and folding the table back sets the matching
+# parameters, here bumping the onset shape to `3.0`.
+
+tbl.value[1] = 3.0
+
+bumped = update(pathogen_a, tbl)
+
+event(bumped, :onset)
+
 # ## Summary
 #
 # - [`@events`](@ref) lowers a `→`/`|`/`&` operator diagram to an
@@ -175,10 +303,15 @@ params_table(uncertain_tree)
 #   the concrete tree through the ordinary composer verbs, validating that every
 #   hole is filled and every fill key names a hole.
 # - The `|` group becomes a [`Resolve`](@ref) or a [`Compete`](@ref) depending
-#   on whether the fill values carry probabilities.
-# - A fill value is any valid leaf — a plain distribution, an
-#   [`@uncertain`](@ref) leaf, or a pre-built subtree — so one skeleton reuses
-#   across pathogens, regions or scenarios by filling it differently each time.
+#   on whether the fill values carry probabilities; a branch that is itself a
+#   nested chain has no probability to carry, so it forces a `Compete`.
+# - A fill value is any valid leaf — a plain distribution, a [`shared`](@ref)
+#   leaf, an [`@uncertain`](@ref) leaf, a [`varying`](@ref) leaf, or a pre-built
+#   subtree — so one skeleton reuses across pathogens, regions or scenarios by
+#   filling it differently each time.
+# - A filled skeleton is an ordinary composed tree, so [`splice`](@ref),
+#   [`prune`](@ref) and [`update`](@ref) edit it, and [`params_table`](@ref)
+#   with `update(tree, table)` is a round-trip bulk-edit surface.
 # - A group's auto-name (`_or_` for one_of, `_and_` for parallel) is
 #   structural; a fill names only the branch holes, never the group.
 #
