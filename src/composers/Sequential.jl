@@ -220,6 +220,20 @@ end
 
 @doc "
 
+Log probability density of a chain's step-value vector admitting `missing`
+steps: `missing` in a slot means that step was not observed (the ecosystem-
+wide convention), scoring the observed steps and integrating out the rest (each
+unobserved step's own marginal contributes zero log density).
+
+See also: [`Sequential`](@ref)
+"
+function logpdf(d::Sequential, x::AbstractVector{>:Missing})
+    length(x) == length(d) || _throw_logpdf_dimmismatch(d, x, "step")
+    return _composite_logpdf(d.components, x)
+end
+
+@doc "
+
 Probability density of a chain's step-value vector.
 
 See also: [`logpdf`](@ref)
