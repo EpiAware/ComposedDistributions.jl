@@ -1,5 +1,15 @@
 ## Unreleased
 
+- **feature:** `rand(d, n)` draws `n` labelled records from a `Sequential` or
+  `Parallel` composer into a Tables.jl column table that scores straight back
+  through `logpdf(d, table)`, closing the simulate/score round trip for the
+  multi-child composers (#276). The batch commits to the value-name column
+  layout the single-record `rand(d)`/`logpdf(d, ::NamedTuple)` already use, so
+  `logpdf(d, rand(d, n))` holds by construction; a plain `Vector` of records
+  scores identically. The vector-of-records `logpdf` dispatches on the concrete
+  composer types so it never shadows the flat single-record method. Reach the
+  event-name schema view through `event_names`/`event_tree`, and a record's
+  absolute positions through `event_times`.
 - **chore:** renamed the two `public`-declared centred-pooling internals from
   `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
   `pool_centred_logprior` (org naming convention: a leading underscore marks

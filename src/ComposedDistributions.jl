@@ -224,6 +224,10 @@ include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.
 include("composers/named_outputs.jl")
+# Batch record sampler + scorer (`rand(d, n)` -> Tables.jl column table that
+# scores back through `logpdf`): after named_outputs (reuses
+# `_named_composer_rand` / `_value_names` and the NamedTuple `logpdf`).
+include("composers/batch_records.jl")
 # Record transform between per-step increments and absolute positions
 # (`event_times` / `event_increments`): after named_outputs (reuses
 # `_value_names` / `_join_value_path`) and the composer verbs.
