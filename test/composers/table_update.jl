@@ -49,6 +49,33 @@ end
         (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
 end
 
+@testitem "update(tree, table): round-trips a fixed Resolve past an unrelated uncertain leaf (#219)" begin
+    using ComposedDistributions: update
+    using Distributions
+
+    # An uncertain leaf (`onset_admit.shape`) and an unrelated fixed-probability
+    # `Resolve` (`admit_resolve`) in the same tree: the uncertain leaf's row
+    # carries a distribution prior, which used to flip the WHOLE update into
+    # merge mode, and merge mode then rejected the `Resolve`'s plain-float
+    # `branch_probs` (demanding a `Dirichlet`), even though that `Resolve` has
+    # nothing to do with the leaf that triggered merge mode.
+    tree = @uncertain compose((
+        clinical = sequential(
+            :onset_admit => Gamma(Normal(1.2, 0.2), 3.0),
+            :admit_resolve => resolve(
+                :death => (Gamma(2.0, 3.5), 0.3),
+                :discharge => (Gamma(1.0, 8.0), 0.7))),
+        community = Gamma(2.0, 4.0)))
+
+    # The round trip the `update` docstring shows first must not throw and must
+    # reproduce the tree exactly: the uncertain leaf keeps its prior, the fixed
+    # `Resolve` keeps its concrete probabilities.
+    @test update(tree, params_table(tree)) == tree
+    @test has_uncertain(update(tree, params_table(tree)))
+    @test probs(event(update(tree, params_table(tree)),
+        :clinical, :admit_resolve)) == (death = 0.3, discharge = 0.7)
+end
+
 @testitem "update(tree, table): dispatch safety against Real vectors and DI rows" begin
     using ComposedDistributions: update
     using Distributions
