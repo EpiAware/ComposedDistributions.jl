@@ -139,7 +139,7 @@ end
 # `LogExpFunctions.xlogy`'s `iszero(x)` branch inside `Distributions.gammalogpdf`
 # (`xlogy(shape - 1, x / scale)` with `shape - 1 == 0`). Mooncake has no rule for
 # `xlogy`/`xlog1py` and derives a wrong (zero) gradient there instead of the
-# correct `log(y)` (#99, upstream chalk-lab/Mooncake.jl#1241).
+# correct `log(y)` (#99).
 # `ComposedDistributionsMooncakeExt` imports the ChainRulesCore rules for both
 # functions. Importing via `@from_chainrules` (both AD directions) rather than
 # `@from_rrule` (reverse only) closes the forward-mode gap too, so this exercises
