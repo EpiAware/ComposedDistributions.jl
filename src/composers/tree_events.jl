@@ -247,6 +247,69 @@ end
 const _RESERVED_ROW_FIELDS = (
     :weight, :count, :obs_time, :obs_window, :branch_probs, :branch_prob)
 
+@doc raw"
+The reserved per-record field names in a scoring row.
+
+A row passed to `logpdf(tree, row)` (or a table of such rows) is matched to the
+tree's events by name; these reserved names are read for their own meaning
+instead of being treated as events, and every other field must be an event of
+the tree. Returned as a `Tuple` of `Symbol`s. Each reserved field, with its
+owner, type, default and when it is read:
+
+- `weight` / `count` (the scorer; `Real`; default `1`, unweighted): read when a
+  row carries a multiplicity.
+- `obs_time` (the censored scorer; `Real`; default none, uncensored): read when
+  a per-record right-truncation horizon `D` is given.
+- `obs_window` (the censored scorer; `Real`; default none): read when a
+  δ-bounded window `[obs_time - δ, obs_time]` is given.
+- `branch_probs` / `branch_prob` (a nested `Resolve`; probabilities; default the
+  node's own): read when a row overrides a Resolve's branch split.
+
+The covariate context read by a [`Varying`](@ref) leaf is a separate namespace:
+a single flat bag keyed by bare covariate name (`Context(time = 4.0)`), shared
+across every leaf and merged last-writer-wins by `with_covariates`, so an
+observed covariate and a sampler-threaded latent parameter share one channel.
+Covariate names are open (any `Symbol`), so they are not validated against a
+fixed registry the way these reserved row fields are.
+
+# Examples
+```@example
+using ComposedDistributions
+
+reserved_record_fields()
+```
+
+# See also
+- [`event_names`](@ref): the event namespace a row is otherwise matched against.
+- [`params_table`](@ref): the parameter namespace (dotted node paths).
+"
+reserved_record_fields() = _RESERVED_ROW_FIELDS
+
+# Bounded Levenshtein distance, for suggesting a reserved field a row mis-typed.
+function _edit_distance(a::AbstractString, b::AbstractString)
+    d = collect(0:length(b))
+    for (i, ca) in enumerate(a)
+        prev, d[1] = d[1], i
+        for (j, cb) in enumerate(b)
+            prev, d[j + 1] = d[j + 1],
+            min(d[j + 1] + 1, d[j] + 1, prev + (ca == cb ? 0 : 1))
+        end
+    end
+    return d[end]
+end
+
+# The reserved field a row key looks like a misspelling of (edit distance <= 2),
+# or `nothing`. Guards against silently treating `:obs_tim` as an event name.
+function _reserved_near_miss(k::Symbol)
+    ks = String(k)
+    best, bestd = nothing, typemax(Int)
+    for r in _RESERVED_ROW_FIELDS
+        dd = _edit_distance(ks, String(r))
+        dd < bestd && ((best, bestd) = (r, dd))
+    end
+    return bestd <= 2 ? best : nothing
+end
+
 # The event values of a row in field order, dropping the reserved weight/count
 # fields, as a `Vector{Union{Missing, Float64}}` (one entry per event, `missing`
 # admitted). The `Missing`-admitting element type keeps the censored composer
@@ -279,9 +342,14 @@ end
 function _row_event_vector_by_name(enames::Tuple, row::NamedTuple)
     for k in keys(row)
         k in _RESERVED_ROW_FIELDS && continue
-        k in enames || throw(ArgumentError(
+        k in enames && continue
+        near = _reserved_near_miss(k)
+        throw(ArgumentError(
             "row field $(repr(k)) is not an event of this tree; expected " *
-            "events $(collect(enames)) (reordering is allowed; names are not)"))
+            "events $(collect(enames)) (reordering is allowed; names are not)" *
+            (near === nothing ? "" :
+             ". Did you mean the reserved field $(repr(near))? Reserved " *
+             "fields are $(collect(reserved_record_fields()))")))
     end
     out = Vector{Union{Missing, Float64}}(undef, length(enames))
     for (i, name) in enumerate(enames)

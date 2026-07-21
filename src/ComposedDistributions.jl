@@ -133,7 +133,7 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # same ambiguous-binding clash #233 hit with `as_turing` when two packages
 # both export a same-named generic (#221).
 export params_table, event_names, event_tree, event, build_priors,
-       default_prior, param_priors, inspect
+       default_prior, param_priors, inspect, reserved_record_fields
 
 # Record transforms: `event_times` maps a drawn record of per-step increments
 # to absolute positions from the origin; `event_increments` is the inverse.

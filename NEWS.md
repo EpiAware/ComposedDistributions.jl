@@ -1,5 +1,13 @@
 ## Unreleased
 
+- **feature:** `reserved_record_fields()` publishes the reserved per-record
+  field names (`weight`/`count`/`obs_time`/`obs_window`/`branch_probs`/
+  `branch_prob`) that a scoring row carries for their own meaning rather than as
+  events, documented with each field's owner, type, default and when it is read
+  (#262). A row that misspells a reserved field (e.g. `obs_tim`) now raises a
+  clear error naming the reserved field instead of a bare "not an event". No
+  behaviour change for valid records; the covariate-context merge-overwrite
+  guard the issue also raises is a separate design decision left open.
 - **chore:** renamed the two `public`-declared centred-pooling internals from
   `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
   `pool_centred_logprior` (org naming convention: a leading underscore marks
