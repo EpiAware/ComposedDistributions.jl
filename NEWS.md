@@ -8,6 +8,14 @@
   caller already qualifying the old names (DistributionsInference.jl's
   fit-protocol extension); the aliases are removed once that extension moves
   onto the renamed functions.
+- **feature:** `event_times` converts a drawn record of per-step increments
+  into absolute positions measured from the composed tree's origin, and
+  `event_increments` inverts it back to the per-step representation the scorer
+  consumes (#269). Chain steps accumulate, parallel branches each anchor on the
+  shared origin, and a resolved/racing node stamps the outcome that fired. Both
+  take a single record or a `Vector` of records (batch) and keep the transform
+  in unitless distance from the origin, reusing the value-name layout the
+  package already derives so a caller never reconstructs the topology by hand.
 - **fix:** scoring a named record with an unobserved (`missing`) step or
   branch on a `Sequential`/`Parallel` composer no longer throws (#271). The
   named-record path previously built a `Vector{Float64}` and called `Float64`
