@@ -183,22 +183,26 @@ end
 # convolution quadrature default (192 nodes) is tuned for the batched-window
 # convolution path; these smooth density-weighted integrals over one window
 # converge at far fewer nodes, so a fixed 64-node solver threads through them
-# for speed with no loss of accuracy.
+# for speed with no loss of accuracy -- PROVIDED the window is narrow enough
+# that the density's mass isn't starved of nodes (see `_hazard_panelled_integrate`
+# below for the wide-window case, #294).
 const _PRIMARY = GaussLegendre(; n = 64)
 
 function mean(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("mean")
     hi = _hazard_marginal_window(c)
-    return integrate(
-        _PRIMARY, t -> exp(_hazard_logsurvival(c, t)), zero(hi), hi)
+    lo = zero(hi)
+    return _hazard_panelled_integrate(
+        t -> exp(_hazard_logsurvival(c, t)), lo, hi, c)
 end
 
 function var(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("var")
     hi = _hazard_marginal_window(c)
+    lo = zero(hi)
     m = mean(c)
-    e2 = integrate(
-        _PRIMARY, t -> 2 * t * exp(_hazard_logsurvival(c, t)), zero(hi), hi)
+    e2 = _hazard_panelled_integrate(
+        t -> 2 * t * exp(_hazard_logsurvival(c, t)), lo, hi, c)
     # Two independent quadratures can leave `e2 - m^2` a tiny negative for a
     # near-degenerate node; clamp to keep the variance non-negative.
     diff = e2 - m^2
@@ -293,21 +297,12 @@ returns from its declared branch probabilities, but DERIVED here from the
 hazards rather than declared.
 
 Computed by AD-safe fixed-node Gauss-Legendre quadrature of the cause-resolved
-sub-density over the marginal support. The probabilities are sub-stochastic-free
-(they sum to one for proper, eventually-certain causes); a node whose causes can
-leave residual survival at `+∞` (a defective cause) sums to less than one, the
-deficit being the never-resolved mass.
-
-!!! warning \"Accuracy for a wide quadrature window\"
-    The quadrature runs on a fixed 64-node rule over whatever window the
-    causes resolve to (see `_hazard_quad_window`). For a genuinely
-    heavy-tailed cause, or an ordinary composite/convolved cause whose
-    moment-based fallback window is itself large, that window can be wide
-    enough that the returned split is badly wrong -- not merely imprecise,
-    off by 100% and potentially naming the wrong winning cause -- while
-    still looking like a valid split (finite, in `[0, 1]`, summing to
-    `<= 1`). Never throws or returns `NaN` for such a cause, but does not
-    yet guarantee accuracy either; see #294.
+sub-density over the marginal support, panelled at each cause's own quantile
+(or moment) markers so a wide window doesn't starve the region where the mass
+actually sits (`_hazard_panelled_integrate`, #294). The probabilities are
+sub-stochastic-free (they sum to one for proper, eventually-certain causes); a
+node whose causes can leave residual survival at `+∞` (a defective cause) sums
+to less than one, the deficit being the never-resolved mass.
 
 # Arguments
 - `c`: the [`Compete`](@ref) node whose derived per-cause winning split to read.
@@ -333,8 +328,13 @@ function probs(c::Compete)
     # unbounded cause support falls back to a finite high-quantile quad window.
     hi = isfinite(hi_raw) ? hi_raw : lo + _hazard_quad_window(c)
     n = _n_branches(c)
+    # Computed once and shared across every cause's integral below: the
+    # breaks depend only on `c`'s causes and the window, not on which cause
+    # is winning (#294).
+    breaks = _hazard_panel_breaks(c, float(lo), float(hi))
     winning = ntuple(n) do j
-        integrate(_PRIMARY, t -> exp(_hazard_cause_logpdf(c, j, t)), lo, hi)
+        _hazard_integrate_over_breaks(
+            t -> exp(_hazard_cause_logpdf(c, j, t)), lo, hi, breaks)
     end
     # The winning split is mathematically sub-stochastic: it sums to
     # `1 - ∏ S_k(∞) ≤ 1`, the deficit being a defective cause's never-resolved
@@ -380,15 +380,8 @@ end
 # rather than letting it poison the shared window. Errors only if no cause
 # has any usable bound.
 #
-# This only guards against a crash (a thrown MethodError or a non-finite
-# window). It does NOT guard the shared quadrature's ACCURACY: `probs`'s
-# fixed 64-node Gauss-Legendre rule integrates over whatever window this
-# returns, and for a wide window (a genuinely heavy-tailed cause, or an
-# ordinary composite/convolved cause whose `mean + 10*std` fallback is
-# itself large) the 64-node answer can be badly wrong -- not merely
-# imprecise, off by 100% including the wrong cause winning -- while still
-# looking like a valid split (finite, in [0, 1], summing to <= 1). See #294
-# for worked examples and the tracked fix.
+# This only chooses the window's SIZE. Making the quadrature accurate over
+# that window (however wide) is `_hazard_panelled_integrate`'s job, below.
 function _hazard_quad_window(c::Compete)
     windows = filter(isfinite, map(_component_quad_window, c.delays))
     isempty(windows) && throw(ArgumentError(
@@ -406,6 +399,111 @@ function _component_quad_window(d)
     q = _try_or(() -> float(quantile(d, 0.9999)), Inf)
     isfinite(q) && return q
     return _try_or(() -> float(mean(d) + 10 * std(d)), Inf)
+end
+
+# ----------------------------------------------------------------------------
+# Quantile-panelled quadrature for a wide shared window (#294)
+# ----------------------------------------------------------------------------
+#
+# A fixed 64-node Gauss-Legendre rule over the FULL shared window (`_PRIMARY`)
+# is accurate when the window is narrow relative to where the causes' mass
+# sits, but for a wide window (a genuinely heavy-tailed cause, e.g.
+# `Pareto(0.5, 1.0)`, whose own quantile is finite but huge; or an ordinary
+# composite cause whose moment-based fallback window is itself large) the
+# nodes spread across the whole domain and starve the region that actually
+# carries the mass -- the returned answer can be badly wrong (off by 100%,
+# including the wrong cause winning) while still looking like a valid split.
+#
+# ConvolvedDistributions solves the identical problem for its own convolution
+# quadrature by splitting the window at the integration component's quantile
+# breaks (`_panel_integrate`/`_panel_breaks`, its issue #49): node density
+# then follows the mass rather than the raw window width. Those helpers are
+# ConvolvedDistributions internals (not part of its public surface), so this
+# mirrors the same idea directly against the public `GaussLegendre`/
+# `integrate` API rather than reaching into them, adapted for a race: the
+# mass can concentrate around ANY cause's own scale, not just the one whose
+# quantile happened to set the window, so breaks are collected from every
+# cause, not only the "last" one.
+
+# Interior panel breaks for one cause: its own quantile ladder when
+# available, filtered to those strictly inside `(lo, hi)`, else a
+# `mean`/`std`-based ladder mirroring `_component_quad_window`'s own moment
+# fallback (a composite/convolved cause with no `quantile` method still gets
+# graduated resolution around its own scale). A cause's own finite support
+# boundary is a break in its own right (a discontinuity, e.g. `Pareto`'s
+# density jumps from zero at its lower bound), not just a quantile.
+const _HAZARD_PANEL_PROBS = (0.001, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 0.999)
+
+function _cause_panel_breaks(d, lo::Float64, hi::Float64)
+    breaks = Float64[]
+    for bound in (_try_or(() -> float(minimum(d)), NaN),
+        _try_or(() -> float(maximum(d)), NaN))
+        isfinite(bound) && lo < bound < hi && push!(breaks, bound)
+    end
+    got_quantile = false
+    for p in _HAZARD_PANEL_PROBS
+        q = _try_or(() -> float(quantile(d, p)), NaN)
+        if isfinite(q)
+            got_quantile = true
+            lo < q < hi && push!(breaks, q)
+        end
+    end
+    got_quantile && return breaks
+    m = _try_or(() -> float(mean(d)), NaN)
+    s = _try_or(() -> float(std(d)), NaN)
+    (isfinite(m) && isfinite(s) && s > 0) || return breaks
+    for k in (0.1, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0)
+        b = m + k * s
+        lo < b < hi && push!(breaks, b)
+    end
+    return breaks
+end
+
+# Every cause's breaks, pooled, sorted and deduplicated (a shared marker two
+# causes agree on is one panel edge, not two).
+function _hazard_panel_breaks(c::Compete, lo::Float64, hi::Float64)
+    breaks = Float64[]
+    for d in c.delays
+        append!(breaks, _cause_panel_breaks(d, lo, hi))
+    end
+    sort!(unique!(breaks))
+    return breaks
+end
+
+# Per-panel rule: far fewer nodes than the single-window `_PRIMARY`, since
+# panelling already concentrates them where the mass is. `n = 16` mirrors
+# ConvolvedDistributions' own tuned choice for its analogous quantile-panelled
+# quadrature (accurate to ~1e-10 on a smooth per-panel integrand there).
+const _HAZARD_PANEL_GL = GaussLegendre(; n = 16)
+
+# Integrate `f` over `[lo, hi]` given already-computed interior `breaks` (see
+# `_hazard_panel_breaks`): the panel-wise reduction `_hazard_panelled_integrate`
+# wraps for a single call, factored out so `probs` can compute the breaks once
+# per node and reuse them across its per-cause integrals instead of
+# recomputing the same quantile/moment ladder once per cause.
+function _hazard_integrate_over_breaks(f::F, lo, hi, breaks) where {F}
+    isempty(breaks) && return integrate(_PRIMARY, f, lo, hi)
+    acc = integrate(_HAZARD_PANEL_GL, f, lo, first(breaks))
+    for i in 1:(length(breaks) - 1)
+        acc += integrate(_HAZARD_PANEL_GL, f, breaks[i], breaks[i + 1])
+    end
+    acc += integrate(_HAZARD_PANEL_GL, f, last(breaks), hi)
+    return acc
+end
+
+@doc "
+
+Integrate `f` over `[lo, hi]`, splitting at each of `c`'s causes' own
+quantile (or moment) markers so a wide shared window doesn't starve the
+region where the mass actually sits (#294). Falls back to the single-window
+`_PRIMARY` rule when there are no interior breaks (a window that's already
+narrow, or every cause lacking a usable quantile/moment marker).
+
+See also: [`probs`](@ref), [`mean`](@ref), [`var`](@ref)
+"
+function _hazard_panelled_integrate(f::F, lo, hi, c::Compete) where {F}
+    breaks = _hazard_panel_breaks(c, float(lo), float(hi))
+    return _hazard_integrate_over_breaks(f, lo, hi, breaks)
 end
 
 @doc "
@@ -467,14 +565,17 @@ end
 pdf(d::_HazardCauseDelay, t::Real) = exp(logpdf(d, t))
 
 # The cause-`j` winning probability accumulated by `t`: `∫_lo^t f_j ∏_{k≠j} S_k`.
-# Fixed-node Gauss-Legendre over the support floor to `t` (AD-safe; the leaf
-# params flow through the integrand). A `t` at or below the floor has zero mass.
+# Quantile-panelled Gauss-Legendre over the support floor to `t` (AD-safe; the
+# leaf params flow through the integrand), same as `probs` (#294): `t` can be
+# arbitrarily far out for a heavy-tailed node, so a single fixed-node rule over
+# `[lo, t]` is exactly the wide-window failure mode `_hazard_panelled_integrate`
+# guards against. A `t` at or below the floor has zero mass.
 function cdf(d::_HazardCauseDelay, t::Real)
     lo = float(minimum(d.node))
     t <= lo && return zero(float(t))
-    return integrate(
-        _PRIMARY, u -> exp(_hazard_cause_logpdf(d.node, d.cause, u)),
-        lo, float(t))
+    return _hazard_panelled_integrate(
+        u -> exp(_hazard_cause_logpdf(d.node, d.cause, u)),
+        lo, float(t), d.node)
 end
 
 @doc "
