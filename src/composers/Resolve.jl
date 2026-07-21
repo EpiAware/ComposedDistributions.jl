@@ -719,7 +719,30 @@ params(c::Resolve) = (map(params, c.delays), c.branch_probs)
 Base.minimum(c::Resolve) = minimum(as_mixture(c))
 Base.maximum(c::Resolve) = maximum(as_mixture(c))
 insupport(c::Resolve, x::Real) = insupport(as_mixture(c), x)
-mean(c::Resolve) = mean(as_mixture(c))
+
+@doc "
+
+Mean of the one_of-outcome marginal.
+
+For a proper node this is the ordinary mixture mean. For a defective node (a
+no-event branch present) there is no unconditional mean — the marginal has an
+atom at \"never\", no finite time — so this reports the CONDITIONAL-ON-
+OCCURRENCE mean instead: the branch-prob-weighted average of the observed
+branches' means, renormalised by [`occurrence_probability`](@ref).
+
+See also: [`as_mixture`](@ref), [`occurrence_probability`](@ref)
+"
+function mean(c::Resolve)
+    _is_nonterminal(c) && _nonterminal_marginal_error("mean")
+    _has_no_event(c) || return mean(as_mixture(c))
+    total = zero(float(eltype(c.branch_probs)))
+    @inbounds for i in 1:_n_branches(c)
+        _is_no_event(c.delays[i]) && continue
+        total += c.branch_probs[i] * mean(c.delays[i])
+    end
+    return total / occurrence_probability(c)
+end
+
 var(c::Resolve) = var(as_mixture(c))
 
 @doc "
@@ -762,13 +785,24 @@ probabilities keep their (possibly AD `Dual`) element type rather than being
 stripped by `as_mixture`'s `float.(branch_probs)`. This keeps the cdf AD-safe on
 a differentiated path (e.g. a censored-survival term), matching `logpdf`.
 
-See also: [`as_mixture`](@ref)
+For a defective node (a no-event branch present) a no-event branch never
+contributes to \"occurred by `x`\" at any `x`, so it is skipped rather than
+scored; the sum rises only to [`occurrence_probability`](@ref)`(c)` as `x → ∞`,
+a proper sub-stochastic law rather than one coerced back to mass one.
+[`ccdf`](@ref) is `1 - cdf`, the generic `Distributions` fallback, so it comes
+along for free: the defective survival that flattens at the no-event
+probability instead of decaying to zero.
+
+See also: [`as_mixture`](@ref), [`occurrence_probability`](@ref)
 "
 function cdf(c::Resolve, x::Real)
     _is_nonterminal(c) && _nonterminal_marginal_error("cdf")
-    _has_no_event(c) && _no_event_marginal_error("cdf")
-    return sum(ntuple(
-        i -> c.branch_probs[i] * cdf(c.delays[i], x), length(c.branch_probs)))
+    total = zero(float(eltype(c.branch_probs)))
+    @inbounds for i in 1:_n_branches(c)
+        _is_no_event(c.delays[i]) && continue
+        total += c.branch_probs[i] * cdf(c.delays[i], x)
+    end
+    return total
 end
 
 @doc "

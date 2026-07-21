@@ -12,6 +12,21 @@
   `logpdf` method is selected regardless of which fields happen to be
   present. `missing` in a slot means the value was not observed, the same
   convention already used by `Resolve`/`Compete`'s event records.
+- **fix:** a `Resolve` node with a `NoEvent` branch now reports a well-defined
+  defective marginal survival instead of throwing (#254). `cdf`/`ccdf`/`mean`
+  previously errored for any node holding a no-event branch, so no consumer
+  reading a component's survival could see through it. `cdf` now sums only
+  the occurring branches, rising to `occurrence_probability` rather than one;
+  `ccdf` (the generic `1 - cdf` fallback) comes along for free and flattens
+  at the no-event mass instead of decaying to zero; `mean` reports the
+  conditional-on-occurrence mean of the observed branches (there is no
+  unconditional mean — the marginal has an atom at "never", no finite time),
+  and throws when `occurrence_probability` is zero (no branch can occur, so
+  no conditional mean exists) rather than silently returning `NaN` from a
+  `0/0` division. `logpdf` and `as_mixture` are unchanged and still reject a
+  no-event node (there is no proper `MixtureModel` over a marker with no
+  density); a non-terminal node (a composer-valued outcome) still rejects
+  `cdf`/`ccdf`/`mean`, no-event branch or not.
 - **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
   extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
   `update(template, chain)` surface (#221). DistributionsInference.jl already
