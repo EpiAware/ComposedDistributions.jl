@@ -144,6 +144,12 @@ end
     nonterminal = resolve(:sub => (inner, 0.5), :c => (Gamma(1.0, 1.0), 0.5))
     @test_throws ArgumentError mean(nonterminal)
     @test_throws ArgumentError cdf(nonterminal, 1.0)
+
+    # No occurring branch at all: the conditional-on-occurrence mean would be
+    # a `0/0` division, so it throws rather than silently returning `NaN`.
+    never = resolve(:a => (NoEvent(), 0.5), :b => (NoEvent(), 0.5))
+    @test occurrence_probability(never) == 0.0
+    @test_throws ArgumentError mean(never)
 end
 
 @testitem "Choose: whole-tree mean/var/std are ill-defined" begin

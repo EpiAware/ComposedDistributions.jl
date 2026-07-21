@@ -686,9 +686,11 @@ function as_mixture(c::Resolve)
         collect(c.delays), collect(float.(c.branch_probs)))
 end
 
-# A defective-marginal (no-event) one_of node has no scalar `logpdf` / `mean`
-# / `as_mixture`: its observed-time mass is `< 1`, so it is multivariate and
-# scored only through the event-vector path. Errors with a clear message.
+# A defective-marginal (no-event) one_of node has no scalar `logpdf` /
+# `as_mixture`: its observed-time mass is `< 1`, so it is multivariate and
+# scored only through the event-vector path (`mean`/`cdf`/`ccdf` are the
+# exception -- they report a well-defined defective/conditional value
+# instead; see `mean`/`cdf` below). Errors with a clear message.
 function _no_event_marginal_error(what::AbstractString)
     throw(ArgumentError(
         "a Resolve node with a no-event branch is a defective marginal " *
@@ -735,12 +737,17 @@ See also: [`as_mixture`](@ref), [`occurrence_probability`](@ref)
 function mean(c::Resolve)
     _is_nonterminal(c) && _nonterminal_marginal_error("mean")
     _has_no_event(c) || return mean(as_mixture(c))
+    occ = occurrence_probability(c)
+    iszero(occ) && throw(ArgumentError(
+        "a Resolve node with occurrence_probability == 0 (every branch is " *
+        "no-event) has no conditional-on-occurrence mean: there is no " *
+        "occurring branch to average over"))
     total = zero(float(eltype(c.branch_probs)))
     @inbounds for i in 1:_n_branches(c)
         _is_no_event(c.delays[i]) && continue
         total += c.branch_probs[i] * mean(c.delays[i])
     end
-    return total / occurrence_probability(c)
+    return total / occ
 end
 
 var(c::Resolve) = var(as_mixture(c))
