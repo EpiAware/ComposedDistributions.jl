@@ -92,6 +92,17 @@
   mixture collapse with a cryptic "no scalar `as_mixture`" error (#200).
   Composition and the structural verbs (`update`/`prune`/`tie`/`splice`) are
   unchanged — they still work on such a nested node.
+- **fix:** `update(tree, table)` no longer throws when a tree holds both an
+  uncertain leaf and an unrelated fixed-probability `Resolve` (#219). One
+  distribution-valued row used to flip the whole update into merge mode, and
+  merge mode then demanded a `Dirichlet` for every `Resolve`'s `branch_probs`,
+  so `update(tree, params_table(tree))` — the round-trip shown in `update`'s
+  own docstring — failed. A concrete per-outcome `NamedTuple` `branch_probs`
+  in merge mode now pins the fixed probabilities (as a `Real` pins a leaf
+  parameter), so the round-trip works. The pin path also now enforces
+  sum-to-one, so a hand-supplied set that does not sum to one (e.g.
+  `(0.9, 0.9)`) is rejected rather than silently scoring an unnormalised
+  mixture; a stick-reconstructed simplex (the readback path) still passes.
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec

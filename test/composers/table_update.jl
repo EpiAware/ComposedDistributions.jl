@@ -76,6 +76,41 @@ end
         :clinical, :admit_resolve)) == (death = 0.3, discharge = 0.7)
 end
 
+@testitem "update: a pinned branch_probs must sum to one; readback still passes (#219)" begin
+    using ComposedDistributions: update, flat_dimension
+    using Distributions
+
+    tree = compose((resolution = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.7)),))
+
+    # Pinning fixed branch_probs that do NOT sum to one is now rejected. The
+    # pin only runs the collapse path (via the merge-mode route a distribution
+    # elsewhere flips on), and the inner Resolve constructor deliberately skips
+    # the sum-to-one check (a prior-sampled weight set is legitimately
+    # unnormalised) — so without this guard `(0.9, 0.9)` built a node whose
+    # `logpdf` silently scored an unnormalised mixture through `_one_of_logmix`.
+    @test_throws ArgumentError update(tree,
+        (resolution = (
+            death = (shape = Normal(1.5, 0.2),),
+            branch_probs = (death = 0.9, disch = 0.9)),))
+
+    # A pin that does sum to one still works and collapses the node to fixed.
+    ok = update(tree,
+        (resolution = (
+            death = (shape = Normal(1.5, 0.2),),
+            branch_probs = (death = 0.4, disch = 0.6)),))
+    @test probs(event(ok, :resolution)) == (death = 0.4, disch = 0.6)
+
+    # The guard must NOT break the readback / reconstruction path: a
+    # stick-reconstructed simplex always sums to one, so folding a flat draw
+    # back through `update` still passes. (This is the path the inner
+    # constructor's skip exists for.)
+    promoted = update(tree, param_priors(tree))
+    @test has_uncertain(promoted)
+    back = update(promoted, fill(0.5, flat_dimension(promoted)))
+    @test sum(event(back, :resolution).branch_probs) ≈ 1
+end
+
 @testitem "update(tree, table): dispatch safety against Real vectors and DI rows" begin
     using ComposedDistributions: update
     using Distributions

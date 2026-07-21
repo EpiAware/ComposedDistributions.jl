@@ -1259,6 +1259,15 @@ end
 function _update_branch_probs_strict(c::Resolve, delays, bp::NamedTuple)
     probs = c.branch_prob_prior !== nothing ?
             _reconstruct_branch_probs(c, bp) : _replace_branch_probs(c, bp)
+    # `update` is user-facing, so enforce sum-to-one here: the inner `Resolve`
+    # constructor deliberately skips it (a prior-sampled/readback weight set is
+    # legitimately unnormalised, and `_one_of_logmix` handles it), so a
+    # collapse-to-concrete pin that skipped this check would build a node whose
+    # `logpdf` silently scores an UNNORMALISED mixture. A stick-reconstructed
+    # simplex already sums to one, so a readback round-trip still passes; a
+    # hand-supplied fixed set that does not — e.g. `(0.9, 0.9)` — is rejected
+    # (#219).
+    _validate_branch_probs_sum(probs)
     return Resolve(component_names(c), delays, probs, nothing)
 end
 
