@@ -135,6 +135,10 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 export params_table, event_names, event_tree, event, build_priors,
        default_prior, param_priors, inspect
 
+# Record transforms: `event_times` maps a drawn record of per-step increments
+# to absolute positions from the origin; `event_increments` is the inverse.
+export event_times, event_increments
+
 # Structural edits on a composed tree. `update` (the `path => new_node` method)
 # replaces a named node keeping the shape; `prune` drops a branch and `splice`
 # inserts a step (topology edits).
@@ -220,6 +224,10 @@ include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.
 include("composers/named_outputs.jl")
+# Record transform between per-step increments and absolute positions
+# (`event_times` / `event_increments`): after named_outputs (reuses
+# `_value_names` / `_join_value_path`) and the composer verbs.
+include("composers/event_times.jl")
 
 # The reusable interface-conformance harness (`TestUtils.test_interface` and
 # friends). Last: it uses the whole public surface defined above.
