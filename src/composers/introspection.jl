@@ -1224,11 +1224,23 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         haskey(params, :branch_probs) || return Resolve(names, delays,
             c.branch_probs, c.branch_prob_prior)
         bp = params.branch_probs
-        bp isa Distributions.Dirichlet || throw(ArgumentError(
+        # A `Dirichlet` ATTACHES a prior, making the simplex uncertain.
+        bp isa Distributions.Dirichlet &&
+            return Resolve(names, delays, c.branch_probs, bp)
+        # A concrete `NamedTuple` PINS the probabilities, exactly as a `Real`
+        # value pins a leaf parameter in merge mode: set them from the supplied
+        # values (collapsing any prior), reusing the strict-mode handling. This
+        # is what makes `update(tree, params_table(tree))` round-trip a
+        # fixed-probability `Resolve` when an uncertain leaf ELSEWHERE in the
+        # tree has flipped the whole update into merge mode — the fixed node's
+        # `branch_probs` come back as a per-outcome `NamedTuple` unrelated to
+        # that leaf (#219).
+        bp isa NamedTuple && return _update_branch_probs_strict(c, delays, bp)
+        throw(ArgumentError(
             "update(Resolve, ...): a `branch_probs` update in merge mode must " *
             "be a `Dirichlet` over the outcomes (making the simplex " *
-            "uncertain); got a $(typeof(bp))"))
-        return Resolve(names, delays, c.branch_probs, bp)
+            "uncertain) or a per-outcome `NamedTuple` (pinning fixed " *
+            "probabilities); got a $(typeof(bp))"))
     end
     haskey(params, :branch_probs) || return Resolve(names, delays,
         c.branch_probs, nothing)
@@ -1237,9 +1249,26 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         "update(Resolve, ...): a strict `branch_probs` update must be a " *
         "NamedTuple (stick coordinates for an uncertain node, or per-outcome " *
         "probabilities for a fixed one); got a $(typeof(bp))"))
+    return _update_branch_probs_strict(c, delays, bp)
+end
+
+# Set the K probabilities from a concrete per-outcome (fixed node) or stick-
+# coordinate (uncertain node) `NamedTuple` and rebuild the node WITHOUT a prior
+# (a concrete branch_probs collapses any uncertainty). Shared by the strict
+# path and the merge path's concrete-`NamedTuple` pin (#219).
+function _update_branch_probs_strict(c::Resolve, delays, bp::NamedTuple)
     probs = c.branch_prob_prior !== nothing ?
             _reconstruct_branch_probs(c, bp) : _replace_branch_probs(c, bp)
-    return Resolve(names, delays, probs, nothing)
+    # `update` is user-facing, so enforce sum-to-one here: the inner `Resolve`
+    # constructor deliberately skips it (a prior-sampled/readback weight set is
+    # legitimately unnormalised, and `_one_of_logmix` handles it), so a
+    # collapse-to-concrete pin that skipped this check would build a node whose
+    # `logpdf` silently scores an UNNORMALISED mixture. A stick-reconstructed
+    # simplex already sums to one, so a readback round-trip still passes; a
+    # hand-supplied fixed set that does not — e.g. `(0.9, 0.9)` — is rejected
+    # (#219).
+    _validate_branch_probs_sum(probs)
+    return Resolve(component_names(c), delays, probs, nothing)
 end
 
 # Replace the K probabilities from concrete per-outcome values (a fixed node,
