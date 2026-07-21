@@ -24,15 +24,15 @@
 #
 # Two parameterisations, chosen by the population family:
 #
-#   - a LOCATION-SCALE population (`Normal`/`LogNormal`) is reparameterised
-#     NON-CENTRED: the member's latent is `z ~ Normal(0, 1)` and the parameter
+#   - a *location-scale* population (`Normal`/`LogNormal`) is reparameterised
+#     *non-centred*: the member's latent is `z ~ Normal(0, 1)` and the parameter
 #     is reconstructed `loc + scale*z` (`Normal`) or `exp(loc + scale*z)`
 #     (`LogNormal`), where `(loc, scale)` are the population's hyperparameters.
 #     This keeps the CensoredDistributions-compatible `[hyper..., z...]` flat
 #     layout (`mu ~ ...; sigma ~ ...; z ~ filldist(Normal(0, 1), K)`), so a
 #     model authored either way is interchangeable.
-#   - a GENERAL population takes the CENTRED path: the member's latent IS its
-#     parameter, scored directly against the population distribution
+#   - a *general* population takes the *centred* path: the member's latent *is*
+#     its parameter, scored directly against the population distribution
 #     reconstructed at the current hyperparameters. The population prior is
 #     parameter-dependent, so it is added in `logdensity` rather than sitting in
 #     the fixed per-row prior vector; the hyperparameters stay ordinary fixed
@@ -292,7 +292,7 @@ end
 
 # --- params-table rows for a pooled parameter -------------------------------
 #
-# Emit the population's hyperparameter rows ONCE per group (deduped through the
+# Emit the population's hyperparameter rows once per group (deduped through the
 # walk's `seen` set, so they precede every member's latent and the flat vector
 # opens with `[hyper..., ...]`), then this member's latent: a `Normal(0, 1)`
 # `z` row (non-centred) or the member's own parameter carrying the centred-pool
@@ -348,7 +348,7 @@ end
 # Rebuild a pooled leaf at a draw. A non-centred pooled parameter is
 # `link(loc + scale*z)` from the population's hyperparameters (read from the
 # top-level group entry, threaded like a `shared` tag) and the member's latent;
-# a centred pooled parameter IS its latent directly (its population prior is
+# a centred pooled parameter *is* its latent directly (its population prior is
 # added in `logdensity`). A non-pooled parameter takes its supplied value (or
 # the template's). Then rebuild the concrete leaf, collapsing the uncertainty.
 function _reconstruct_pooled_leaf(leaf, leaf_params, shared, pooled, pnames)
@@ -399,11 +399,11 @@ end
 
 # --- centred population prior term ------------------------------------------
 #
-# For a centred pooled parameter the member's latent IS its parameter, scored
+# For a centred pooled parameter the member's latent *is* its parameter, scored
 # directly against the population reconstructed at the current hyperparameters.
 # That prior is parameter-dependent, so it is added in `logdensity` (from the
 # reconstructed nested `NamedTuple`) rather than in the fixed per-row prior
-# vector. The `(path, param, pool)` rows are collected ONCE at `as_logdensity`
+# vector. The `(path, param, pool)` rows are collected once at `as_logdensity`
 # (`centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
 # no per-evaluation cost.
 
@@ -547,7 +547,7 @@ const _pool_centred_logprior = pool_centred_logprior
 
 # --- group consistency gate --------------------------------------------------
 #
-# Every leaf of a pooling group must declare the SAME population and
+# Every leaf of a pooling group must declare the same population and
 # parameterisation (they are one population); the params-table walk emits the
 # group's hyperparameters from the first member it meets. `_validate_pool_groups`
 # (called once at `as_logdensity`, not per gradient evaluation) rejects a
@@ -593,7 +593,7 @@ end
 # --- namespace collision gate -------------------------------------------------
 #
 # `pool` groups, `shared` tags, and a tree's own top-level (root) edge names
-# all end up as sibling entries in the SAME root-lifted NamedTuple the codec
+# all end up as sibling entries in the same root-lifted NamedTuple the codec
 # builds (`unflatten`'s `_root_merge_expr` in `codec_gen.jl` merges each
 # family's top-level entry alongside the tree's own names). A pool group and a
 # shared tag sharing a name silently clobber each other in that merge, and so
@@ -601,9 +601,9 @@ end
 # risk list). `_validate_tree_names` gates all three cross-role collisions
 # once at `as_logdensity` construction time, alongside
 # `_validate_pool_groups`'s pool group consistency check, not per gradient
-# evaluation. Reusing the SAME tag for a deliberate tie (`shared`/`tie`, or a
+# evaluation. Reusing the same tag for a deliberate tie (`shared`/`tie`, or a
 # pool group with several members) is the intended feature and is not
-# flagged; only a name crossing ROLES is an error.
+# flagged; only a name crossing roles is an error.
 function _validate_tree_names(d)
     pools = Dict{Symbol, Pool}()
     _collect_pools!(pools, d)
@@ -636,8 +636,9 @@ _root_edge_names(d) = component_names(d)
 
 # A `Pool` value in an `update` NamedTuple makes that parameter pooled (a spec),
 # like a distribution value makes it uncertain, so an update carrying only a
-# `pool(...)` spec switches `update` to MERGE mode (attach) rather than STRICT
-# mode (concrete replacement). Extends the `_has_distribution_value` router.
+# `pool(...)` spec switches `update` to *merge* mode (attach) rather than
+# *strict* mode (concrete replacement). Extends the `_has_distribution_value`
+# router.
 _has_distribution_value(::Pool) = true
 
 # --- the spec surface: rand, show, equality ---------------------------------

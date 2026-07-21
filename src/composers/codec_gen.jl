@@ -1,10 +1,10 @@
 # Generation-time (type-domain) flat-vector <-> nested-NamedTuple codec.
 #
 # Since #178 PR 1, every composer/wrapper carries its layout-affecting
-# structure (names, tags, groups) as TYPE PARAMETERS, not runtime fields. That
+# structure (names, tags, groups) as type parameters, not runtime fields. That
 # means the whole flat-vector layout -- which leaf owns which slot, the
 # shared-tag/pool-group dedup with root-lift, the Resolve stick-breaking
-# count -- is a function of `typeof(d)` ALONE. This file walks that type once
+# count -- is a function of `typeof(d)` alone. This file walks that type once
 # per distinct concrete tree shape (inside `@generated` function bodies) and
 # emits code with the slot indices baked in as literals, replacing the old
 # runtime `Dict{Symbol, Any}` walk (`params_table` + `_nest_insert!` +
@@ -16,8 +16,8 @@
 # dominant per-evaluation cost (issue #178's spike measured the Dict walk at
 # 50-83% of a `logdensity` call).
 #
-# `update(d, nt)` (ordinary recursion over the nested NamedTuple, ADDING no
-# Dict of its own) is UNCHANGED by this file: `reconstruct` below composes the
+# `update(d, nt)` (ordinary recursion over the nested NamedTuple, adding no
+# Dict of its own) is unchanged by this file: `reconstruct` below composes the
 # new generated `unflatten` with the existing `update`, rather than
 # re-deriving `update`'s full leaf-rebuild logic (merge mode, pooled
 # reconstruction, stick-breaking, Choose namespacing, extras) a second time.
@@ -68,31 +68,31 @@ end
 # --- Type-level leaf-protocol companions ------------------------------------
 #
 # The existing leaf-protocol hooks (`free_leaf`, `param_names`,
-# `extra_leaf_params`, ...) dispatch on an INSTANCE, which the generation-time
+# `extra_leaf_params`, ...) dispatch on an *instance*, which the generation-time
 # walk does not have (only `typeof(d)`). These companions answer the same
-# questions from the TYPE alone; they are additive (the instance-based hooks
+# questions from the *type* alone; they are additive (the instance-based hooks
 # are untouched) and follow the same per-family dispatch table so the two stay
 # in lockstep. A leaf-wrapper type without a `_leaf_free_type`/`_extra_names_of`
 # method here falls back to the identity/empty default, exactly like the
 # instance-based hooks do for an unmapped leaf.
 
 @doc "
-The peeled free-delay TYPE of a (possibly wrapped) leaf type, mirroring
+The peeled free-delay type of a (possibly wrapped) leaf type, mirroring
 `free_leaf` at the type level. The base identity is `L` itself; `Truncated`
-peels to its untruncated inner type. A CORE (in-module) leaf wrapper adds its
+peels to its untruncated inner type. A *core* (in-module) leaf wrapper adds its
 own method here, in step with its instance-based `free_leaf` method -- routed
 through [`_resolve_leaf_free_type`](@ref) below rather than recursing into
-itself, so a core wrapper directly around a REGISTERED extension leaf (e.g.
+itself, so a core wrapper directly around a registered extension leaf (e.g.
 `truncated(thin(Gamma(...)))`) peels correctly too, not just the reverse
-nesting. A leaf-wrapper PACKAGE EXTENSION (censoring, modifiers) must NOT add
-a direct dispatch method here -- see [`register_leaf_wrapper!`](@ref) below
-(#189) instead.
+nesting. A leaf-wrapper *package extension* (censoring, modifiers) must *not*
+add a direct dispatch method here -- see [`register_leaf_wrapper!`](@ref)
+below (#189) instead.
 " _leaf_free_type(::Type{L}) where {L} = L
 _leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_leaf_free_type(D)
 _leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_leaf_free_type(D)
 
 @doc "
-The native parameter name labels of a peeled free-delay TYPE, mirroring
+The native parameter name labels of a peeled free-delay type, mirroring
 `param_names` at the type level (dispatch table kept in step with it).
 Returns `()` for an unmapped family, exactly like the instance-based fallback;
 `leaf_param_names`'s positional `:param_i` padding then applies at the
@@ -106,26 +106,26 @@ _param_names_of(::Type{<:Distributions.Exponential}) = (:scale,)
 _param_names_of(::Type{<:Distributions.Uniform}) = (:lower, :upper)
 
 @doc "
-The extra (modifier-owned) parameter names of a leaf TYPE, mirroring
-`extra_leaf_params`'s key set at the type level. Defaults to `()`; a CORE
+The extra (modifier-owned) parameter names of a leaf type, mirroring
+`extra_leaf_params`'s key set at the type level. Defaults to `()`; a *core*
 (in-module) leaf wrapper reporting a non-empty `extra_leaf_params` adds its
 own method here -- routed through [`_resolve_extra_names`](@ref) below rather
 than recursing into itself, for the same core-wraps-extension reason as
-`_leaf_free_type` above. A leaf-wrapper PACKAGE EXTENSION (e.g.
-ModifiedDistributions' `thin(...)`) must NOT add a direct dispatch method here
--- see [`register_leaf_wrapper!`](@ref) below (#189) instead.
+`_leaf_free_type` above. A leaf-wrapper *package extension* (e.g.
+ModifiedDistributions' `thin(...)`) must *not* add a direct dispatch method
+here -- see [`register_leaf_wrapper!`](@ref) below (#189) instead.
 " _extra_names_of(::Type) = ()
 _extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_extra_names(D)
 _extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_extra_names(D)
 
-# The native parameter arity of a peeled free-delay TYPE: the length of
+# The native parameter arity of a peeled free-delay type: the length of
 # `Distributions.params(instance)`. Every ordinary Distributions.jl leaf
 # (Gamma, Normal, LogNormal, Weibull, Exponential, Uniform, Beta, ...) reports
 # exactly its own struct fields as `params`, so `fieldcount` reads the arity
 # straight off the type with no instance needed -- and, unlike
 # `Base.return_types`, code reflection of any kind is disallowed inside a
 # `@generated` function body, so this must be a structural (not inferential)
-# query. A leaf type whose `params` is NOT its own fields 1:1 (a custom
+# query. A leaf type whose `params` is *not* its own fields 1:1 (a custom
 # moment-parameterised wrapper, `leaf_ctor`'s motivating case) needs its own
 # `_params_arity_of` method alongside its `_param_names_of`/`leaf_ctor`
 # override.
@@ -134,65 +134,65 @@ _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 # --- load-order-independent leaf-wrapper registry (#189, #178 PR 4) --------
 #
 # `_leaf_free_type`/`_extra_names_of` above are ordinary generic functions, so
-# a leaf-wrapper PACKAGE EXTENSION (ModifiedDistributions' `Affine`/`Weighted`/
+# a leaf-wrapper *package extension* (ModifiedDistributions' `Affine`/`Weighted`/
 # `Transformed`/`Modified`) could in principle add its own dispatch method to
 # each, mirroring how `Truncated` does it in-module. It CANNOT safely do so:
-# both hooks are called from a `@generated` function's GENERATOR (reached from
-# `unflatten`/`flat_dimension`/`flatten`'s generator bodies), and calling ANY
-# user-defined function or closure from within a generator -- dispatched OR
+# both hooks are called from a `@generated` function's generator (reached from
+# `unflatten`/`flat_dimension`/`flatten`'s generator bodies), and calling *any*
+# user-defined function or closure from within a generator -- dispatched or
 # not, and regardless of `Base.invokelatest` -- can hit a world-age wall
 # ("MethodError: ...may be too new") once the generator's own constituent
 # functions have been JIT-compiled against an earlier world. This is a
 # confirmed, empirically-reproduced Julia semantics gap specific to
 # `@generated` function generators (reproduces with `--compiled-modules=no`;
 # not fixable by adding more `invokelatest` calls anywhere in the chain --
-# tried, including wrapping a registry-stored CLOSURE itself, which fails
+# tried, including wrapping a registry-stored closure itself, which fails
 # exactly the same way). See #188/#189.
 #
 # The fix that actually holds: the registry stores no callables at all, only
-# PLAIN DATA -- a type-parameter INDEX (`Int`) for the one-level peel, and a
-# FIXED `NTuple{N,Symbol}` for a wrapper's own extra names (empty = "no
+# plain data -- a type-parameter index (`Int`) for the one-level peel, and a
+# fixed `NTuple{N,Symbol}` for a wrapper's own extra names (empty = "no
 # extras, keep peeling"). Reading `L.parameters[idx]` and a struct field are
-# both pure, non-dispatching, world-age-FREE operations (`.parameters` access
+# both pure, non-dispatching, world-age-free operations (`.parameters` access
 # is a language-level introspection primitive, not a generic-function call),
 # and the registry lookup itself (`L <: e.pattern`) is the `<:` operator, a
-# compiler primitive rather than ordinary multiple dispatch -- so NONE of the
-# registry-consulting code below ever needs `Base.invokelatest`, and none of
-# it can be invalidated by a load-order timing gap: there is no user code
-# being CALLED at all, only type introspection.
+# compiler primitive rather than ordinary multiple dispatch -- so *none* of
+# the registry-consulting code below ever needs `Base.invokelatest`, and none
+# of it can be invalidated by a load-order timing gap: there is no user code
+# being called at all, only type introspection.
 #
-# Because a wrapper family can need a CONDITIONAL answer (`Transformed`'s
+# Because a wrapper family can need a conditional answer (`Transformed`'s
 # `ThinOp` case owns an extra and does not peel further; every other
 # `Transformed` owns none and does peel through), a family that needs this
-# registers ONE ENTRY PER CASE, most specific pattern first in the scan order
+# registers one entry per case, most specific pattern first in the scan order
 # (`register_leaf_wrapper!(Transformed{D, <:ThinOp} where D; ...)` ahead of
 # the general `register_leaf_wrapper!(Transformed; ...)`) -- ordinary type
 # specificity via `<:`, not a closure branching at call time.
 #
-# An extension calls `register_leaf_wrapper!` from its OWN `__init__` (not at
-# module top level: `__init__` runs once Julia actually ACTIVATES the
+# An extension calls `register_leaf_wrapper!` from its own `__init__` (not at
+# module top level: `__init__` runs once Julia actually *activates* the
 # extension, i.e. as soon as every one of its trigger packages is loaded,
 # strictly before any downstream code could construct one of its leaf types,
 # let alone place one in a composed tree) -- so the registry is fully
 # populated before the first possible use, by construction (a leaf type from
 # an extension cannot exist before that extension is loaded).
 #
-# A CORE (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`)
+# A *core* (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`)
 # still adds its own direct-dispatch `_leaf_free_type`/`_extra_names_of`
-# method (defined in THIS module, compiled alongside the generator itself, so
+# method (defined in this module, compiled alongside the generator itself, so
 # there is no cross-module load-order hazard for it) -- but that method now
-# routes its OWN recursion through `_resolve_leaf_free_type`/
+# routes its own recursion through `_resolve_leaf_free_type`/
 # `_resolve_extra_names` below rather than calling itself, so a core wrapper
-# placed directly around a REGISTERED extension leaf (e.g. a hypothetical
+# placed directly around a registered extension leaf (e.g. a hypothetical
 # `truncated(thin(Gamma(...)))`, core wrapping extension -- not just the
 # supported `thin(truncated(Gamma(...)))`, extension wrapping core) peels
 # correctly too. The registry is consulted as a first-choice check ahead of
-# the core dispatch chain, and the core chain's OWN recursion is registry-aware
+# the core dispatch chain, and the core chain's own recursion is registry-aware
 # in turn, so the two compose in either nesting order and any depth of mixing.
 
 # One registered leaf-wrapper case: `pattern` is what a concrete leaf type is
 # matched against (`<:`); `free_index` is the type-parameter position holding
-# the one-level peeled inner type; `own_extra_names` is this case's OWN extra
+# the one-level peeled inner type; `own_extra_names` is this case's own extra
 # parameter names (empty = none, keep peeling). All plain data -- no
 # callables -- so nothing here is ever `Base.invokelatest`-sensitive.
 #
@@ -215,13 +215,13 @@ Register a leaf-wrapper case's type-level codec hooks with the generated
 codec's load-order-independent registry (#189).
 
 `register_leaf_wrapper!(pattern; free_index, extra_names = ())` tells the
-generated codec how to peel a leaf-wrapper TYPE matching `pattern` (matched
+generated codec how to peel a leaf-wrapper type matching `pattern` (matched
 against a concrete leaf's type with `<:`) without dispatching on it at
 generation time: `free_index` is the position, among `pattern`'s type
-parameters, of the ONE-LEVEL peeled inner type (mirroring [`free_leaf`](@ref)
+parameters, of the one-level peeled inner type (mirroring [`free_leaf`](@ref)
 at the type level -- the resolver recurses through further layers itself, so
 this need not peel more than one level even for a leaf nested under several
-wrappers), and `extra_names` is this case's OWN extra (modifier-owned)
+wrappers), and `extra_names` is this case's own extra (modifier-owned)
 parameter names, or `()` (the default) to mean \"this case owns no extras,
 keep peeling\" (mirroring [`extra_leaf_params`](@ref)'s key set at the type
 level).
@@ -229,7 +229,7 @@ level).
 A wrapper family whose answer depends on a further type parameter (a
 `Transformed` carrying a `ThinOp` owns a `:thin` extra and does not peel
 further; every other `Transformed` owns none and does peel through) registers
-ONE ENTRY PER CASE, most specific `pattern` registered LAST (later entries are
+one entry per case, most specific `pattern` registered last (later entries are
 checked first, so a later, more specific registration takes precedence over an
 earlier, more general one already covering the same types).
 
@@ -248,7 +248,7 @@ replaces the earlier entry.
 
 # Keyword Arguments
 - `free_index`: the position of `pattern`'s type parameter holding the
-  ONE-LEVEL peeled inner type.
+  one-level peeled inner type.
 - `extra_names`: this case's own extra parameter names (default `()`, meaning
   \"no extras, keep peeling\").
 
@@ -277,11 +277,11 @@ function register_leaf_wrapper!(pattern::Type; free_index::Int,
     return nothing
 end
 
-# The LAST-registered entry whose pattern matches `L` (so a more specific,
+# The last-registered entry whose pattern matches `L` (so a more specific,
 # later registration wins over an earlier, more general one for the same
 # type -- see `register_leaf_wrapper!`'s docstring), or `nothing` for a core
 # (unregistered) type. A plain reverse linear scan over a handful of entries,
-# run only at generation time (once per distinct tree TYPE, never per
+# run only at generation time (once per distinct tree type, never per
 # gradient evaluation), so no faster structure is warranted.
 function _registered_leaf_entry(::Type{L}) where {L}
     for e in Iterators.reverse(_LEAF_CODEC_REGISTRY)
@@ -291,7 +291,7 @@ function _registered_leaf_entry(::Type{L}) where {L}
 end
 
 @doc "
-Peel a (possibly wrapped) leaf TYPE to its free delay TYPE, registry-first.
+Peel a (possibly wrapped) leaf type to its free delay type, registry-first.
 
 The load-order-independent counterpart of [`free_leaf`](@ref) at the type
 level: checks the [`register_leaf_wrapper!`](@ref) registry first (a plain,
@@ -309,7 +309,7 @@ registry entry.
 end
 
 @doc "
-The extra (modifier-owned) parameter names of a (possibly wrapped) leaf TYPE,
+The extra (modifier-owned) parameter names of a (possibly wrapped) leaf type,
 registry-first.
 
 The load-order-independent counterpart of [`extra_leaf_params`](@ref)'s key
@@ -327,9 +327,9 @@ peels core wrappers on its own.
 end
 
 # The full (native..., extra...) parameter name tuple of a (possibly wrapped)
-# leaf TYPE `L`, mirroring `leaf_param_names` at the type level exactly:
-# native names come from the PEELED free delay (padding unmapped names
-# positionally), but extras are read off `L` itself, UNPEELED -- an extra
+# leaf type `L`, mirroring `leaf_param_names` at the type level exactly:
+# native names come from the *peeled* free delay (padding unmapped names
+# positionally), but extras are read off `L` itself, *unpeeled* -- an extra
 # parameter (e.g. `thin`'s reporting probability) is owned by the wrapper, not
 # the inner free delay, exactly as `extra_leaf_params(leaf)` (not
 # `extra_leaf_params(free_leaf(leaf))`) reads it at the instance level.
@@ -385,7 +385,7 @@ function _unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
     end
 end
 
-# The component TYPES of a see-through composite leaf (`Convolved`/
+# The component types of a see-through composite leaf (`Convolved`/
 # `Difference` used as a leaf, `convolved_interop.jl`), mirroring
 # `_node_children` at the type level: `Convolved{C<:Tuple, Method}`'s
 # components are `C`'s own type parameters; `Difference{X, Y, Method}` has
@@ -472,7 +472,7 @@ end
 # Leaf case: peels a `Shared` tag (root-lift + dedup) and an `Uncertain`
 # wrapper (spec keys, including a `Pool` spec), then builds the leaf's own
 # `(native..., extra...)` NamedTuple entry -- fixed parameters read from the
-# CURRENT instance at runtime, estimated ones from the next `x` slot(s). Every
+# current instance at runtime, estimated ones from the next `x` slot(s). Every
 # leaf gets an entry (fixed or not), matching the old row walk, which emitted a
 # fixed leaf's rows too.
 function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
@@ -586,7 +586,7 @@ each fixed parameter its template value. It is the inverse of [`flatten`](@ref),
 so `update(d, unflatten(d, x))` collapses every uncertain leaf at the draw while
 holding the fixed parameters at the template.
 
-Generated once per distinct tree TYPE from a compile-time layout walk (no
+Generated once per distinct tree type from a compile-time layout walk (no
 `Dict`, no intermediate `Any`-typed accumulation), so the result is
 `@inferred`-concrete and the reverse-mode AD backends (including Enzyme, #162)
 differentiate through it.
@@ -629,7 +629,7 @@ end
 
 The estimated parameter dimension of a composed distribution.
 
-`flat_dimension(d)` is the number of scalar ESTIMATED parameters: the count of
+`flat_dimension(d)` is the number of scalar estimated parameters: the count of
 [`uncertain`](@ref) specs across the tree, i.e. the [`params_table`](@ref) rows
 whose `prior` column carries a spec. A fixed (non-uncertain) leaf contributes
 nothing, so a tree with no uncertain leaves has flat dimension 0. It is the
@@ -668,16 +668,16 @@ end
 
 # --- flatten: read an existing nested NamedTuple back to the flat vector ----
 #
-# Shares the SAME generation-time walk/dedup as `unflatten` (called on `T`,
-# not `NT`: the tree TYPE alone fixes which slots are estimated and their
+# Shares the same generation-time walk/dedup as `unflatten` (called on `T`,
+# not `NT`: the tree type alone fixes which slots are estimated and their
 # order), but instead of building NamedTuple-construction expressions it
-# builds NamedTuple-READ expressions against the `nt` argument, appended in
+# builds NamedTuple-read expressions against the `nt` argument, appended in
 # estimated-slot order. Not on the per-gradient hot path (only `unflatten`/
 # `reconstruct` are), so the read is a plain generated view rather than a
 # further-optimised primitive.
 #
 # A root-lifted entry (a `Shared` tag or a `Pool` group's hyperparameters) is
-# read directly off the LITERAL `nt` argument (`:(nt.$tag)`/`:(nt.$group...)`),
+# read directly off the literal `nt` argument (`:(nt.$tag)`/`:(nt.$group...)`),
 # never off the locally-threaded `nt_access`: that is exactly where
 # `unflatten` places it, regardless of how deep the tagged/pooled leaf sits
 # structurally. Since the generated function's argument is always named `nt`,
@@ -812,7 +812,7 @@ end
 Flatten a nested parameter `NamedTuple` to the estimated flat vector.
 
 `flatten(d, nt)` reads `nt` (keyed like [`params`](@ref)`(d)`, the shape
-[`update`](@ref) consumes) at each ESTIMATED [`params_table`](@ref) row (an
+[`update`](@ref) consumes) at each estimated [`params_table`](@ref) row (an
 [`uncertain`](@ref) spec's parameter) and returns those values as a `Vector`,
 in table order restricted to the spec'd rows. A fixed parameter is not read. It
 is the inverse of [`unflatten`](@ref): `flatten(d, unflatten(d, x)) == x`.

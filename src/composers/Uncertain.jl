@@ -3,14 +3,14 @@
 # ============================================================================
 #
 # An `Uncertain` leaf pairs a concrete `template` with `specs`, priors attached
-# to the template's FREE parameters. The user-facing story (the hierarchical
+# to the template's free parameters. The user-facing story (the hierarchical
 # model, the marginal `rand`, the collapse-by-`update`, the truncation
 # push-inside) lives in the docstrings below.
 #
-# `Uncertain` is the LATENT case of a DEFERRED LEAF — a leaf that is not yet a
+# `Uncertain` is the *latent* case of a deferred leaf — a leaf that is not yet a
 # concrete distribution but a map to one, delegating silently to a fallback
 # until resolved, and guarded by a `has_*` predicate. Its sibling is the
-# OBSERVED case, `Varying` (`varying.jl`): `Varying` maps an observed covariate
+# *observed* case, `Varying` (`varying.jl`): `Varying` maps an observed covariate
 # read from a `Context` and is resolved by `instantiate`; `Uncertain` maps a
 # latent parameter draw with a prior and is resolved by `rand` (the marginal)
 # or collapsed by `update`. The two share the `_node_children` guard walk (see
@@ -20,17 +20,17 @@
 #   - The specs are priors attached to the template's free parameters, so the
 #     leaf protocol treats the uncertainty like a wrapper: `free_leaf` peels to
 #     the template's free delay and `rewrap_leaf`/`_update_leaf` rebuild the
-#     CONCRETE leaf WITHOUT the specs. Pinning values with `update` therefore
+#     concrete leaf *without* the specs. Pinning values with `update` therefore
 #     collapses the uncertainty by design.
 #   - `_uncertain_specs` is the routing hook (default `nothing`,
 #     introspection.jl); wrapper types forward it exactly like `_shared_tag`
 #     (`Shared` here, `Truncated` in introspection.jl, the modifiers in the
 #     ModifiedDistributions extension).
-#   - The ONE special behaviour is `rand`, which draws the marginal by drawing
+#   - The one special behaviour is `rand`, which draws the marginal by drawing
 #     each spec and rebuilding the concrete leaf through `_uncertain_leaf`. The
 #     rest of the univariate surface (scalar `logpdf`/`cdf`/`quantile`/..., the
 #     moments) delegates to the template, reporting the leaf at its central
-#     values, NOT the marginal — silently, by design, matching `Varying`'s
+#     values, *not* the marginal — silently, by design, matching `Varying`'s
 #     reference-delegation. `has_uncertain` (below) is the loud guard: check it
 #     in a fitting loop before scoring, mirroring `Varying`'s `has_varying`.
 #   - `Uncertain` is parameterised on the template's `ValueSupport` (`VS`), not
@@ -63,12 +63,12 @@ The generative model is hierarchical:
 with fixed parameters taken from the template. `rand` draws the marginal
 (parameters drawn internally). The rest of the univariate surface (scalar
 `logpdf`/`pdf`/`cdf`/`quantile`, the moments) delegates to the template, so it
-reports the leaf AT the template's central parameter values, NOT the marginal.
+reports the leaf at the template's central parameter values, *not* the marginal.
 Collapse an uncertain leaf to a concrete distribution by pinning its parameters
 with [`update`](@ref)`(tree, params)`.
 
 !!! warning \"Only `rand` is marginal\"
-    Every other method — `logpdf`/`cdf`/`quantile`/... AND the moments
+    Every other method — `logpdf`/`cdf`/`quantile`/... and the moments
     `mean`/`var`/`std` — silently reports the template's central values, not
     the marginal. Scoring or summarising a raw `Uncertain` leaf therefore
     answers \"as if\" its parameters were fixed at the template. Guard a
@@ -108,7 +108,7 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
             "the template of an Uncertain must have scalar parameters; " *
             "$(template) has composite (non-scalar) parameters $(tvals) " *
             "(e.g. a Convolved/Difference leaf, whose parameters are its " *
-            "components' own parameter tuples); make an individual COMPONENT " *
+            "components' own parameter tuples); make an individual component " *
             "uncertain instead — build the composite from uncertain components, " *
             "or target one via `update(tree, (leaf = (component_1 = " *
             "(param = prior,),),))`"))
@@ -149,7 +149,7 @@ distributions, nestable to any depth.
 A spec may itself be an [`uncertain`](@ref) distribution, so hyper-uncertainty
 nests. The template may be a wrapped leaf (`truncated(...)`, a censoring
 wrapper): the wrapper is fixed structure re-applied to every draw. Apply such
-wrappers INSIDE the template. `truncated` is the exception: applied outside it
+wrappers inside the template. `truncated` is the exception: applied outside it
 pushes itself into the template automatically.
 
 The result is a `Distributions.UnivariateDistribution` and composes as a leaf
@@ -169,7 +169,7 @@ explicit override.
 A `template` whose parameters are themselves composite (e.g. a `Convolved`/
 `Difference` node from the ConvolvedDistributions interop, whose parameters
 are its components' own parameter tuples rather than scalars) is refused with
-an informative `ArgumentError`: attach uncertainty to an individual COMPONENT
+an informative `ArgumentError`: attach uncertainty to an individual component
 instead, either by building the composite from uncertain components or by
 targeting one through [`update`](@ref) at its `component_i` path (that interop
 sees through a composite leaf to its component parameters).
@@ -381,11 +381,11 @@ end
 
 # --- the leaf-protocol hooks -------------------------------------------------
 #
-# The specs are priors ATTACHED to the template's free parameters, so the
+# The specs are priors attached to the template's free parameters, so the
 # prior/params interface sees through an `Uncertain` exactly like a fixed
-# wrapper: `free_leaf` peels to the template's free delay (its parameters ARE
+# wrapper: `free_leaf` peels to the template's free delay (its parameters *are*
 # the leaf's free parameters), and `rewrap_leaf` re-applies the template's
-# fixed wrapper structure around a rebuilt delay WITHOUT the uncertainty —
+# fixed wrapper structure around a rebuilt delay *without* the uncertainty —
 # pinning definite values (an `update` from fitted draws) collapses the
 # uncertain leaf to its concrete distribution.
 
@@ -421,7 +421,7 @@ _uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
 # its free parameters with default priors (the explicit estimate-everything
 # escape hatch). Called from the leaf `_update` in merge mode; the methods live
 # here (not introspection.jl) so they can dispatch on `Shared`/`Uncertain`.
-# Shared stays OUTERMOST so its tag keeps routing; `Uncertain` wraps the
+# Shared stays outermost so its tag keeps routing; `Uncertain` wraps the
 # concrete (possibly `Truncated`) template so its `ValueSupport` stays concrete
 # (see the parameterisation note above).
 
@@ -474,7 +474,7 @@ end
 #
 # Every ordinary query is answered at the template's (central) parameter values,
 # so an `Uncertain` behaves like a plain distribution there. The scalar
-# `logpdf`/`cdf`/... and the moments are therefore NOT the marginal (which
+# `logpdf`/`cdf`/... and the moments are therefore *not* the marginal (which
 # integrates over the parameter draws); `rand` is the one method that draws the
 # marginal, and `update` collapses to a concrete leaf.
 
@@ -563,7 +563,7 @@ Base.hash(d::Uncertain, h::UInt) = hash(d.specs, hash(d.template,
 #
 # The eager `truncated` constructor computes the wrapped distribution's cdf at
 # the bounds. Truncating an uncertain distribution instead truncates the
-# TEMPLATE, so every draw is from the truncated concrete distribution — the
+# template, so every draw is from the truncated concrete distribution — the
 # conditional (per-parameter-draw) semantics an observation model needs — and
 # `Truncated{Uncertain}` never exists. The method set mirrors the upstream
 # `truncated` signatures, so both the positional and `lower =`/`upper =` keyword
@@ -593,7 +593,7 @@ Whether a composed distribution still contains an [`Uncertain`](@ref) leaf.
 
 An `Uncertain` leaf delegates every `Distributions` method except `rand` to its
 template until it is collapsed with [`update`](@ref)`(tree, params)`, so scoring
-or summarising a raw tree that still holds an `Uncertain` leaf SILENTLY uses the
+or summarising a raw tree that still holds an `Uncertain` leaf silently uses the
 template's central values instead of the marginal — a silent wrong answer, not
 an error. Guard a scoring/fitting loop with this predicate:
 

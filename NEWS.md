@@ -61,6 +61,12 @@
   100% (including the wrong cause winning), while still looking plausible
   (finite, in `[0, 1]`, summing to `<= 1`); see #294, filed from this PR's
   review, for the tracked accuracy gap and worked examples.
+- **docs:** swept ALL-CAPS emphasis from `src/` docstrings and comments,
+  following the org convention (Censored#513 / kit#57): routine emphasis is
+  now lowercase or italicised (`*not*`, `*derived*`, ...), reserving capitals
+  for a genuine hard-constraint marker (`MUST NOT`, `CANNOT`) or a real
+  acronym/type name (`AD`, `IO`, `PPL`, `VS`, ...). Typography only; no
+  docstring's documented behaviour or constraint changed (#204).
 - **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
   extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
   `update(template, chain)` surface (#221). DistributionsInference.jl already
