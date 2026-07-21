@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **feat:** node-aware covariate resolution for a `Varying` wrapping a composite univariate node (a `Resolve`/`Compete` one_of, since `Varying <: UnivariateDistribution` already admits one). Previously every tree walker treated such a wrapper as an opaque leaf: `event_names`/`event_tree`/`component_names`/`probs` reported a single flat slot instead of the reference's own outcome shape, and nesting one as a `Sequential`/`Parallel` child threw on `rand` (the flat value-vector walk tried to write a one_of's full labelled record into a single numeric slot). All of these now delegate to the reference, so a tree containing one is fully usable (event names, flat slot count, sampling, scoring) before `instantiate` and stable across it; `instantiate(varying_node, ctx)` also now recurses into the produced subtree, so a `Varying`-wrapped node whose own outcomes embed a further `Varying` leaf resolves fully in one call. Added `threshold(covariate, cutoff; below, above)`, a convenience constructor for the common below/above activation shape (right-continuous at `cutoff`), built on `varying` (#257).
+
 - **chore:** renamed the two `public`-declared centred-pooling internals from
   `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
   `pool_centred_logprior` (org naming convention: a leading underscore marks
