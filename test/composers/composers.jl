@@ -99,10 +99,57 @@ end
 
     r = resolve(:event => (Gamma(1.5, 1.0), 0.4), :none => (NoEvent(), 0.6))
     @test occurrence_probability(r) ≈ 0.4
-    # A defective marginal has no scalar logpdf / mean / as_mixture.
+    # A defective marginal has no scalar logpdf / as_mixture: the observed
+    # non-occurrence mass is scored through the event-vector path instead.
     @test_throws ArgumentError logpdf(r, 2.0)
-    @test_throws ArgumentError mean(r)
     @test_throws ArgumentError as_mixture(r)
+end
+
+@testitem "Resolve: defective marginal survival (#254)" begin
+    using Distributions
+
+    r = resolve(:event => (Gamma(2.0, 1.0), 0.6), :none => (NoEvent(), 0.4))
+
+    # `cdf` sums only the occurring branches, so it rises to
+    # `occurrence_probability` rather than one.
+    @test cdf(r, 3.0) ≈ 0.6 * cdf(Gamma(2.0, 1.0), 3.0)
+    @test cdf(r, Inf) ≈ occurrence_probability(r)
+
+    # `ccdf` (the generic `1 - cdf` fallback) flattens at the no-event mass
+    # instead of decaying to zero.
+    @test ccdf(r, 3.0) ≈ 0.4 + 0.6 * ccdf(Gamma(2.0, 1.0), 3.0)
+    @test ccdf(r, Inf) ≈ 0.4
+
+    # `mean` is the conditional-on-occurrence mean of the observed branches,
+    # renormalised by `occurrence_probability` (a single occurring branch
+    # here, so it equals that branch's own mean).
+    @test mean(r) ≈ mean(Gamma(2.0, 1.0))
+
+    # Two occurring branches: the conditional mean is their probability-
+    # weighted average, renormalised by the occurrence probability.
+    r2 = resolve(:a => (Gamma(2.0, 1.0), 0.3), :b => (Gamma(5.0, 1.0), 0.3),
+        :none => (NoEvent(), 0.4))
+    @test mean(r2) ≈
+          (0.3 * mean(Gamma(2.0, 1.0)) + 0.3 * mean(Gamma(5.0, 1.0))) / 0.6
+
+    # A proper node (no no-event branch) is unaffected: `mean`/`cdf` still
+    # match the ordinary mixture lowering.
+    proper = resolve(:a => (Gamma(2.0, 1.0), 0.4), :b => (Gamma(1.5, 1.0), 0.6))
+    @test mean(proper) ≈ mean(as_mixture(proper))
+    @test cdf(proper, 1.0) ≈ cdf(as_mixture(proper), 1.0)
+
+    # A non-terminal node (a composer-valued outcome) stays multivariate:
+    # `mean`/`cdf` still reject it, no-event branch or not.
+    inner = resolve(:a => (Gamma(2.0, 1.0), 0.5), :b => (Gamma(1.5, 1.0), 0.5))
+    nonterminal = resolve(:sub => (inner, 0.5), :c => (Gamma(1.0, 1.0), 0.5))
+    @test_throws ArgumentError mean(nonterminal)
+    @test_throws ArgumentError cdf(nonterminal, 1.0)
+
+    # No occurring branch at all: the conditional-on-occurrence mean would be
+    # a `0/0` division, so it throws rather than silently returning `NaN`.
+    never = resolve(:a => (NoEvent(), 0.5), :b => (NoEvent(), 0.5))
+    @test occurrence_probability(never) == 0.0
+    @test_throws ArgumentError mean(never)
 end
 
 @testitem "Choose: whole-tree mean/var/std are ill-defined" begin
