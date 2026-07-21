@@ -54,7 +54,7 @@ end
 end
 
 # Read the value at `(path..., param)` of a nested NamedTuple. Still used by
-# `Pool.jl`'s `_pool_centred_logprior`, which reads a centred pooled member's
+# `Pool.jl`'s `pool_centred_logprior`, which reads a centred pooled member's
 # latent straight off the `unflatten`ed `nt` at a runtime-known path (a
 # per-evaluation but not per-slot walk, so a plain function is fine here).
 function _read_path(nt::NamedTuple, path::Tuple, param::Symbol)

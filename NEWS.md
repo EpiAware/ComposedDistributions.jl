@@ -1,5 +1,13 @@
 ## Unreleased
 
+- **chore:** renamed the two `public`-declared centred-pooling internals from
+  `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
+  `pool_centred_logprior` (org naming convention: a leading underscore marks
+  internal-only, and #212 had declared these `public`). `_centred_pool_rows`
+  and `_pool_centred_logprior` remain as `public` transitional aliases for a
+  caller already qualifying the old names (DistributionsInference.jl's
+  fit-protocol extension); the aliases are removed once that extension moves
+  onto the renamed functions.
 - **fix:** scoring a named record with an unobserved (`missing`) step or
   branch on a `Sequential`/`Parallel` composer no longer throws (#271). The
   named-record path previously built a `Vector{Float64}` and called `Float64`

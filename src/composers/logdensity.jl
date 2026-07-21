@@ -87,7 +87,7 @@ end
 function ComposedLogDensity(
         dist::AbstractComposedDistribution, priors, data, loglik)
     return ComposedLogDensity(dist, priors, data, loglik,
-        flatten(dist, priors), _centred_pool_rows(dist))
+        flatten(dist, priors), centred_pool_rows(dist))
 end
 
 # The nested prior `NamedTuple` of a tree's uncertain specs, keyed like the
@@ -216,13 +216,13 @@ function logdensity(prob::ComposedLogDensity, x::AbstractVector)
     # current hyperparameters, so it is scored below, not here.
     lp = _fixed_row_logprior(fp, x)
     nt = unflatten(prob.dist, x)
-    lp += _pool_centred_logprior(prob.centred_pools, nt)
+    lp += pool_centred_logprior(prob.centred_pools, nt)
     d = update(prob.dist, nt)
     return lp + prob.loglik(d, prob.data)
 end
 
 # Sum the fixed per-row prior log-densities, skipping centred-pool marker rows
-# (scored against the population in `_pool_centred_logprior`).
+# (scored against the population in `pool_centred_logprior`).
 function _fixed_row_logprior(fp, x)
     isempty(x) && return 0.0
     return sum(eachindex(x)) do i
