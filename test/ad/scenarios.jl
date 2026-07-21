@@ -134,3 +134,34 @@ end
     gfwd = gradient(f, AutoMooncakeForward(), θ0)
     @test gfwd ≈ gref
 end
+
+# A Gamma-family shape landing exactly on `1.0` routes a nonzero cotangent into
+# `LogExpFunctions.xlogy`'s `iszero(x)` branch inside `Distributions.gammalogpdf`
+# (`xlogy(shape - 1, x / scale)` with `shape - 1 == 0`). Mooncake has no rule for
+# `xlogy`/`xlog1py` and derives a wrong (zero) gradient there instead of the
+# correct `log(y)` (#99, upstream chalk-lab/Mooncake.jl#1241).
+# `ComposedDistributionsMooncakeExt` imports the ChainRulesCore rules for both
+# functions. Importing via `@from_chainrules` (both AD directions) rather than
+# `@from_rrule` (reverse only) closes the forward-mode gap too, so this exercises
+# `shape == 1.0` under Mooncake forward as well as reverse (#214).
+@testitem "Mooncake differentiates a Gamma logpdf at shape == 1.0, both directions (#214)" tags=[
+    :ad, :mooncake, :mooncake_reverse] begin
+    using ADTypes: AutoMooncake, AutoMooncakeForward, AutoForwardDiff
+    using DifferentiationInterface: gradient
+    using Distributions: Gamma, logpdf
+    using ForwardDiff, Mooncake
+
+    obs = [0.5, 1.2, 2.5, 3.8, 5.1]
+    # `θ[1]` is the Gamma shape, evaluated at exactly `1.0`, so the reverse pass
+    # sends a nonzero cotangent through `xlogy(0.0, x)`.
+    f(θ) = sum(x -> logpdf(Gamma(θ[1], 1.0), x), obs)
+    θ0 = [1.0]
+
+    gref = gradient(f, AutoForwardDiff(), θ0)
+
+    grev = gradient(f, AutoMooncake(config = nothing), θ0)
+    @test grev ≈ gref
+
+    gfwd = gradient(f, AutoMooncakeForward(), θ0)
+    @test gfwd ≈ gref
+end
