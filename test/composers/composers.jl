@@ -205,6 +205,40 @@ end
     @test occurrence_probability(c) <= 1.0
 end
 
+@testitem "Compete: quadrature window survives a composite/heavy cause (#259)" begin
+    using Distributions
+
+    # A composite (convolved) cause has no `quantile` method: the shared
+    # window falls back to a moment-based (`mean + 10*std`) window instead of
+    # raising a `MethodError`.
+    composite = observed_distribution(sequential(Gamma(2.0, 1.0),
+        LogNormal(0.5, 0.4)))
+    bad = compete(:composite => composite, :b => Gamma(3.0, 2.0))
+    p_bad = probs(bad)
+    @test all(isfinite, values(p_bad))
+    @test all(>=(0.0), values(p_bad))
+    @test sum(values(p_bad)) ≈ 1.0 atol = 1e-3
+    @test occurrence_probability(bad) ≈ 1.0 atol = 1e-3
+    @test mean(bad) > 0
+    @test var(bad) >= 0
+
+    # A cause with an extreme (heavy-tailed) `quantile` never returns `NaN` or
+    # throws; the split stays a valid, finite, sub-stochastic-or-proper vector.
+    heavy = Pareto(0.5, 1.0)
+    hnode = compete(:heavy => heavy, :b => Gamma(3.0, 2.0))
+    p_heavy = probs(hnode)
+    @test all(isfinite, values(p_heavy))
+    @test all(p -> 0.0 <= p <= 1.0, values(p_heavy))
+    @test sum(values(p_heavy)) <= 1.0
+
+    # A mixture of both stays finite and never throws.
+    mix = compete(:composite => composite, :heavy => heavy, :b => Gamma(3.0, 2.0))
+    p_mix = probs(mix)
+    @test all(isfinite, values(p_mix))
+    @test all(p -> 0.0 <= p <= 1.0, values(p_mix))
+    @test sum(values(p_mix)) <= 1.0
+end
+
 @testitem "Compete: support floor is the earliest cause (staggered floors)" begin
     using Distributions, Random
 

@@ -172,7 +172,7 @@ pdf(c::Compete, t::Real) = exp(logpdf(c, t))
 # floor may be positive; the integral runs from zero over the survival so the
 # `E[T] = ∫ S` identity holds for a non-negative time.
 function _hazard_marginal_window(c::Compete)
-    hi = float(maximum(c))
+    hi = _hazard_support_ceiling(c)
     isfinite(hi) && return hi
     return _hazard_quad_window(c)
 end
@@ -313,8 +313,8 @@ See also: [`Compete`](@ref), [`occurrence_probability`](@ref)
 "
 function probs(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("probs")
-    lo = float(minimum(c))
-    hi_raw = float(maximum(c))
+    lo = _hazard_support_floor(c)
+    hi_raw = _hazard_support_ceiling(c)
     # Bind `hi` unconditionally (a ternary, not `isfinite(hi) || (hi = ...)`): the
     # short-circuit-assignment form leaves `hi` only conditionally assigned, and the
     # `ntuple` closure below that captures it then trips JET's `local variable hi is
@@ -335,11 +335,56 @@ function probs(c::Compete)
     return NamedTuple{component_names(c)}(winning)
 end
 
-# A finite quadrature window for a cause with unbounded support: a high quantile
-# of the soonest-firing marginal. Uses the largest cause `0.9999` quantile so the
-# tail beyond it carries negligible mass for the winning-probability integral.
+# Evaluate `f()`, returning `default` instead of propagating an exception. Used
+# to make the shared quadrature window construction robust to a cause whose
+# `minimum`/`maximum`/`quantile` is unavailable (e.g. a composite/convolved
+# cause with no such method, or a defective node) rather than letting one
+# awkward cause raise a `MethodError` for the whole node.
+function _try_or(f, default)
+    try
+        return f()
+    catch
+        return default
+    end
+end
+
+# Component-robust support floor/ceiling for the shared quadrature domain: a
+# per-cause `minimum`/`maximum` that throws (a composite/convolved cause with
+# no such method) contributes `0`/`Inf` respectively instead of stopping the
+# whole node's `probs`/`mean`/`var` from computing over the other causes.
+function _hazard_support_floor(c::Compete)
+    return minimum(map(d -> _try_or(() -> float(minimum(d)), 0.0), c.delays))
+end
+function _hazard_support_ceiling(c::Compete)
+    return maximum(map(d -> _try_or(() -> float(maximum(d)), Inf), c.delays))
+end
+
+# A finite quadrature window for a cause with unbounded support: a high
+# quantile of the soonest-firing marginal, so the tail beyond it carries
+# negligible mass for the winning-probability integral. Falls back to a
+# moment-based window (`mean + 10*std`) when a cause has no `quantile` method
+# (e.g. a composite/convolved cause) or its `0.9999` quantile is itself
+# non-finite; a cause with neither a usable `quantile` nor usable moments
+# (e.g. a defective node, whose TRUE upper quantile is infinite) is ignored
+# rather than letting it poison the shared window. Errors only if no cause
+# has any usable bound.
 function _hazard_quad_window(c::Compete)
-    return maximum(map(d -> quantile(d, 0.9999), c.delays))
+    windows = filter(isfinite, map(_component_quad_window, c.delays))
+    isempty(windows) && throw(ArgumentError(
+        "no cause of this Compete node has a usable quadrature window " *
+        "(a finite `quantile(cause, 0.9999)` and a finite `mean`/`std` are " *
+        "both unavailable for every cause); provide at least one cause " *
+        "with one of these"))
+    return maximum(windows)
+end
+
+# The quadrature window bound for one cause: its own `0.9999` quantile when
+# finite, else a moment-based `mean + 10*std` window, else `Inf` (no usable
+# bound; the caller ignores this cause).
+function _component_quad_window(d)
+    q = _try_or(() -> float(quantile(d, 0.9999)), Inf)
+    isfinite(q) && return q
+    return _try_or(() -> float(mean(d) + 10 * std(d)), Inf)
 end
 
 @doc "

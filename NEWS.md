@@ -35,6 +35,24 @@
   no-event node (there is no proper `MixtureModel` over a marker with no
   density); a non-terminal node (a composer-valued outcome) still rejects
   `cdf`/`ccdf`/`mean`, no-event branch or not.
+- **fix:** a racing-hazard (`Compete`) node's `probs`/`occurrence_probability`
+  no longer raise a `MethodError` when a cause is itself a composite/
+  convolved distribution with no `quantile` method (#259). The shared
+  quadrature window's `_hazard_quad_window` called `quantile(cause, 0.9999)`
+  directly on every cause; it now falls back to a moment-based
+  (`mean + 10*std`) window when a cause's `quantile` is unavailable or
+  non-finite, and ignores a cause with no usable window (neither a finite
+  quantile nor finite moments) rather than letting it poison the shared
+  integral. The support floor/ceiling feeding the window (previously the
+  public `minimum`/`maximum(::Compete)`, which themselves throw if any
+  cause's own `minimum`/`maximum` throws) are now built the same
+  fallback-robust way. This fix is scoped to the crash only: the shared
+  64-node quadrature can still return a **badly wrong** (not merely
+  imprecise) split when the resolved window is wide — for a genuinely
+  heavy-tailed or high-variance cause the 64-node answer can be off by
+  100% (including the wrong cause winning), while still looking plausible
+  (finite, in `[0, 1]`, summing to `<= 1`); see #294, filed from this PR's
+  review, for the tracked accuracy gap and worked examples.
 - **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
   extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
   `update(template, chain)` surface (#221). DistributionsInference.jl already
