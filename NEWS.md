@@ -59,6 +59,13 @@
   `1.0` (#214). A new `test/ad/scenarios.jl` scenario exercises `shape == 1.0`
   under Mooncake forward and reverse against a ForwardDiff reference; the import
   stays in place pending an upstream Mooncake rule (see #99).
+- **fix:** sampling a tree that nests a non-terminal one_of (a `Resolve`/
+  `Compete` whose outcomes are subtrees) inside a `Sequential`/`Parallel` now
+  raises a clear, actionable `ArgumentError` at the flat value-path draw,
+  naming the limitation and the two ways out, instead of failing deep in the
+  mixture collapse with a cryptic "no scalar `as_mixture`" error (#200).
+  Composition and the structural verbs (`update`/`prune`/`tie`/`splice`) are
+  unchanged — they still work on such a nested node.
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec
