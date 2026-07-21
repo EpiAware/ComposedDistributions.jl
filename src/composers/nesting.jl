@@ -264,6 +264,16 @@ ComposedDistributions.child_logpdf(node, x, 0, n)
 function child_logpdf end
 
 child_logpdf(c::UnivariateDistribution, x, offset, ::Int) = logpdf(c, x[offset + 1])
+# `missing` in a leaf slot means the value was not observed (the ecosystem-wide
+# convention, matching the outcome-node record): its own marginal integrates to
+# 1 over its support, so an unobserved leaf contributes zero log density rather
+# than throwing. More specific than the plain method above, so it is only
+# selected when `x`'s element type actually admits `Missing`.
+function child_logpdf(c::UnivariateDistribution, x::AbstractVector{>:Missing},
+        offset, ::Int)
+    v = x[offset + 1]
+    return v === missing ? zero(nonmissingtype(eltype(x))) : logpdf(c, v)
+end
 # A nested child scores its own contiguous slice of the value vector; a `@view`
 # avoids a copy and differentiates on every supported backend.
 function child_logpdf(c::Union{Sequential, Parallel}, x, offset, n::Int)

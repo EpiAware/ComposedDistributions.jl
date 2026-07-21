@@ -1,5 +1,17 @@
 ## Unreleased
 
+- **fix:** scoring a named record with an unobserved (`missing`) step or
+  branch on a `Sequential`/`Parallel` composer no longer throws (#271). The
+  named-record path previously built a `Vector{Float64}` and called `Float64`
+  on every field, so a record such as `(first = 3.2, second = missing)`
+  raised `MethodError: no method matching Float64(::Missing)`. `Sequential`
+  and `Parallel` now carry a `Missing`-admitting `logpdf` that scores the
+  observed values and integrates out the rest (each unobserved leaf's own
+  marginal contributes zero log density); the named-record builder always
+  produces a `Missing`-admitting vector, even for an all-observed draw, so one
+  `logpdf` method is selected regardless of which fields happen to be
+  present. `missing` in a slot means the value was not observed, the same
+  convention already used by `Resolve`/`Compete`'s event records.
 - **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
   extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
   `update(template, chain)` surface (#221). DistributionsInference.jl already

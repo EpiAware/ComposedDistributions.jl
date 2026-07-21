@@ -386,6 +386,50 @@ end
     @test logpdf(tree, draw) ≈ logpdf(tree, collect(values(draw)))
 end
 
+@testitem "Missing-admitting scoring on Sequential/Parallel (#271)" begin
+    using Distributions
+
+    # A `missing` value scores the observed prefix and integrates out the
+    # unobserved remainder (each unobserved step's own marginal contributes
+    # zero log density).
+    s = sequential(:first => Gamma(2.0, 1.0), :second => LogNormal(0.5, 0.4))
+    @test logpdf(s, (first = 3.2, second = missing)) ≈
+          logpdf(Gamma(2.0, 1.0), 3.2)
+    @test logpdf(s, (first = missing, second = missing)) == 0.0
+    # A fully-observed record still round-trips.
+    @test logpdf(s, (first = 3.2, second = 0.6)) ≈
+          logpdf(Gamma(2.0, 1.0), 3.2) + logpdf(LogNormal(0.5, 0.4), 0.6)
+
+    p = parallel(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
+    @test logpdf(p, (a = 3.2, b = missing)) ≈ logpdf(Gamma(2.0, 1.0), 3.2)
+
+    # A `missing` value inside a nested composer step is integrated out at its
+    # own leaf, the surrounding steps still scored.
+    nested = sequential(:inner => sequential(:x => Gamma(2.0, 1.0),
+            :y => Gamma(1.0, 1.0)),
+        :outer => LogNormal(0.5, 0.4))
+    draw = rand(nested)
+    partial = merge(draw, (inner_y = missing,))
+    @test logpdf(nested, partial) ≈
+          logpdf(Gamma(2.0, 1.0), draw.inner_x) +
+          logpdf(LogNormal(0.5, 0.4), draw.outer)
+
+    # A `missing` value at a `Resolve` child (a collapsed value slot within a
+    # `Sequential`) is integrated out like any other leaf.
+    node = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.7))
+    chain = sequential(:onset => Gamma(2.0, 1.0), :resolve_step => node)
+    chain_draw = rand(chain)
+    chain_partial = merge(chain_draw, (resolve_step = missing,))
+    @test logpdf(chain, chain_partial) ≈
+          logpdf(Gamma(2.0, 1.0), chain_draw.onset)
+
+    # The flat-vector entry point also admits `missing` directly, and the
+    # dimension-mismatch guard still applies.
+    @test logpdf(s, [3.2, missing]) ≈ logpdf(Gamma(2.0, 1.0), 3.2)
+    @test_throws DimensionMismatch logpdf(s, [1.0, missing, 2.0])
+end
+
 @testitem "Introspection: params_table, event_names, event_tree, event" begin
     using Distributions
 
