@@ -17,7 +17,7 @@ differentiating through Distributions.jl's censored `logpdf`/`logcdf`).
 `:latent` covers the full `as_logdensity`/`logdensity` codec path: an
 uncertain-leaf tree (differentiating the flat-vector -> nested-NamedTuple
 codec, `unflatten`/`update`, into the data likelihood), a centred pool
-(differentiating the `_pool_centred_logprior` term against the population), a
+(differentiating the `pool_centred_logprior` term against the population), a
 `Shared`-tagged uncertain leaf occurring twice (differentiating through the
 tag-dedup: one flat parameter, its gradient accumulated from both
 occurrences' likelihoods), and a `Truncated`-wrapped uncertain leaf (`#215`,
@@ -172,7 +172,7 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
 
         # Centred pool: two members pool a `shape` centred against a fixed
         # `Gamma` population, so the gradient flows through
-        # `_pool_centred_logprior` (the population-scored latent term) as well as
+        # `pool_centred_logprior` (the population-scored latent term) as well as
         # each member's own Gamma likelihood. The centred reconstruction is the
         # identity (the latent IS the parameter), so this exercises the centred
         # scoring path distinct from the non-centred reconstruction.

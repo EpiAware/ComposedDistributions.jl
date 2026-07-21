@@ -38,11 +38,17 @@ public pool_group, pool_noncentred
 # `extra_logprior` for a composed tree scores a centred-pooled parameter's
 # population-dependent term by calling these three directly. `CentredPoolPrior`
 # is the marker `parameter_rows` pattern-matches on to translate a
-# centred-pooled row's prior to `nothing`; `_centred_pool_rows` collects the
-# rows carrying that marker; `_pool_centred_logprior` scores them against the
+# centred-pooled row's prior to `nothing`; `centred_pool_rows` collects the
+# rows carrying that marker; `pool_centred_logprior` scores them against the
 # unflattened parameter tree. No behaviour change — declaring what was already
-# reachable, unrestricted, by qualified name.
-public CentredPoolPrior, _centred_pool_rows, _pool_centred_logprior
+# reachable, unrestricted, by qualified name. `_centred_pool_rows` and
+# `_pool_centred_logprior` are transitional aliases for the two functions'
+# original (leading-underscore) public names, kept `public` themselves — like
+# `EpiAwarePackageTools`' own `scaffold_update`/`update` alias — until
+# DistributionsInference.jl's fit-protocol extension moves onto the renamed
+# functions, then removed.
+public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
+       _centred_pool_rows, _pool_centred_logprior
 
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates

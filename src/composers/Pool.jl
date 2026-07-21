@@ -404,7 +404,7 @@ end
 # That prior is parameter-dependent, so it is added in `logdensity` (from the
 # reconstructed nested `NamedTuple`) rather than in the fixed per-row prior
 # vector. The `(path, param, pool)` rows are collected ONCE at `as_logdensity`
-# (`_centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
+# (`centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
 # no per-evaluation cost.
 
 @doc raw"
@@ -415,7 +415,7 @@ Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
 construction time), so a tree with only non-centred (or no) pooling adds no
 per-evaluation cost. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
-find the rows [`_pool_centred_logprior`](@ref) needs to score (#212).
+find the rows [`pool_centred_logprior`](@ref) needs to score (#212).
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
@@ -427,13 +427,13 @@ using ComposedDistributions, Distributions
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
         shape = pool(:region, Beta(2.0, 3.0))),
     south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
-ComposedDistributions._centred_pool_rows(tree)
+ComposedDistributions.centred_pool_rows(tree)
 ```
 
 # See also
-- [`CentredPoolPrior`](@ref), [`_pool_centred_logprior`](@ref)
+- [`CentredPoolPrior`](@ref), [`pool_centred_logprior`](@ref)
 "
-function _centred_pool_rows(dist)
+function centred_pool_rows(dist)
     tbl = params_table(dist)
     prcol = Tables.getcolumn(tbl, :prior)
     edges = Tables.getcolumn(tbl, :edge)
@@ -448,6 +448,35 @@ end
 
 @doc raw"
 
+Deprecated alias for [`centred_pool_rows`](@ref); kept transitionally so a
+caller already qualifying it (`ComposedDistributions._centred_pool_rows`, or
+an explicit `using ComposedDistributions: _centred_pool_rows`) keeps working
+across the rename (#212 declared this `public` with the leading underscore,
+which the org's naming convention reserves for internal-only names). New code
+should call `centred_pool_rows`; this alias is removed in a future cleanup
+once DistributionsInference.jl's fit-protocol extension has moved off it.
+
+# Arguments
+- the composed tree whose centred-pooled rows are collected; see
+  [`centred_pool_rows`](@ref).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions._centred_pool_rows(tree)
+```
+
+# See also
+- [`centred_pool_rows`](@ref)
+"
+const _centred_pool_rows = centred_pool_rows
+
+@doc raw"
+
 Sum each centred member's log-density against its population reconstructed at
 the current hyperparameters (read from the flattened draw `nt`).
 
@@ -456,7 +485,7 @@ fit-protocol extension calls this to score a composed tree's centred-pooled
 population term (#212).
 
 # Arguments
-- `rows`: the `(path, param, pool)` triples from [`_centred_pool_rows`](@ref).
+- `rows`: the `(path, param, pool)` triples from [`centred_pool_rows`](@ref).
 - `nt`: the nested `NamedTuple` from `unflatten` at the same draw.
 
 # Examples
@@ -466,22 +495,55 @@ using ComposedDistributions, Distributions
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
         shape = pool(:region, Beta(2.0, 3.0))),
     south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
-rows = ComposedDistributions._centred_pool_rows(tree)
+rows = ComposedDistributions.centred_pool_rows(tree)
 x = fill(0.5, ComposedDistributions.flat_dimension(tree))
 nt = ComposedDistributions.unflatten(tree, x)
-ComposedDistributions._pool_centred_logprior(rows, nt)
+ComposedDistributions.pool_centred_logprior(rows, nt)
 ```
 
 # See also
-- [`_centred_pool_rows`](@ref), [`CentredPoolPrior`](@ref)
+- [`centred_pool_rows`](@ref), [`CentredPoolPrior`](@ref)
 "
-function _pool_centred_logprior(rows, nt)
+function pool_centred_logprior(rows, nt)
     isempty(rows) && return 0.0
     return sum(rows) do (path, param, pool)
         logpdf(_collapse_population(pool.population, _pool_hyper(nt, pool)),
             _read_path(nt, path, param))
     end
 end
+
+@doc raw"
+
+Deprecated alias for [`pool_centred_logprior`](@ref); kept transitionally so a
+caller already qualifying it (`ComposedDistributions._pool_centred_logprior`,
+or an explicit `using ComposedDistributions: _pool_centred_logprior`) keeps
+working across the rename (#212 declared this `public` with the leading
+underscore, which the org's naming convention reserves for internal-only
+names). New code should call `pool_centred_logprior`; this alias is removed in
+a future cleanup once DistributionsInference.jl's fit-protocol extension has
+moved off it.
+
+# Arguments
+- `rows`: the `(path, param, pool)` triples from [`centred_pool_rows`](@ref).
+- `nt`: the nested `NamedTuple` from `unflatten` at the same draw.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+rows = ComposedDistributions.centred_pool_rows(tree)
+x = fill(0.5, ComposedDistributions.flat_dimension(tree))
+nt = ComposedDistributions.unflatten(tree, x)
+ComposedDistributions._pool_centred_logprior(rows, nt)
+```
+
+# See also
+- [`pool_centred_logprior`](@ref)
+"
+const _pool_centred_logprior = pool_centred_logprior
 
 # --- group consistency gate --------------------------------------------------
 #
