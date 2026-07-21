@@ -120,9 +120,11 @@ export Pool, pool
 
 # Context-indexed (non-stationary) leaves: a `Varying` leaf varies with a
 # covariate (time, strata, ...); `instantiate(tree, Context(...))` resolves a tree
-# against a context to a concrete stationary tree.
+# against a context to a concrete stationary tree. `required_covariates` /
+# `required_parameters` / `missing_covariates` let a caller validate a data
+# source's columns up front instead of discovering a gap reactively.
 export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
-       has_varying
+       has_varying, required_covariates, required_parameters, missing_covariates
 
 # Introspection: the flat prior table and name introspection. `event_names` is
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
