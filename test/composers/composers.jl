@@ -692,6 +692,42 @@ end
     @test isfinite(logpdf(seq, draw))
 end
 
+@testitem "nested non-terminal one_of: clear rand error, structural edits still work (#200)" begin
+    using Distributions, Random
+    using ComposedDistributions: update
+    import ComposedDistributions: _is_nonterminal
+
+    # A non-terminal one_of: an outcome payload is itself a subtree, so the node
+    # spans several event slots rather than collapsing to one scalar marginal.
+    onward = sequential(:icu => Gamma(1.2, 1.0), :death => Gamma(1.5, 1.0))
+    nonterminal = compete(:delayed => onward, :immediate => Gamma(2.0, 1.5))
+    @test _is_nonterminal(nonterminal)
+
+    # Composition stays permissive: the tree builds, and the structural verbs
+    # (which walk by name, never touching the flat value vector) work on it.
+    tree = compose((path = nonterminal, other = Gamma(3.0, 1.0)))
+    @test event(update(tree, (:path, :immediate) => Gamma(4.0, 2.0)),
+        :path, :immediate) == Gamma(4.0, 2.0)
+
+    # But sampling the flat value vector fails with a clear, actionable error
+    # naming the limitation, not the cryptic inner `as_mixture` failure (#200).
+    err = try
+        rand(Xoshiro(1), tree)
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    msg = sprint(showerror, err)
+    @test occursin("non-terminal", msg)
+    @test occursin("Structural edits", msg)
+
+    # A terminal (leaf-outcome) one_of nested in a chain still samples fine.
+    terminal = sequential(:onset => Gamma(2.0, 1.0),
+        :out => resolve(:death => (Gamma(1.5, 1.0), 0.4),
+            :disch => Gamma(2.0, 1.5)))
+    @test rand(Xoshiro(1), terminal) isa NamedTuple
+end
+
 @testitem "params_table is a 5-column superset with a thin hook (#96)" begin
     using Distributions
     import ComposedDistributions: extra_leaf_params, leaf_param_names
