@@ -77,3 +77,33 @@ end
     @test all(collect(values(back[i])) ≈ collect(values(table[i]))
     for i in eachindex(table))
 end
+
+@testitem "event_times: chain resumes past a nested parallel" begin
+    using ComposedDistributions: event_times, event_increments,
+                                 sequential, parallel
+    using Distributions
+
+    # A chain whose middle step is itself a parallel split, then a further
+    # chain step. The step after the split resumes from the PREVIOUS chain
+    # step (step1), not from either branch endpoint, mirroring the tree's
+    # terminal-name rule.
+    tree = sequential(:step1 => LogNormal(0.5, 0.4),
+        :mid => parallel(:x => Gamma(2.0, 1.0), :y => Gamma(1.5, 1.0)),
+        :step2 => Gamma(2.0, 1.0))
+    rec = (step1 = 1.0, mid_x = 2.0, mid_y = 3.0, step2 = 4.0)
+    # step1 = 1; branches anchor at step1: mid_x = 1+2 = 3, mid_y = 1+3 = 4;
+    # step2 resumes from step1 (1), not the branches: step2 = 1+4 = 5.
+    @test event_times(tree, rec) ==
+          (step1 = 1.0, mid_x = 3.0, mid_y = 4.0, step2 = 5.0)
+    @test event_increments(tree, event_times(tree, rec)) == rec
+end
+
+@testitem "event_times: a bare leaf or one_of errors clearly" begin
+    using ComposedDistributions: event_times, event_increments, resolve
+    using Distributions
+
+    @test_throws ArgumentError event_times(Gamma(2.0, 1.0), (a = 1.0,))
+    @test_throws ArgumentError event_increments(Gamma(2.0, 1.0), (a = 1.0,))
+    bare = resolve(:left => (Gamma(1.5, 1.0), 0.3), :right => Gamma(2.0, 1.5))
+    @test_throws ArgumentError event_times(bare, (event_1 = 1.0,))
+end
