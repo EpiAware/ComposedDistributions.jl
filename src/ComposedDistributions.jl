@@ -102,7 +102,7 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
-# Event-skeleton topology: `@events` declares an event tree's STRUCTURE (named
+# Event-skeleton topology: `@events` declares an event tree's structure (named
 # holes joined by → / | / & operators) with no distributions attached;
 # `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
 # composed tree through the existing verbs (a `|` node becomes a `Resolve` or

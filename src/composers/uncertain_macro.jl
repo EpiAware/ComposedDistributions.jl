@@ -1,11 +1,11 @@
 # The `@uncertain` macro: a syntax front-end over the positional `uncertain`
-# family form. It rewrites SYNTAX only — every type decision (a distribution
+# family form. It rewrites syntax only — every type decision (a distribution
 # argument marks a prior, a `Real` marks a fixed value) stays with the runtime
 # `uncertain(::Type{D}, args...)` method in Uncertain.jl.
 #
 # The rewrite walks an expression post-order (children first) and, for each
 # positional call `D(pos_args...)` whose head `D` is a bare Symbol starting with
-# an uppercase letter (a distribution-type constructor) AND at least one
+# an uppercase letter (a distribution-type constructor) and at least one
 # positional argument is itself such an uppercase-headed call (a distribution
 # literal read as that parameter's prior), replaces it with
 # `uncertain(D, pos_args...)`. Lowercase-headed calls (`compose`, `sequential`,

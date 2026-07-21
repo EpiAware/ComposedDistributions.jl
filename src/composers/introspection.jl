@@ -80,7 +80,7 @@ end
 # --- opt-in detailed inspection ---------------------------------------------
 #
 # `show` is deliberately compact (structure plus short leaf labels); `inspect`
-# is the explicit opt-in for the full detail, recursing the SAME tree but
+# is the explicit opt-in for the full detail, recursing the same tree but
 # printing each leaf's full `text/plain` representation (every field) under an
 # indented prefix.
 
@@ -700,7 +700,7 @@ distributions' support.
 For a [`Choose`](@ref) node the alternatives' independent per-branch params are
 namespaced per alternative (`index.…` / `sourced.…`), one row-group per
 alternative. A parameter tied across alternatives via [`shared`](@ref)`(:tag,
-...)` is inventoried ONCE under its `tag` edge and sampled once, so a value tied
+...)` is inventoried once under its `tag` edge and sampled once, so a value tied
 across the index and sourced branches appears as a single row-group.
 
 # Examples
@@ -899,14 +899,14 @@ argument.
   free parameters, the fine-grained value edit;
 - one or more `path => new_node` pairs ([`update`](@ref)`(d, edits::Pair...)`
   in `structural_edits.jl`): replaces whole nodes, coarser than a value edit but
-  still SAME-shape.
+  still same-shape.
 
-For topology edits that change the tree SHAPE, use [`prune`](@ref) or
+For topology edits that change the tree shape, use [`prune`](@ref) or
 [`splice`](@ref) instead.
 
 # `update(d, params::NamedTuple)` — set free parameters
 
-`update(d, params)` returns a new distribution of the SAME structure as `d` with
+`update(d, params)` returns a new distribution of the same structure as `d` with
 its parameters set from `params`, a nested NamedTuple mirroring the tree: a
 [`Sequential`](@ref)/[`Parallel`](@ref) is keyed by its edge names, a leaf by
 its parameter names (as in [`params_table`](@ref)'s `param` column), and a
@@ -935,11 +935,11 @@ A [`Resolve`](@ref) node's `branch_probs` are a node-level parameter, not a
 leaf: attach a simplex-valued `Distributions.Dirichlet` at the `branch_probs`
 slot to make them uncertain,
 `update(node, (branch_probs = Dirichlet(ones(K)),))`. The `Dirichlet` is the
-prior you WRITE; the codec ESTIMATES the node through the `Dirichlet`'s K-1
+prior you write; the codec estimates the node through the `Dirichlet`'s K-1
 stick-breaking coordinates (labelled `:stick_1 … :stick_{K-1}` in
 [`params_table`](@ref) and a fitted chain), each a `Beta` in (0, 1), so every
 draw lands on the probability simplex and the gradient is well-defined. The
-probabilities are RECOVERED from any draw: a strict `update` from the stick
+probabilities are recovered from any draw: a strict `update` from the stick
 coordinates (as read back from a chain) collapses the node to concrete
 probabilities summing to one (read them with `Distributions.probs`). Promote
 attaches a flat `Dirichlet(ones(K))` per `Resolve`.
@@ -972,14 +972,14 @@ has_uncertain(est)
 # `update(d, path => new_node, ...)` — replace nodes
 
 `update(d, path => new_node, ...)` returns a new composed distribution of the
-SAME outer structure as `d` with the node addressed by each `path` replaced by
+same outer structure as `d` with the node addressed by each `path` replaced by
 `new_node`. A `path` is a `Symbol` (a top-level child), a dotted `Symbol`
 (`:admit_path.admit_resolution.death`, as in [`event`](@ref) /
 [`params_table`](@ref)), or a tuple of edge names from the root (e.g.
 `(:admit_path, :admit_resolution, :death)`); the same address [`event`](@ref)
-READS is the one this WRITES. `new_node` may be a leaf distribution or a nested
+reads is the one this writes. `new_node` may be a leaf distribution or a nested
 composer. This shares the recursive reconstruction with the value-update form
-above, so the result scores and `rand`s. It preserves the tree SHAPE; for shape
+above, so the result scores and `rand`s. It preserves the tree shape; for shape
 changes use [`prune`](@ref) or [`splice`](@ref).
 
 ## Arguments
@@ -1146,11 +1146,11 @@ function update(d::AbstractComposedDistribution, table)
 end
 
 # Whether an `update` NamedTuple carries any distribution-valued parameter,
-# which switches `update` to MERGE mode: a distribution introduces an uncertain
+# which switches `update` to *merge* mode: a distribution introduces an uncertain
 # spec, a `Real` pins (collapsing any spec), and an absent parameter keeps the
 # leaf's current spec or fixed value (so a partial NamedTuple targets only the
 # named parameters). Without a distribution anywhere the update is a plain
-# concrete replacement (STRICT mode, exact cover), the original behaviour.
+# concrete replacement (*strict* mode, exact cover), the original behaviour.
 # Any distribution counts: a `UnivariateDistribution` spec makes a leaf
 # parameter uncertain, and a multivariate simplex prior (a `Dirichlet` at a
 # `Resolve`'s `branch_probs`) makes the branch probabilities uncertain, so a
@@ -1209,13 +1209,13 @@ end
 # Rebuild the `Resolve` with updated delays, resolving the branch probabilities
 # and their attached prior from the update NamedTuple:
 #
-# - MERGE mode with a `branch_probs = Dirichlet(...)` entry ATTACHES that prior,
+# - *merge* mode with a `branch_probs = Dirichlet(...)` entry attaches that prior,
 #   making the simplex uncertain (the probabilities stay as the point). Without
 #   a `branch_probs` entry the node's probabilities and prior are kept.
-# - STRICT mode on a node that CARRIES a prior reconstructs the probabilities
-#   from the stick coordinates supplied (a draw from the sampler) and COLLAPSES
+# - *strict* mode on a node that carries a prior reconstructs the probabilities
+#   from the stick coordinates supplied (a draw from the sampler) and collapses
 #   the node to concrete structure (drops the prior), mirroring a leaf collapse.
-# - STRICT mode on a fixed node replaces the probabilities from concrete
+# - *strict* mode on a fixed node replaces the probabilities from concrete
 #   per-outcome values, as before.
 function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         merge::Bool)
@@ -1224,14 +1224,14 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         haskey(params, :branch_probs) || return Resolve(names, delays,
             c.branch_probs, c.branch_prob_prior)
         bp = params.branch_probs
-        # A `Dirichlet` ATTACHES a prior, making the simplex uncertain.
+        # A `Dirichlet` attaches a prior, making the simplex uncertain.
         bp isa Distributions.Dirichlet &&
             return Resolve(names, delays, c.branch_probs, bp)
-        # A concrete `NamedTuple` PINS the probabilities, exactly as a `Real`
+        # A concrete `NamedTuple` pins the probabilities, exactly as a `Real`
         # value pins a leaf parameter in merge mode: set them from the supplied
         # values (collapsing any prior), reusing the strict-mode handling. This
         # is what makes `update(tree, params_table(tree))` round-trip a
-        # fixed-probability `Resolve` when an uncertain leaf ELSEWHERE in the
+        # fixed-probability `Resolve` when an uncertain leaf elsewhere in the
         # tree has flipped the whole update into merge mode — the fixed node's
         # `branch_probs` come back as a per-outcome `NamedTuple` unrelated to
         # that leaf (#219).
@@ -1253,7 +1253,7 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
 end
 
 # Set the K probabilities from a concrete per-outcome (fixed node) or stick-
-# coordinate (uncertain node) `NamedTuple` and rebuild the node WITHOUT a prior
+# coordinate (uncertain node) `NamedTuple` and rebuild the node without a prior
 # (a concrete branch_probs collapses any uncertainty). Shared by the strict
 # path and the merge path's concrete-`NamedTuple` pin (#219).
 function _update_branch_probs_strict(c::Resolve, delays, bp::NamedTuple)
@@ -1263,7 +1263,7 @@ function _update_branch_probs_strict(c::Resolve, delays, bp::NamedTuple)
     # constructor deliberately skips it (a prior-sampled/readback weight set is
     # legitimately unnormalised, and `_one_of_logmix` handles it), so a
     # collapse-to-concrete pin that skipped this check would build a node whose
-    # `logpdf` silently scores an UNNORMALISED mixture. A stick-reconstructed
+    # `logpdf` silently scores an unnormalised mixture. A stick-reconstructed
     # simplex already sums to one, so a readback round-trip still passes; a
     # hand-supplied fixed set that does not — e.g. `(0.9, 0.9)` — is rejected
     # (#219).
@@ -1795,15 +1795,15 @@ _prior_child_node(::Any, ::Symbol) = nothing
 
 @doc "
 
-The FLAT event names of a composed distribution.
+The *flat* event names of a composed distribution.
 
 `event_names(d)` returns the tuple of event names in flat depth-first order:
 the root origin event followed by one target event per leaf edge.
 An inner composer's events are exposed, so `compose((path = [a, b],))` lists the
 inner `(:onset, ...)` events rather than just the `(:path,)` edge. Event names
 are derived from the edge names (an edge `:onset_admit` gives origin `:onset` and
-target `:admit`); a positional default edge contributes `:event_i`. These EVENT
-names key a data ROW, distinct from the nested EDGE/child structure of
+target `:admit`); a positional default edge contributes `:event_i`. These event
+names key a data row, distinct from the nested edge/child structure of
 [`event_tree`](@ref) (whose first level is the top-level child names).
 
 # Examples
@@ -1816,7 +1816,7 @@ event_names(tree)
 ```
 
 # See also
-- [`event_tree`](@ref): the NESTED tree of event names
+- [`event_tree`](@ref): the *nested* tree of event names
 - [`event`](@ref): fetch a child or subtree by name path
 - [`params_table`](@ref): the parameter table
 "
@@ -1829,14 +1829,14 @@ event_names(d::Choose) = component_names(d)
 
 @doc "
 
-The NESTED tree of event names of a composed distribution.
+The *nested* tree of event names of a composed distribution.
 
 `event_tree(d)` returns the event-name structure as data: a nested `NamedTuple`
-keyed by child name down to the leaves, mirroring the tree. Its FIRST level is
+keyed by child name down to the leaves, mirroring the tree. Its first level is
 the top-level child names (the old top-level `event_names` result); a
 [`Sequential`](@ref)/[`Parallel`](@ref)/[`Choose`](@ref) child recurses to its
 own nested NamedTuple, a [`Resolve`](@ref) child to its outcome names, and a
-leaf to its own name. Pair with [`event_names`](@ref) for the FLAT per-event
+leaf to its own name. Pair with [`event_names`](@ref) for the *flat* per-event
 layout that matches `rand`/`mean`/`var`.
 
 # Examples
@@ -1850,7 +1850,7 @@ event_tree(tree)
 ```
 
 # See also
-- [`event_names`](@ref): the FLAT per-event names
+- [`event_names`](@ref): the *flat* per-event names
 - [`event`](@ref): fetch a child or subtree by name path
 "
 function event_tree(d::Union{Sequential, Parallel})

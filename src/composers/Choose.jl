@@ -2,17 +2,17 @@
 
 A data-selected disjunction over independent named alternatives.
 
-`Choose` holds ``n`` NAMED alternatives ``D_1, \dots, D_n``, each an independent
-sub-distribution, and a `selector` naming the DATA field that picks which
+`Choose` holds ``n`` named alternatives ``D_1, \dots, D_n``, each an independent
+sub-distribution, and a `selector` naming the data field that picks which
 alternative applies to a record. Exactly one alternative is active per record,
-chosen by the selector value, NOT by a branch probability and NOT off a shared
-origin. This is the disjunctive split that neither [`Parallel`](@ref) (shared
+chosen by the selector value, *not* by a branch probability and *not* off a
+shared origin. This is the disjunctive split that neither [`Parallel`](@ref) (shared
 origin, product over branches) nor [`Resolve`](@ref) (shared origin,
 probabilistic mixture) expresses: the alternatives are genuinely independent
 sub-models with different origins, and the data says which one generated the
 record.
 
-Scoring and model dispatch route to the SELECTED alternative: `logpdf(d, x; kind)`
+Scoring and model dispatch route to the selected alternative: `logpdf(d, x; kind)`
 takes the chosen name as the `kind` keyword (no default — a `Choose` has no
 single distribution to score without a selection). Sampling has two forms:
 `rand(d; kind)` draws the named alternative directly, while a bare `rand(d)` (no
@@ -26,10 +26,10 @@ hot-path `logpdf` is preserved.
 
 An alternative may itself be any distribution or a nested composer
 ([`Sequential`](@ref), [`Parallel`](@ref), [`Resolve`](@ref), or another
-`Choose`), so a composed tree nests INSIDE a data-selected split. A `Choose`
-may ALSO nest the other way, as a child of a `Sequential` / `Parallel` /
+`Choose`), so a composed tree nests inside a data-selected split. A `Choose`
+may also nest the other way, as a child of a `Sequential` / `Parallel` /
 [`compose`](@ref) composer: the flat, data-free value path (`logpdf`/`rand`
-without a `kind`) commits to its FIRST alternative, so the node's flat width is
+without a `kind`) commits to its first alternative, so the node's flat width is
 that alternative's leaf count; every alternative must share that leaf count for
 the nested `Choose` to occupy one fixed flat slot, or the parent's width query
 errors.
@@ -95,7 +95,7 @@ Build a [`Choose`](@ref) data-selected disjunction from `name => dist`
 alternatives.
 
 Each alternative is `name => dist`: the alternative name (a `Symbol`) and its
-independent sub-distribution. The `selector` keyword names the DATA field a
+independent sub-distribution. The `selector` keyword names the data field a
 record carries to pick an alternative (default `:kind`). At least two
 alternatives are required and their names must be unique.
 
@@ -200,7 +200,7 @@ params(d::Choose) = map(params, d.alternatives)
 
 @doc "
 
-Log probability density of the SELECTED alternative at `x`.
+Log probability density of the selected alternative at `x`.
 
 `Choose` is a data-selected disjunction, so scoring requires naming the active
 alternative through the `kind` keyword; there is no default. The selection walk
@@ -289,7 +289,7 @@ end
 
 @doc "
 
-Probability density of the SELECTED alternative at `x`.
+Probability density of the selected alternative at `x`.
 
 See also: [`logpdf`](@ref)
 "

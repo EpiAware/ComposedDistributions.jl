@@ -1,5 +1,5 @@
 # The `@events` macro: a syntax front-end that lowers an operator-diagram of
-# event names to an `EventSkeleton` (events.jl). It rewrites SYNTAX only. The
+# event names to an `EventSkeleton` (events.jl). It rewrites syntax only. The
 # body is walked as pure `Expr` and a constructor call is emitted, with every
 # structural type interpolated as its own object (so the emitted code is
 # hygienic and needs no name resolution in the caller's scope). No distribution
@@ -11,7 +11,7 @@
 #   |         branches into a one_of outcome (a `Resolve`/`Compete` placeholder
 #             the fill resolves).
 #   &         runs branches in `Parallel`.
-# A bare identifier is an event NAME and becomes a named hole (the fill key).
+# A bare identifier is an event name and becomes a named hole (the fill key).
 
 # Extract the single event-diagram expression from the macro body. A `begin ...
 # end` block must hold exactly one expression (line-number nodes aside); a bare
@@ -76,9 +76,9 @@ end
 
 @doc "
 
-Declare an event-tree TOPOLOGY as a readable operator diagram.
+Declare an event-tree topology as a readable operator diagram.
 
-`@events` lowers an operator diagram of event NAMES to an [`EventSkeleton`](@ref)
+`@events` lowers an operator diagram of event names to an [`EventSkeleton`](@ref)
 carrying structure only, no distributions. Fill the holes later with
 [`update`](@ref)`(skeleton; name = dist, ...)` to build the concrete composed
 tree, so one delay topology is reused across pathogens or settings.
@@ -93,7 +93,7 @@ The operators (parentheses group for precedence):
   stays one syntax.
 - `&` runs branches in [`Parallel`](@ref).
 
-A bare identifier is an event NAME and becomes a named hole, the key the fill
+A bare identifier is an event name and becomes a named hole, the key the fill
 substitutes. A nested one_of or parallel group inside a `→` chain is named
 deterministically from its branches (`_or_` for one_of, `_and_` for parallel,
 e.g. `death | discharge` names its enclosing step `death_or_discharge`); a fill

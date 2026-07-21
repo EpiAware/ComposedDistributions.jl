@@ -8,10 +8,10 @@
 A name-tagged leaf tied across the branches of a composed distribution.
 
 `Shared` wraps a leaf distribution with a `tag` (a `Symbol`) marking it as a
-shared parameter group. Two `Shared` leaves carrying the SAME tag are treated as
-the SAME free parameter by the prior/params interface: [`params_table`](@ref)
-lists the group's parameters ONCE (deduped by tag), a downstream
-`composed_parameters_model` samples the group ONCE and places the sampled
+shared parameter group. Two `Shared` leaves carrying the same tag are treated as
+the same free parameter by the prior/params interface: [`params_table`](@ref)
+lists the group's parameters once (deduped by tag), a downstream
+`composed_parameters_model` samples the group once and places the sampled
 values in every occurrence, and [`update`](@ref) updates all occurrences from one
 entry. The wrapper is transparent to scoring and sampling (every distribution
 method delegates to the wrapped leaf), so it only changes how parameters are
@@ -45,14 +45,15 @@ Shared(tag::Symbol, dist::UnivariateDistribution) = Shared{tag}(dist)
 Tag a leaf distribution as a shared parameter group named `name`.
 
 `shared(name, dist)` marks `dist` as a tied parameter so multiple occurrences of
-the same `name` in a composed distribution are handled ONCE by the prior/params
+the same `name` in a composed distribution are handled once by the prior/params
 interface (inventoried, sampled and updated as a single free parameter), with the
 shared value placed in every occurrence. The result is transparent to scoring and
 sampling.
 
-`shared(name, dist)` is the LEAF-LOCAL spelling of the tie, applied where the leaf
-is built. [`tie`](@ref)`(d, paths...; name)` is the TREE-LEVEL spelling of the
-SAME tie: it walks a composed `d` to the named leaves and wraps each in the exact
+`shared(name, dist)` is the *leaf-local* spelling of the tie, applied where the
+leaf is built. [`tie`](@ref)`(d, paths...; name)` is the *tree-level* spelling of
+the same tie: it walks a composed `d` to the named leaves and wraps each in the
+exact
 `shared(name, leaf)` artefact this produces. Use whichever is convenient; the
 tagged occurrences are one free parameter either way.
 
@@ -237,13 +238,13 @@ Tie leaves at named paths of a composed distribution into one shared group.
 `tie(d, paths...; name)` walks the composed distribution `d` to each leaf named
 by `paths` and wraps it in a [`Shared`](@ref) group tagged `name`, returning the
 rebuilt composed distribution. This is the tree-level, path-based spelling of
-[`shared`](@ref): `tie(d, p1, p2; name = :inc)` produces the EXACT same artefact
+[`shared`](@ref): `tie(d, p1, p2; name = :inc)` produces the exact same artefact
 as building `d` with `shared(:inc, leaf)` at each of those leaves, so every tag
 consumer ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), a
 downstream `composed_parameters_model`) inventories, samples and updates the
 tied leaves as a single free parameter.
 
-Each `path` takes the SAME forms [`event`](@ref) and [`update`](@ref) accept: a
+Each `path` takes the same forms [`event`](@ref) and [`update`](@ref) accept: a
 bare `Symbol` direct child, a dotted-path `Symbol` (`:\"sourced.inc\"`, as in
 [`params_table`](@ref)'s `edge` column), or a tuple of edge names from the root.
 Every path must resolve to a leaf (not a composer subtree), and the tied leaves

@@ -3,21 +3,21 @@
 # composer verb; see the [`Varying`](@ref) and [`instantiate`](@ref)
 # docstrings below.
 #
-# `Varying` is one of two DEFERRED LEAF types: a leaf that is not yet a concrete
+# `Varying` is one of two deferred leaf types: a leaf that is not yet a concrete
 # distribution but a map to one, delegating silently to a fallback until it is
 # resolved, and guarded by a `has_*` predicate. The two cases differ only in
 # what indexes the map and who fills the slot:
 #
-#   - `Varying` (here) maps an OBSERVED covariate (time, stratum) read from a
+#   - `Varying` (here) maps an *observed* covariate (time, stratum) read from a
 #     `Context`; resolved by `instantiate(tree, ctx)` looking the covariate up.
-#   - `Uncertain` (`Uncertain.jl`) maps a LATENT parameter draw with a prior;
+#   - `Uncertain` (`Uncertain.jl`) maps a *latent* parameter draw with a prior;
 #     resolved by `rand` (the marginal) or collapsed by `update`.
 #
-# They share ONE resolution machinery: `instantiate` rebuilds through the same
+# They share one resolution machinery: `instantiate` rebuilds through the same
 # `_node_children` / `_rebuild` walk that `update`'s value collapse and
 # `structural_edits.jl`'s path edits use, rather than hand-rolling its own tree
 # walk.
-# A leaf can be BOTH (a time-varying delay whose per-level parameter is itself
+# A leaf can be both (a time-varying delay whose per-level parameter is itself
 # `uncertain`): `instantiate` resolves the covariate and yields an `uncertain`
 # leaf the estimation layer then reads as latent.
 
@@ -86,8 +86,8 @@ _has_covariate(ctx::Context, name::Symbol) = haskey(ctx.covariates, name)
 Add or override covariates on a [`Context`](@ref), returning a new context.
 
 `with_covariates(ctx; kwargs...)` is how the sampling layer of the *uncertain
-distributions* work threads its LATENT index into the same covariate channel an
-OBSERVED covariate uses: starting from a per-record observed context (calendar
+distributions* work threads its *latent* index into the same covariate channel
+an *observed* covariate uses: starting from a per-record observed context (calendar
 `time`,
 `region`), it adds the parameter values it has sampled
 (`with_covariates(ctx; inc_shape = θ)`), and a [`Varying`](@ref) leaf keyed on
@@ -127,7 +127,7 @@ A context-indexed leaf: a delay whose distribution varies with a covariate.
 `Varying` holds a map `f` from a covariate value to a `UnivariateDistribution`
 (e.g. `t -> Gamma(shape(t), scale)`), the `covariate` name it reads from a
 [`Context`](@ref) (default `:time`), and a `reference` distribution used whenever
-the leaf is queried WITHOUT a context. Because `Varying <: UnivariateDistribution`
+the leaf is queried *without* a context. Because `Varying <: UnivariateDistribution`
 it drops into [`Sequential`](@ref) / [`Parallel`](@ref) / [`compose`](@ref) as an
 ordinary leaf, and every `Distributions` method (`logpdf`, `cdf`, `mean`, `rand`,
 `params`, ...) delegates to the `reference`, so a tree with varying leaves still
@@ -140,12 +140,12 @@ convolve the concrete result.
 
 !!! warning
     Because the leaf delegates to `reference`, scoring or sampling a tree that
-    still holds a `Varying` leaf does NOT error — it silently uses the reference
+    still holds a `Varying` leaf does *not* error — it silently uses the reference
     (a wrong answer against real per-record covariates). Always
     [`instantiate`](@ref) first, and guard a fitting loop with
     [`has_varying`](@ref).
 
-The varying map `f` is FIXED STRUCTURE (like a truncation bound or a censoring
+The varying map `f` is fixed structure (like a truncation bound or a censoring
 window), so the introspection interface ([`params_table`](@ref), [`update`](@ref))
 treats the `reference`'s parameters as the free parameters and peels/rewraps
 through the wrapper; the coefficients of `f` are not (yet) inventoried (see the
@@ -211,7 +211,7 @@ end
 
 # --- Distributions delegation (a Varying leaf behaves as its reference) -----
 #
-# Without a context a Varying leaf IS its reference distribution, so every
+# Without a context a Varying leaf *is* its reference distribution, so every
 # scalar Distributions query delegates. This keeps a tree with varying leaves
 # fully usable (score, sample, moments) at the reference, and is what makes the
 # `instantiate` seam opt-in rather than mandatory.
@@ -254,12 +254,12 @@ end
 
 Resolve a composed tree (or a leaf) against a [`Context`](@ref).
 
-`instantiate(d, ctx)` walks a composed distribution and returns the SAME tree
+`instantiate(d, ctx)` walks a composed distribution and returns the same tree
 with every [`Varying`](@ref) leaf replaced by its distribution at the context's
 covariate; a fixed leaf is returned unchanged (the identity default), so a
 stationary tree is untouched and passing `nothing` is always a no-op. The result
 is a fully concrete composer that scores, samples and convolves exactly as a
-hand-built stationary tree would — non-stationarity is resolved HERE, before
+hand-built stationary tree would — non-stationarity is resolved here, before
 those steps, so the convolution / renewal layer receives a concrete kernel per
 context.
 
@@ -297,9 +297,9 @@ function instantiate(d::Union{Sequential, Parallel, Resolve, Compete},
     return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
 end
 
-# A `Choose` selects an alternative by an OBSERVED data field (its `selector`).
+# A `Choose` selects an alternative by an observed data field (its `selector`).
 # That is the categorical instance of covariate indexing, so it joins the same
-# seam: if the context carries the selector covariate, `instantiate` SELECTS that
+# seam: if the context carries the selector covariate, `instantiate` selects that
 # alternative and resolves it (collapsing the disjunction to the chosen branch),
 # unifying `Choose`'s `kind`-keyword dispatch with the continuous covariate case.
 # Without the selector in the context there is no selection yet, so every
@@ -326,7 +326,7 @@ Whether a composed distribution still contains an un-resolved [`Varying`](@ref) 
 
 A `Varying` leaf delegates every `Distributions` method to its `reference` until
 the tree is resolved with [`instantiate`](@ref)`(tree, ctx)`, so scoring or
-sampling a raw tree that still holds a `Varying` leaf SILENTLY uses the reference
+sampling a raw tree that still holds a `Varying` leaf silently uses the reference
 (e.g. the `t = 0` delay) instead of the per-record value — a silent wrong answer,
 not an error. Guard a scoring/sampling call in a fitting loop with this predicate:
 

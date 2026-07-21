@@ -2,9 +2,9 @@
 # event_times / event_increments: per-step increments <-> absolute positions
 # ============================================================================
 #
-# A draw from a composed tree (`rand`) is a record of per-step INCREMENTS,
+# A draw from a composed tree (`rand`) is a record of per-step increments,
 # keyed by the per-value leaf names (`_value_names`, the same keys `logpdf`
-# consumes). `event_times` converts such a record into ABSOLUTE positions
+# consumes). `event_times` converts such a record into absolute positions
 # measured from the tree's origin; `event_increments` is the exact inverse.
 #
 # The layout is the one the value-name walk already derives, so a caller never

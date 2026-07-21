@@ -107,7 +107,7 @@ end
 
 Drop a branch from a composed distribution (a topology edit).
 
-`prune(d, path)` removes the node addressed by `path` from its parent, CHANGING
+`prune(d, path)` removes the node addressed by `path` from its parent, changing
 the tree shape. A [`Resolve`](@ref) arm is removed and the remaining branch
 probabilities are renormalised to sum to one; a [`Choose`](@ref) alternative or
 a [`Sequential`](@ref)/[`Parallel`](@ref) step is removed. The parent must keep
@@ -223,7 +223,7 @@ edit).
 [`Sequential`](@ref) chain of `before`, the original node, then `after` (any of
 which may be omitted). This inserts a change-point step around the addressed
 node without rebuilding the rest of the tree, e.g. an extra delay before a
-branch or a follow-up step after it, CHANGING the tree shape. The result is a
+branch or a follow-up step after it, changing the tree shape. The result is a
 valid composed distribution that scores and `rand`s. `path` accepts the same
 forms as [`event`](@ref): varargs `Symbol`s, a dotted `Symbol`, or a tuple of
 edge names.
