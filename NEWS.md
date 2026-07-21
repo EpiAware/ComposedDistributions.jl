@@ -29,6 +29,13 @@
   clash #233 hit with `as_turing` when two packages both export a same-named
   generic function. Reach it as `ComposedDistributions.update` or with
   `using ComposedDistributions: update`.
+- **fix:** the `ComposedDistributionsMooncakeExt` `xlogy`/`xlog1py` import now
+  uses `Mooncake.@from_chainrules` (both AD directions) rather than
+  `@from_rrule` (reverse only), so Mooncake forward mode no longer derives a
+  silently wrong (zero) gradient at a Gamma-family shape landing exactly on
+  `1.0` (#214). A new `test/ad/scenarios.jl` scenario exercises `shape == 1.0`
+  under Mooncake forward and reverse against a ForwardDiff reference; the import
+  stays in place pending an upstream Mooncake rule (see #99).
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec
