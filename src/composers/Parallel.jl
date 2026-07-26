@@ -185,6 +185,20 @@ end
 
 @doc "
 
+Log probability density of a branch-value vector admitting `missing` branches:
+`missing` in a slot means that branch was not observed (the ecosystem-wide
+convention), scoring the observed branches and integrating out the rest (each
+unobserved branch's own marginal contributes zero log density).
+
+See also: [`Parallel`](@ref)
+"
+function logpdf(d::Parallel, x::AbstractVector{>:Missing})
+    length(x) == length(d) || _throw_logpdf_dimmismatch(d, x, "branch")
+    return _composite_logpdf(d.components, x)
+end
+
+@doc "
+
 Probability density of a branch-value vector.
 
 See also: [`logpdf`](@ref)

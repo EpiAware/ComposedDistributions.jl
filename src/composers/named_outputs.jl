@@ -137,14 +137,21 @@ end
 # `logpdf` scores the vector-valued representation; a labelled `NamedTuple` draw
 # (as `rand(d)` returns) is accepted and converted to the scored vector by name
 # first, so a self-labelling draw round-trips straight back through
-# `logpdf(d, rand(d))`. Field order does not matter; the names do.
+# `logpdf(d, rand(d))`. Field order does not matter; the names do. `missing` in
+# a field means that value was not observed (the ecosystem-wide convention,
+# matching the outcome-node record, see `Resolve`/`Compete`'s `logpdf(::,
+# ::NamedTuple)`); the vector this builds is always `Missing`-admitting, even
+# for an all-observed draw, so one `logpdf` method is selected regardless of
+# which fields happen to be present (mirrors `_row_event_vector_by_name`).
 
 function logpdf(d::Union{Sequential, Parallel}, x::NamedTuple)
     return logpdf(d, _named_value_vector(d, x))
 end
 
 # The per-value vector of a composer from a labelled draw, matched to the
-# `_value_names(d)` layout by name.
+# `_value_names(d)` layout by name. `Missing`-admitting: a `missing` field value
+# passes through unchanged, scored by the composer's `Missing`-admitting
+# `logpdf`.
 function _named_value_vector(d::Union{Sequential, Parallel}, x::NamedTuple)
     vnames = _value_names(d)
     for k in keys(x)
@@ -152,12 +159,13 @@ function _named_value_vector(d::Union{Sequential, Parallel}, x::NamedTuple)
             "draw field $(repr(k)) is not a value of this composer; expected " *
             "$(collect(vnames)) (reordering is allowed; names are not)"))
     end
-    out = Vector{Float64}(undef, length(vnames))
+    out = Vector{Union{Missing, Float64}}(undef, length(vnames))
     for (i, name) in enumerate(vnames)
         haskey(x, name) || throw(ArgumentError(
             "draw is missing required value $(repr(name)); expected " *
             "$(collect(vnames))"))
-        out[i] = Float64(x[name])
+        v = x[name]
+        out[i] = v === missing ? missing : Float64(v)
     end
     return out
 end

@@ -39,7 +39,7 @@ Prefer the `NamedTuple` form in new code.
 ## How do I get the total-delay distribution of a chain?
 
 A [`Sequential`](@ref) chain models each step separately; to collapse it to the single distribution of its origin-to-final gap, use [`observed_distribution`](@ref), which convolves the steps into one delay.
-For two standalone delays that are not part of a tree, [`convolved`](@ref) gives their sum `X + Y` directly.
+For two standalone delays that are not part of a tree, ConvolvedDistributions.jl's `convolved` gives their sum `X + Y` directly.
 See [Delay chains and the linear chain trick](@ref linear-chain) for a worked example.
 
 ## How do I fix a parameter across branches?
@@ -56,7 +56,7 @@ When scoring a whole record, check that every value sits in its own leaf's suppo
 
 ## How do I fit a composed distribution to data?
 
-Mark the parameters to estimate by building a leaf with [`uncertain`](@ref), or promote a leaf/subtree/whole tree already in place with [`uncertain`](@ref)`(tree, ...)` / `uncertain(tree)`, then package the tree and data into a log-density with [`as_logdensity`](@ref), or wrap it as a `DynamicPPL` model with [`as_turing`](@ref) for direct sampling with Turing.jl.
+Mark the parameters to estimate by building a leaf with [`uncertain`](@ref), or promote a leaf/subtree/whole tree already in place with [`uncertain`](@ref)`(tree, ...)` / `uncertain(tree)`, then hand the tree and data to DistributionsInference.jl's `as_logdensity` for a `LogDensityProblems`-conformant posterior, or its `as_turing` to wrap it as a `DynamicPPL` model for direct sampling with Turing.jl.
 See [Fitting a composed distribution](@ref inference) for the full pipeline.
 
 ## Is a composed distribution really a `Distribution`?

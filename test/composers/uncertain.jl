@@ -185,6 +185,7 @@ end
 end
 
 @testitem "update collapses an uncertain leaf to its concrete template" begin
+    using ComposedDistributions: update
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
@@ -222,6 +223,7 @@ end
 end
 
 @testitem "update node-replace makes a leaf uncertain" begin
+    using ComposedDistributions: update
     using Distributions, Random
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -295,6 +297,7 @@ end
 end
 
 @testitem "observed_distribution rejects an uncertain chain" begin
+    using ComposedDistributions: update
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
@@ -309,6 +312,7 @@ end
 end
 
 @testitem "uncertain composes across the verb surface" begin
+    using ComposedDistributions: update
     using Distributions, Random
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
@@ -353,6 +357,7 @@ end
 end
 
 @testitem "has_uncertain: flags a tree across composer shapes" begin
+    using ComposedDistributions: update
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
@@ -387,6 +392,7 @@ end
 end
 
 @testitem "update introduces uncertainty on a plain leaf (targeted)" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -409,6 +415,7 @@ end
 end
 
 @testitem "update merges, extends and collapses uncertain specs" begin
+    using ComposedDistributions: update
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
@@ -431,6 +438,7 @@ end
 end
 
 @testitem "promote: update(tree, param_priors(tree)) specs every parameter" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -449,6 +457,7 @@ end
 end
 
 @testitem "promote keeps an existing spec and defaults the rest" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
@@ -462,6 +471,7 @@ end
 end
 
 @testitem "promote through a shared tag ties the estimated parameter" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension, _shared_tag
 
@@ -486,6 +496,7 @@ end
 end
 
 @testitem "update merge rejects an unknown or ill-typed parameter" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),))
@@ -525,6 +536,7 @@ end
 end
 
 @testitem "uncertain(tree, ...): the promotion verb" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),

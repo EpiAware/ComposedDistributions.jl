@@ -1,5 +1,122 @@
 ## Unreleased
 
+- **feature:** `reserved_record_fields()` publishes the reserved per-record
+  field names (`weight`/`count`/`obs_time`/`obs_window`/`branch_probs`/
+  `branch_prob`) that a scoring row carries for their own meaning rather than as
+  events, documented with each field's owner, type, default and when it is read
+  (#262). A row that misspells a reserved field (e.g. `obs_tim`) now raises a
+  clear error naming the reserved field instead of a bare "not an event". No
+  behaviour change for valid records; the covariate-context merge-overwrite
+  guard the issue also raises is a separate design decision left open.
+- **chore:** renamed the two `public`-declared centred-pooling internals from
+  `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
+  `pool_centred_logprior` (org naming convention: a leading underscore marks
+  internal-only, and #212 had declared these `public`). `_centred_pool_rows`
+  and `_pool_centred_logprior` remain as `public` transitional aliases for a
+  caller already qualifying the old names (DistributionsInference.jl's
+  fit-protocol extension); the aliases are removed once that extension moves
+  onto the renamed functions.
+- **feature:** `event_times` converts a drawn record of per-step increments
+  into absolute positions measured from the composed tree's origin, and
+  `event_increments` inverts it back to the per-step representation the scorer
+  consumes (#269). Chain steps accumulate, parallel branches each anchor on the
+  shared origin, and a resolved/racing node stamps the outcome that fired. Both
+  take a single record or a `Vector` of records (batch) and keep the transform
+  in unitless distance from the origin, reusing the value-name layout the
+  package already derives so a caller never reconstructs the topology by hand.
+- **fix:** scoring a named record with an unobserved (`missing`) step or
+  branch on a `Sequential`/`Parallel` composer no longer throws (#271). The
+  named-record path previously built a `Vector{Float64}` and called `Float64`
+  on every field, so a record such as `(first = 3.2, second = missing)`
+  raised `MethodError: no method matching Float64(::Missing)`. `Sequential`
+  and `Parallel` now carry a `Missing`-admitting `logpdf` that scores the
+  observed values and integrates out the rest (each unobserved leaf's own
+  marginal contributes zero log density); the named-record builder always
+  produces a `Missing`-admitting vector, even for an all-observed draw, so one
+  `logpdf` method is selected regardless of which fields happen to be
+  present. `missing` in a slot means the value was not observed, the same
+  convention already used by `Resolve`/`Compete`'s event records.
+- **fix:** a `Resolve` node with a `NoEvent` branch now reports a well-defined
+  defective marginal survival instead of throwing (#254). `cdf`/`ccdf`/`mean`
+  previously errored for any node holding a no-event branch, so no consumer
+  reading a component's survival could see through it. `cdf` now sums only
+  the occurring branches, rising to `occurrence_probability` rather than one;
+  `ccdf` (the generic `1 - cdf` fallback) comes along for free and flattens
+  at the no-event mass instead of decaying to zero; `mean` reports the
+  conditional-on-occurrence mean of the observed branches (there is no
+  unconditional mean — the marginal has an atom at "never", no finite time),
+  and throws when `occurrence_probability` is zero (no branch can occur, so
+  no conditional mean exists) rather than silently returning `NaN` from a
+  `0/0` division. `logpdf` and `as_mixture` are unchanged and still reject a
+  no-event node (there is no proper `MixtureModel` over a marker with no
+  density); a non-terminal node (a composer-valued outcome) still rejects
+  `cdf`/`ccdf`/`mean`, no-event branch or not.
+- **fix:** a racing-hazard (`Compete`) node's `probs`/`occurrence_probability`
+  no longer raise a `MethodError` when a cause is itself a composite/
+  convolved distribution with no `quantile` method (#259). The shared
+  quadrature window's `_hazard_quad_window` called `quantile(cause, 0.9999)`
+  directly on every cause; it now falls back to a moment-based
+  (`mean + 10*std`) window when a cause's `quantile` is unavailable or
+  non-finite, and ignores a cause with no usable window (neither a finite
+  quantile nor finite moments) rather than letting it poison the shared
+  integral. The support floor/ceiling feeding the window (previously the
+  public `minimum`/`maximum(::Compete)`, which themselves throw if any
+  cause's own `minimum`/`maximum` throws) are now built the same
+  fallback-robust way. This fix is scoped to the crash only: the shared
+  64-node quadrature can still return a **badly wrong** (not merely
+  imprecise) split when the resolved window is wide — for a genuinely
+  heavy-tailed or high-variance cause the 64-node answer can be off by
+  100% (including the wrong cause winning), while still looking plausible
+  (finite, in `[0, 1]`, summing to `<= 1`); see #294, filed from this PR's
+  review, for the tracked accuracy gap and worked examples.
+- **docs:** swept ALL-CAPS emphasis from `src/` docstrings and comments,
+  following the org convention (Censored#513 / kit#57): routine emphasis is
+  now lowercase or italicised (`*not*`, `*derived*`, ...), reserving capitals
+  for a genuine hard-constraint marker (`MUST NOT`, `CANNOT`) or a real
+  acronym/type name (`AD`, `IO`, `PPL`, `VS`, ...). Typography only; no
+  docstring's documented behaviour or constraint changed (#204).
+- **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
+  extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
+  `update(template, chain)` surface (#221). DistributionsInference.jl already
+  hosts a generic, tested replacement (`readback`/`readback_draws`, built on
+  its own fit-protocol extension) that round-trips a composed tree — pooled,
+  shared-tag, or Dirichlet-`branch_probs` — through a real chain with no
+  ComposedDistributions-specific code; this package carrying its own 388-line
+  parallel tree-walk duplicated that machinery rather than adding anything.
+  Drops the `FlexiChains` and `DynamicPPL` weakdeps entirely (neither has any
+  other user left in this package). Use `DistributionsInference.readback`/
+  `readback_draws` instead; see the [fitting guide](@ref inference).
+- **breaking:** `update` is now `public`, not `export`ed (#221). Several
+  ecosystem packages (and plenty outside it) have their own `update`-shaped
+  verb; exporting a name this generic risked the same ambiguous-binding
+  clash #233 hit with `as_turing` when two packages both export a same-named
+  generic function. Reach it as `ComposedDistributions.update` or with
+  `using ComposedDistributions: update`.
+- **fix:** the `ComposedDistributionsMooncakeExt` `xlogy`/`xlog1py` import now
+  uses `Mooncake.@from_chainrules` (both AD directions) rather than
+  `@from_rrule` (reverse only), so Mooncake forward mode no longer derives a
+  silently wrong (zero) gradient at a Gamma-family shape landing exactly on
+  `1.0` (#214). A new `test/ad/scenarios.jl` scenario exercises `shape == 1.0`
+  under Mooncake forward and reverse against a ForwardDiff reference; the import
+  stays in place pending an upstream Mooncake rule (see #99).
+- **fix:** sampling a tree that nests a non-terminal one_of (a `Resolve`/
+  `Compete` whose outcomes are subtrees) inside a `Sequential`/`Parallel` now
+  raises a clear, actionable `ArgumentError` at the flat value-path draw,
+  naming the limitation and the two ways out, instead of failing deep in the
+  mixture collapse with a cryptic "no scalar `as_mixture`" error (#200).
+  Composition and the structural verbs (`update`/`prune`/`tie`/`splice`) are
+  unchanged — they still work on such a nested node.
+- **fix:** `update(tree, table)` no longer throws when a tree holds both an
+  uncertain leaf and an unrelated fixed-probability `Resolve` (#219). One
+  distribution-valued row used to flip the whole update into merge mode, and
+  merge mode then demanded a `Dirichlet` for every `Resolve`'s `branch_probs`,
+  so `update(tree, params_table(tree))` — the round-trip shown in `update`'s
+  own docstring — failed. A concrete per-outcome `NamedTuple` `branch_probs`
+  in merge mode now pins the fixed probabilities (as a `Real` pins a leaf
+  parameter), so the round-trip works. The pin path also now enforces
+  sum-to-one, so a hand-supplied set that does not sum to one (e.g.
+  `(0.9, 0.9)`) is rejected rather than silently scoring an unnormalised
+  mixture; a stick-reconstructed simplex (the readback path) still passes.
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec
@@ -22,6 +139,42 @@
   note) now explains the parked trigger and links #41, so a reader seeing
   "not enough comparable revisions to compute ratios yet" understands why
   rather than concluding the page is broken.
+- **breaking:** removed the `ComposedDistributionsLogDensityProblemsExt`
+  weakdep extension and the `as_turing`/`ComposedDistributionsDynamicPPLExt`
+  surface (#220, #233). Both duplicated machinery DistributionsInference.jl
+  already provides generically over any fit-protocol object (`as_logdensity`
+  implementing `LogDensityProblems` directly; `as_turing` building the
+  DynamicPPL model), via its `ComposedDistributions` fit-protocol extension —
+  `export as_turing` also collided with DistributionsInference's own exported
+  `as_turing` when both packages were loaded together. Use
+  `DistributionsInference.as_logdensity`/`as_turing` instead; this package's
+  own Turing-free `ComposedLogDensity`/`as_logdensity`/`logdensity` core is
+  unchanged (still `public`, not exported) and is what DistributionsInference
+  builds on.
+
+- **breaking:** stopped re-exporting ConvolvedDistributions' surface
+  (`convolved`, `product`/`Product`, `discretise_pmf`, `DelayPMF`,
+  `AnalyticalSolver`, `NumericSolver`, `GaussLegendre`, `AbstractSolverMethod`,
+  `integrate`, `gl_integrate`; #228) — a caller now reaches these with its own
+  `using ConvolvedDistributions`. `convolve_series`/`difference`/`Convolved`/
+  `Difference` stay reachable: this package extends/constructs them itself
+  for composed tree types.
+
+- **breaking:** `convolve_series(chain, series)` (and the `Resolve`/`Compete`
+  marginal form) no longer discretises a continuous observed delay for you
+  with an implicit interval-censored-secondary scheme; it collapses the tree
+  and delegates straight to `ConvolvedDistributions.convolve_series`, which
+  throws for a continuous delay and asks you to discretise first (#226) — the
+  same contract a bare distribution already has under ConvolvedDistributions
+  0.2. Discretise explicitly with `ConvolvedDistributions.discretise_pmf(delay,
+  maxlag)` (or a CensoredDistributions.jl double-interval-censored PMF for a
+  day-binned primary) and pass the result to `convolve_series(pmf, series)`.
+  The `interval` keyword is dropped from the chain-argument methods to match.
+  A replacement composed-chain convenience is tracked as a
+  CensoredDistributions.jl extension
+  (EpiAware/CensoredDistributions.jl#886) rather than carried here, since the
+  discretisation scheme is a censoring choice.
+
 - **feat:** `register_leaf_wrapper!` is a new public hook so a leaf-wrapper
   package extension (ModifiedDistributions' `Affine`/`Weighted`/`Transformed`/
   `Modified`) can tell the generated flat-vector codec (`flat_dimension`,

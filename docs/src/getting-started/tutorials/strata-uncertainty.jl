@@ -16,6 +16,7 @@
 # [time-, strata-, and covariate-varying reference](@ref varying-distributions).
 
 using ComposedDistributions
+using ComposedDistributions: update
 using Distributions
 using Random
 

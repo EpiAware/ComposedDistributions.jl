@@ -36,12 +36,15 @@ whose `iszero(x)` branch returns a constant, giving `∂/∂x = 0` at `x == 0`
 instead of the correct `log(y)`. This surfaces through
 `Distributions.gammalogpdf`, which computes `xlogy(shape - 1, x / scale)`,
 so any Gamma log-density differentiated at `shape == 1` gets a wrong
-shape-gradient under Mooncake reverse — including the shared-hyperparameter
+shape-gradient under Mooncake — including the shared-hyperparameter
 pooled reconstruction this package's non-centred `pool` builds (a
 population-level draw can land a stratum's reconstructed shape on exactly
 `1.0`). `LogExpFunctionsChainRulesCoreExt` already ships correct
-`ChainRulesCore.rrule`s for both functions, so `@from_rrule` imports them
-directly rather than re-deriving the maths.
+`ChainRulesCore.rrule`s AND `frule`s for both functions, so
+`@from_chainrules` imports them directly (both AD directions) rather than
+re-deriving the maths. Importing via `@from_chainrules` rather than
+`@from_rrule` also closes the forward-mode gap: `@from_rrule` alone leaves
+Mooncake forward deriving the same wrong `0` gradient at `shape == 1` (#214).
 
 This is intentional, narrowly-scoped type piracy on functions this package
 does not own, matching the workflow Mooncake's own `@from_rrule`/
@@ -73,9 +76,9 @@ Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_logpdf_dimmismatch), Any, Any, Any}
 
-Mooncake.@from_rrule Mooncake.DefaultCtx Tuple{
+Mooncake.@from_chainrules Mooncake.DefaultCtx Tuple{
     typeof(xlogy), Base.IEEEFloat, Base.IEEEFloat}
-Mooncake.@from_rrule Mooncake.DefaultCtx Tuple{
+Mooncake.@from_chainrules Mooncake.DefaultCtx Tuple{
     typeof(xlog1py), Base.IEEEFloat, Base.IEEEFloat}
 
 end # module

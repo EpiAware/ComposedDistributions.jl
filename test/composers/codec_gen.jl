@@ -8,6 +8,7 @@
 # generation-time layout walk in `codec_gen.jl`.
 
 @testitem "codec: property round-trip -- plain fixed tree (nothing estimated)" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
@@ -21,6 +22,7 @@
 end
 
 @testitem "codec: property round-trip -- a censored leaf's estimated parameter" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
@@ -47,6 +49,7 @@ end
 end
 
 @testitem "codec: property round-trip -- shared tags at different depths" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
@@ -79,6 +82,7 @@ end
 end
 
 @testitem "codec: property round-trip -- non-centred and centred pools together" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
@@ -115,6 +119,7 @@ end
 end
 
 @testitem "codec: property round-trip -- Resolve stick-breaking nested in a tree" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
@@ -143,6 +148,7 @@ end
 end
 
 @testitem "codec: property round-trip -- Choose alternatives with a shared tag, and Compete" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 

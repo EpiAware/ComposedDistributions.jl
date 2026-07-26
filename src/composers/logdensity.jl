@@ -1,10 +1,12 @@
 # PPL-neutral assembled `ComposedLogDensity` spec, over the generated flat
 # <-> nested codec (`unflatten`/`flatten`/`flat_dimension`/`reconstruct`, now
 # in `codec_gen.jl`). Turing-free: no DynamicPPL/LogDensityProblems dependency
-# here, only `params_table`, the uncertain specs and `update`. A thin
-# `LogDensityProblems` weakdep extension (deferred; see the package tracker)
-# wraps `ComposedLogDensity` for AdvancedHMC/DynamicHMC/Pathfinder-style
-# samplers on top of this.
+# here, only `params_table`, the uncertain specs and `update`.
+# DistributionsInference.jl's `FitLogDensity`/`as_logdensity` (built on this
+# core via the fit protocol — `parameter_rows`/`reconstruct`) implements the
+# `LogDensityProblems` interface directly and hosts the DynamicPPL/`as_turing`
+# wrapper; this package no longer carries its own weakdep glue for either
+# (#220, #233).
 
 # The estimated rows of a params table: those whose `prior` column carries an
 # uncertain spec. Under uncertain-first these are the free (estimated)
@@ -14,7 +16,7 @@
 # at model-build time, not per-gradient) and by `_spec_priors` below.
 _estimated_rows(table) = findall(!isnothing, Tables.getcolumn(table, :prior))
 
-# The flat layout: a vector of `(path, param)` keys, one per ESTIMATED row, in
+# The flat layout: a vector of `(path, param)` keys, one per estimated row, in
 # table order. `path` is the `_split_edge` tuple of the row's edge; `param` the
 # leaf key. This list is the bijection between flat index and estimated
 # parameter, used only at `as_turing` model-build time (not per gradient).
@@ -42,17 +44,19 @@ _default_loglik(d, data) = sum(record -> logpdf(d, record), data)
 A PPL-neutral log-density over a composed distribution's flat parameters.
 
 `ComposedLogDensity` carries everything needed to evaluate the (unnormalised)
-log-posterior of a composed distribution over its ESTIMATED flat parameter
+log-posterior of a composed distribution over its estimated flat parameter
 vector, with no DynamicPPL/Turing dependency: the template `dist`, the
 per-parameter `priors` (a nested `NamedTuple`; the uncertain specs read off the
 object by default), the observed `data`, and a `loglik` reducer scoring `data`
 against the reconstructed distribution. Build it with [`as_logdensity`](@ref);
 evaluate it on a flat vector with [`logdensity`](@ref).
 
-It is the spec a `LogDensityProblems` weakdep extension wraps as a standard
-problem (sampleable by AdvancedHMC / DynamicHMC / Pathfinder); the flat layout
-is [`params_table`](@ref)`(dist)`'s row order restricted to the estimated
-(spec'd) parameters throughout.
+For a `LogDensityProblems`-conformant problem (sampleable by AdvancedHMC /
+DynamicHMC / Pathfinder) or a `DynamicPPL`/Turing model, use
+DistributionsInference.jl's own `as_logdensity`/`as_turing` instead — they are
+built on this same core (via the fit protocol) and need no glue extension in
+this package. The flat layout here is [`params_table`](@ref)`(dist)`'s row
+order restricted to the estimated (spec'd) parameters throughout.
 
 # Fields
 - `dist`: the template composed distribution (the structure to reconstruct).
@@ -83,7 +87,7 @@ end
 function ComposedLogDensity(
         dist::AbstractComposedDistribution, priors, data, loglik)
     return ComposedLogDensity(dist, priors, data, loglik,
-        flatten(dist, priors), _centred_pool_rows(dist))
+        flatten(dist, priors), centred_pool_rows(dist))
 end
 
 # The nested prior `NamedTuple` of a tree's uncertain specs, keyed like the
@@ -212,13 +216,13 @@ function logdensity(prob::ComposedLogDensity, x::AbstractVector)
     # current hyperparameters, so it is scored below, not here.
     lp = _fixed_row_logprior(fp, x)
     nt = unflatten(prob.dist, x)
-    lp += _pool_centred_logprior(prob.centred_pools, nt)
+    lp += pool_centred_logprior(prob.centred_pools, nt)
     d = update(prob.dist, nt)
     return lp + prob.loglik(d, prob.data)
 end
 
 # Sum the fixed per-row prior log-densities, skipping centred-pool marker rows
-# (scored against the population in `_pool_centred_logprior`).
+# (scored against the population in `pool_centred_logprior`).
 function _fixed_row_logprior(fp, x)
     isempty(x) && return 0.0
     return sum(eachindex(x)) do i
@@ -230,7 +234,7 @@ end
 
 Map an unconstrained vector to the constrained scale and its log-Jacobian.
 
-`to_constrained(prob, z)` returns `(x, logjac)`: the constrained ESTIMATED flat
+`to_constrained(prob, z)` returns `(x, logjac)`: the constrained estimated flat
 parameters `x` corresponding to the unconstrained vector `z`, and the
 log-determinant Jacobian of that (inverse) transform. The transform is built
 per row from [`ComposedLogDensity`](@ref)'s stored `flat_priors` (each row's

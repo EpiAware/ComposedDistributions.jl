@@ -1,14 +1,16 @@
-# Tests for the PPL-neutral LogDensityProblems core codec: the flat <-> nested
-# `NamedTuple` bijection and the assembled `ComposedLogDensity`. No
-# DynamicPPL/Turing/LogDensityProblems dependency here — the weakdep extension
-# that wraps `ComposedLogDensity` as a standard `LogDensityProblems` problem is
-# deferred (issue #13). Uncertain-first: the flat vector spans EXACTLY the
-# spec'd (estimated) parameters, so a fixed leaf contributes nothing and a tree
-# with no uncertain leaves estimates nothing. The load-bearing checks are the
-# codec round-trip over the estimated subset and that `logdensity` sums the
-# specs' and data log-densities correctly.
+# Tests for the PPL-neutral core codec: the flat <-> nested `NamedTuple`
+# bijection and the assembled `ComposedLogDensity`. No DynamicPPL/Turing/
+# LogDensityProblems dependency here or anywhere in this package (#220, #233)
+# — DistributionsInference.jl wraps this core as a standard
+# `LogDensityProblems` problem / DynamicPPL model generically, via the fit
+# protocol. Uncertain-first: the flat vector spans exactly the spec'd
+# (estimated) parameters, so a fixed leaf contributes nothing and a tree with
+# no uncertain leaves estimates nothing. The load-bearing checks are the codec
+# round-trip over the estimated subset and that `logdensity` sums the specs'
+# and data log-densities correctly.
 
 @testitem "codec: estimated flatten/unflatten round-trip" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension
 
@@ -38,6 +40,7 @@
 end
 
 @testitem "codec: a fully fixed tree estimates nothing" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension,
                                  as_logdensity, logdensity
@@ -60,6 +63,7 @@ end
 end
 
 @testitem "codec: shared spec round-trip" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension
 
@@ -115,6 +119,7 @@ end
 end
 
 @testitem "logdensity: sum of specs + data likelihood" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten, as_logdensity, logdensity,
                                  _spec_priors
@@ -188,6 +193,7 @@ end
 end
 
 @testitem "update: flat vector shorthand equals unflatten then update" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten
 
@@ -208,6 +214,7 @@ end
 end
 
 @testitem "update: flat vector dimension mismatch throws like unflatten" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten
 
@@ -221,6 +228,7 @@ end
 end
 
 @testitem "update: flat vector accepts duck-typed containers" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: unflatten
 

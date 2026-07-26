@@ -14,10 +14,11 @@ with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
 `rand` draws the marginal, and [`update`](@ref) collapses an uncertain leaf to
 its concrete template.
 
-Hard-deps and re-exports `ConvolvedDistributions` (a chain collapses to a
-convolved total via [`observed_distribution`](@ref)), so its convolution and
-quadrature surface — [`convolved`](@ref), `integrate`/`gl_integrate`
-and the solver-method types — is reachable through this package alone. No
+Hard-deps `ConvolvedDistributions` (a chain collapses to a convolved total via
+[`observed_distribution`](@ref)) and extends its `convolve_series`/`difference`
+generics for composed tree types; its own convolution/quadrature surface
+(`convolved`, `integrate`/`gl_integrate`, the solver-method types) is reached
+with a separate `using ConvolvedDistributions`, not re-exported here. No
 censoring: this is the generic composition layer.
 
 # Examples
@@ -47,15 +48,15 @@ using LogExpFunctions: log1mexp
 
 import Tables
 
-# The convolution + quadrature substrate. Re-exported below so downstream
-# packages sit on ComposedDistributions alone. Every name is imported explicitly
-# (the exported surface plus the public-but-unexported quadrature helpers).
+# The convolution + quadrature substrate CD's own interop methods build on
+# (see composers/convolved_interop.jl and hazard_one_of.jl) — not re-exported
+# (#228): a caller reaches ConvolvedDistributions' own surface (`convolved`,
+# `product`, `DelayPMF`, the solver types, ...) with its own
+# `using ConvolvedDistributions`. Only the names CD extends or constructs
+# internally are imported here.
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
-                              convolve_series, discretise_pmf, DelayPMF,
-                              Difference, difference, product, Product,
-                              AnalyticalSolver, NumericSolver, gl_integrate,
-                              GaussLegendre, integrate, AbstractSolverMethod,
-                              Convolved
+                              convolve_series, Difference, difference,
+                              GaussLegendre, integrate, Convolved
 # AD-safe survival helpers, now owned by EpiAwareADTools (ConvolvedDistributions
 # 0.2 moved the `*_ad_safe` family out under underscore-free names, #137).
 # `logccdf_ad_safe` is called by the racing-hazard node and both it and
@@ -101,7 +102,7 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
-# Event-skeleton topology: `@events` declares an event tree's STRUCTURE (named
+# Event-skeleton topology: `@events` declares an event tree's structure (named
 # holes joined by → / | / & operators) with no distributions attached;
 # `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
 # composed tree through the existing verbs (a `|` node becomes a `Resolve` or
@@ -127,38 +128,23 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
 # `event` fetches a child or descends a path. `param_priors` is the tree-level
 # front-door over `build_priors`; `inspect` is the opt-in detailed tree print.
-export params_table, event_names, event_tree, event, update, build_priors,
-       default_prior, param_priors, inspect
+# `update` is `public`, not exported (see `public.jl`): several ecosystem
+# packages have their own `update`-shaped verb, and exporting it risks the
+# same ambiguous-binding clash #233 hit with `as_turing` when two packages
+# both export a same-named generic (#221).
+export params_table, event_names, event_tree, event, build_priors,
+       default_prior, param_priors, inspect, reserved_record_fields
+
+# Record transforms: `event_times` maps a drawn record of per-step increments
+# to absolute positions from the origin; `event_increments` is the inverse.
+export event_times, event_increments
 
 # Structural edits on a composed tree. `update` (the `path => new_node` method)
 # replaces a named node keeping the shape; `prune` drops a branch and `splice`
 # inserts a step (topology edits).
 export prune, splice
 
-# Inference-readback verbs: read a fitted chain's parameters back onto a
-# composed-distribution template. `chain_to_params` reduces a chain to the
-# nested NamedTuple `update` consumes; `param_draws` keeps every draw;
-# `strip_prefix` drops the outer submodel prefix from a chain's parameter
-# names. No method until both `DynamicPPL` and `FlexiChains` are loaded; the
-# methods live in `ext/ComposedDistributionsFlexiChainsExt.jl`.
-export chain_to_params, param_draws, strip_prefix
-
-# A DynamicPPL model over a composed distribution's estimated parameters, built
-# as a light wrapper on the `as_logdensity` codec. No method until `DynamicPPL`
-# is loaded; the model lives in `ext/ComposedDistributionsDynamicPPLExt.jl`.
-export as_turing
-
 export observed_distribution
-
-# Re-exported ConvolvedDistributions surface, so downstream packages reach
-# convolution + quadrature through ComposedDistributions alone. The `product`
-# constructor is exported; its `Product` type stays unexported (see `public.jl`)
-# because a bare `Product` would clash with Distributions' deprecated `Product`
-# under the usual `using ComposedDistributions, Distributions` — reach it as
-# `ComposedDistributions.Product`, exactly as ConvolvedDistributions intends.
-export convolved, convolve_series, discretise_pmf, DelayPMF, Difference,
-       difference, product, AnalyticalSolver, NumericSolver, Convolved,
-       AbstractSolverMethod, GaussLegendre, integrate, gl_integrate
 
 # --- includes --------------------------------------------------------------
 
@@ -175,16 +161,6 @@ include("composers/nesting.jl")
 include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
-# Inference-readback verb stubs (`chain_to_params` / `param_draws` /
-# `strip_prefix`): declared here with no method (see
-# `ext/ComposedDistributionsFlexiChainsExt.jl`), so this package stays
-# Turing-free until that extension is triggered.
-include("composers/readback.jl")
-# `as_turing` stub: a DynamicPPL model over a tree's estimated parameters,
-# built on the `as_logdensity` codec. No method until `DynamicPPL` is loaded
-# (see `ext/ComposedDistributionsDynamicPPLExt.jl`), so the core stays
-# Turing-free.
-include("composers/turing.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.
@@ -228,10 +204,12 @@ include("composers/wrapped_leaves.jl")
 # type (Sequential/Parallel/Choose/Resolve/Compete/Uncertain/Shared/Pool) and
 # varying.jl (`has_varying`, for the `_reject_varying` guard).
 include("composers/codec_gen.jl")
-# The LogDensityProblems core codec (`ComposedLogDensity`/`as_logdensity`/
-# `logdensity`). After introspection (`params_table`/`build_priors`/`update`),
-# Uncertain (an uncertain leaf's row is inventoried like any other) and
-# codec_gen.jl (the flat <-> nested codec it evaluates against).
+# The Turing-free `ComposedLogDensity`/`as_logdensity`/`logdensity` core (no
+# LogDensityProblems/DynamicPPL dependency; DistributionsInference.jl hosts the
+# PPL-facing extensions on top of this via the fit protocol). After
+# introspection (`params_table`/`build_priors`/`update`), Uncertain (an
+# uncertain leaf's row is inventoried like any other) and codec_gen.jl (the
+# flat <-> nested codec it evaluates against).
 include("composers/logdensity.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
@@ -246,6 +224,10 @@ include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.
 include("composers/named_outputs.jl")
+# Record transform between per-step increments and absolute positions
+# (`event_times` / `event_increments`): after named_outputs (reuses
+# `_value_names` / `_join_value_path`) and the composer verbs.
+include("composers/event_times.jl")
 
 # The reusable interface-conformance harness (`TestUtils.test_interface` and
 # friends). Last: it uses the whole public surface defined above.

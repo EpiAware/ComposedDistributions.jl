@@ -16,6 +16,7 @@
 end
 
 @testitem "to_constrained: per-row transform across every prior family" begin
+    using ComposedDistributions: update
     using Distributions
     using Bijectors: Bijectors, bijector, inverse, with_logabsdet_jacobian
     using ComposedDistributions: as_logdensity, to_constrained, flat_dimension,
@@ -98,6 +99,7 @@ end
 end
 
 @testitem "to_constrained: logdensity(prob, x) + logjac is the unconstrained target" begin
+    using ComposedDistributions: update
     using Distributions
     using Bijectors: Bijectors, transformed
     using ComposedDistributions: as_logdensity, to_constrained, logdensity,

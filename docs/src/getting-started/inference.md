@@ -34,43 +34,42 @@ Promote a fixed tree to estimate its free parameters with default priors through
 
 ## Sampling without Turing
 
-The assembled `prob` is a `LogDensityProblems` problem once the `LogDensityProblems` extension loads, so any consumer of that interface can sample it.
+DistributionsInference.jl builds a `LogDensityProblems`-conformant problem for any composed tree, generically, over this same PPL-neutral core (via its fit-protocol extension, `parameter_rows`/`reconstruct`) — no weakdep extension in this package (#220).
 A gradient comes from wrapping it with `LogDensityProblemsAD` and a backend the codec differentiates under (ForwardDiff, ReverseDiff or Mooncake).
 
 ```julia
-using LogDensityProblems, LogDensityProblemsAD, ForwardDiff, AdvancedHMC
+using DistributionsInference, LogDensityProblems, LogDensityProblemsAD, ForwardDiff, AdvancedHMC
 
-prob = as_logdensity(tree, data)
+prob = DistributionsInference.as_logdensity(tree, data)
 LogDensityProblems.dimension(prob)              # 1
 grad = ADgradient(:ForwardDiff, prob)
 # hand `grad` to AdvancedHMC / DynamicHMC / Pathfinder
 ```
 
-Samplers work on an unconstrained vector, so a positive or simplex parameter needs its transform.
-[`to_constrained`](@ref)`(prob, z)` returns the constrained parameters and the log-Jacobian for an unconstrained `z`, once `Bijectors` is loaded.
+Samplers work on an unconstrained vector, so a positive or simplex parameter needs its transform; DistributionsInference.jl's own `Bijectors` extension supplies it generically the same way.
 
 ## Sampling with Turing
 
-[`as_turing`](@ref) wraps the same log-density as a `DynamicPPL` model, so a tree is sampleable with Turing directly.
+DistributionsInference.jl's `as_turing` wraps the same log-density as a `DynamicPPL` model, so a tree is sampleable with Turing directly (#233 — this package no longer carries its own `as_turing`, which collided with this one when both packages were loaded).
 It is a light layer over the codec, with each estimated parameter a named site drawn from its own prior and the data likelihood added from the tree rebuilt at the draw.
 
 ```julia
-using Turing
+using DistributionsInference, Turing
 
-chain = sample(as_turing(tree, data), NUTS(), 1000)
+chain = sample(DistributionsInference.as_turing(tree, data), NUTS(), 1000)
 ```
 
 ## Reading the fit back
 
-The site names match the readback, so a fitted chain reduces straight back onto the template.
-[`chain_to_params`](@ref) reduces the draws to a nested parameter `NamedTuple`, and [`update`](@ref) rebuilds the tree at those values, collapsing every uncertain leaf.
+Chain readback is DistributionsInference.jl's, not this package's own (#221): `DistributionsInference.readback` reduces a fitted chain straight to a rebuilt tree, collapsing every uncertain leaf; `readback_draws` keeps every draw for a posterior summary.
+Both work generically over the fit-protocol core above, so the same two calls read back a tree fitted through `as_logdensity` or through `as_turing`.
 
 ```julia
-using FlexiChains
+using DistributionsInference, FlexiChains
 
-fit = update(tree, chain)                        # the fitted tree
-event(fit, :onset_admit)                         # a concrete Gamma
-draws = param_draws(tree, chain)                 # every draw, for a posterior summary
+fit = DistributionsInference.readback(tree, chain)      # the fitted tree
+event(fit, :onset_admit)                                # a concrete Gamma
+draws = DistributionsInference.readback_draws(tree, chain)   # every draw
 ```
 
 ## The tools
@@ -79,7 +78,7 @@ draws = param_draws(tree, chain)                 # every draw, for a posterior s
 |---|---|---|
 | [`as_logdensity`](@ref) | the PPL-neutral log-density over the estimated parameters | base package |
 | [`logdensity`](@ref) / [`flat_dimension`](@ref) | evaluate the density, count the parameters | base package |
-| `LogDensityProblems` interface | `dimension` / `logdensity` / `capabilities` for any HMC consumer | `LogDensityProblems` |
-| [`to_constrained`](@ref) | the unconstrained transform and its log-Jacobian | `Bijectors` |
-| [`as_turing`](@ref) | a `DynamicPPL` model for `sample(...)` | `DynamicPPL` |
-| [`chain_to_params`](@ref) / [`update`](@ref) | read a fitted chain back onto the tree | `DynamicPPL` and `FlexiChains` |
+| `DistributionsInference.as_logdensity` | the same core wrapped as a `LogDensityProblems` problem, generically | `DistributionsInference` |
+| `DistributionsInference.to_constrained`-equivalent transform | the unconstrained transform and its log-Jacobian | `DistributionsInference` + `Bijectors` |
+| `DistributionsInference.as_turing` | a `DynamicPPL` model for `sample(...)` | `DistributionsInference` + `DynamicPPL` |
+| `DistributionsInference.readback` / `readback_draws` | read a fitted chain back onto the tree | `DistributionsInference` + `FlexiChains` |

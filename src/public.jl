@@ -1,5 +1,13 @@
 # Public API declarations for Julia 1.11+ (public but not exported).
 
+# `update`: the tree-edit / value-replace / uncertain-collapse verb (see the
+# umbrella docstring on `function update end` in `composers/introspection.jl`).
+# `public`, not `export`ed (#221): several ecosystem packages (and plenty
+# outside it) have their own `update`-shaped verb, and exporting a name this
+# generic risks the same ambiguous-binding clash #233 hit with `as_turing`
+# when two packages both export a same-named generic function.
+public update
+
 # The composer node/leaf extension contract: a new node implements
 # `child_nleaves` / `child_logpdf` / `child_rand!`, and a new leaf wrapper
 # `free_leaf` / `rewrap_leaf`. `component_names` reads a node's child names.
@@ -26,6 +34,22 @@ public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 # `shared_tag` above.
 public pool_group, pool_noncentred
 
+# The centred-pooling extra-prior surface (#212): DistributionsInference.jl's
+# `extra_logprior` for a composed tree scores a centred-pooled parameter's
+# population-dependent term by calling these three directly. `CentredPoolPrior`
+# is the marker `parameter_rows` pattern-matches on to translate a
+# centred-pooled row's prior to `nothing`; `centred_pool_rows` collects the
+# rows carrying that marker; `pool_centred_logprior` scores them against the
+# unflattened parameter tree. No behaviour change — declaring what was already
+# reachable, unrestricted, by qualified name. `_centred_pool_rows` and
+# `_pool_centred_logprior` are transitional aliases for the two functions'
+# original (leading-underscore) public names, kept `public` themselves — like
+# `EpiAwarePackageTools`' own `scaffold_update`/`update` alias — until
+# DistributionsInference.jl's fit-protocol extension moves onto the renamed
+# functions, then removed.
+public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
+       _centred_pool_rows, _pool_centred_logprior
+
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
@@ -47,18 +71,14 @@ public AbstractComposedDistribution, AbstractMultiChild, AbstractOneOf
 # the per-family `test_*` checks).
 public TestUtils
 
-# The Mellin product type (`Z = X * Y`) re-exported from ConvolvedDistributions.
-# Its `product` constructor is exported, but the `Product` type stays unexported
-# because a bare `Product` would clash with Distributions' deprecated `Product`;
-# reach it as `ComposedDistributions.Product`.
-public Product
-
-# The LogDensityProblems core codec: the flat-vector <-> nested-NamedTuple
-# bijection (`flat_dimension`/`flatten`/`unflatten`), the fused flat-vector ->
+# The Turing-free core codec: the flat-vector <-> nested-NamedTuple bijection
+# (`flat_dimension`/`flatten`/`unflatten`), the fused flat-vector ->
 # rebuilt-distribution primary (`reconstruct`, #178 PR 2), and the assembled
 # PPL-neutral log-density (`ComposedLogDensity`/`as_logdensity`/`logdensity`).
-# A weakdep `LogDensityProblems` extension wraps `ComposedLogDensity` as a
-# standard problem; this core stays Turing/LogDensityProblems-free.
+# No LogDensityProblems/DynamicPPL dependency here or anywhere in this
+# package (#220, #233): DistributionsInference.jl hosts the PPL-facing
+# extensions (its own `as_logdensity`/`as_turing`) generically over this
+# core via the fit protocol (`parameter_rows`/`reconstruct`).
 public flat_dimension, flatten, unflatten, reconstruct
 public ComposedLogDensity, as_logdensity, logdensity
 

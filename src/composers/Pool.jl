@@ -24,15 +24,15 @@
 #
 # Two parameterisations, chosen by the population family:
 #
-#   - a LOCATION-SCALE population (`Normal`/`LogNormal`) is reparameterised
-#     NON-CENTRED: the member's latent is `z ~ Normal(0, 1)` and the parameter
+#   - a *location-scale* population (`Normal`/`LogNormal`) is reparameterised
+#     *non-centred*: the member's latent is `z ~ Normal(0, 1)` and the parameter
 #     is reconstructed `loc + scale*z` (`Normal`) or `exp(loc + scale*z)`
 #     (`LogNormal`), where `(loc, scale)` are the population's hyperparameters.
 #     This keeps the CensoredDistributions-compatible `[hyper..., z...]` flat
 #     layout (`mu ~ ...; sigma ~ ...; z ~ filldist(Normal(0, 1), K)`), so a
 #     model authored either way is interchangeable.
-#   - a GENERAL population takes the CENTRED path: the member's latent IS its
-#     parameter, scored directly against the population distribution
+#   - a *general* population takes the *centred* path: the member's latent *is*
+#     its parameter, scored directly against the population distribution
 #     reconstructed at the current hyperparameters. The population prior is
 #     parameter-dependent, so it is added in `logdensity` rather than sitting in
 #     the fixed per-row prior vector; the hyperparameters stay ordinary fixed
@@ -254,11 +254,22 @@ function _collapse_population(pop::Uncertain, hyper::NamedTuple)
 end
 _collapse_population(pop::UnivariateDistribution, ::NamedTuple) = pop
 
-# The centred latent's prior marker, carried on the `prior` column of a centred
-# pooled parameter's row. It is not a fixed distribution (the population depends
-# on the estimated hyperparameters), so `logdensity` scores it separately
-# (`_pool_centred_logprior`) and skips it in the fixed per-row prior sum. A
-# non-`nothing` entry, so the row still counts as estimated.
+@doc "
+The centred latent's prior marker, carried on the `prior` column of a centred
+pooled parameter's row.
+
+It is not a fixed distribution (the population depends on the estimated
+hyperparameters), so [`logdensity`](@ref) scores it separately
+([`_pool_centred_logprior`](@ref)) and skips it in the fixed per-row prior sum.
+A non-`nothing` entry, so the row still counts as estimated.
+
+Reached by qualified name from outside this package — DistributionsInference.jl's
+fit-protocol extension pattern-matches on this marker to translate a
+centred-pooled row's prior to `nothing` (#212).
+
+See also: [`_centred_pool_rows`](@ref), [`_pool_centred_logprior`](@ref),
+[`pool`](@ref)
+"
 struct CentredPoolPrior{P <: Pool}
     pool::P
 end
@@ -281,7 +292,7 @@ end
 
 # --- params-table rows for a pooled parameter -------------------------------
 #
-# Emit the population's hyperparameter rows ONCE per group (deduped through the
+# Emit the population's hyperparameter rows once per group (deduped through the
 # walk's `seen` set, so they precede every member's latent and the flat vector
 # opens with `[hyper..., ...]`), then this member's latent: a `Normal(0, 1)`
 # `z` row (non-centred) or the member's own parameter carrying the centred-pool
@@ -337,7 +348,7 @@ end
 # Rebuild a pooled leaf at a draw. A non-centred pooled parameter is
 # `link(loc + scale*z)` from the population's hyperparameters (read from the
 # top-level group entry, threaded like a `shared` tag) and the member's latent;
-# a centred pooled parameter IS its latent directly (its population prior is
+# a centred pooled parameter *is* its latent directly (its population prior is
 # added in `logdensity`). A non-pooled parameter takes its supplied value (or
 # the template's). Then rebuild the concrete leaf, collapsing the uncertainty.
 function _reconstruct_pooled_leaf(leaf, leaf_params, shared, pooled, pnames)
@@ -388,16 +399,41 @@ end
 
 # --- centred population prior term ------------------------------------------
 #
-# For a centred pooled parameter the member's latent IS its parameter, scored
+# For a centred pooled parameter the member's latent *is* its parameter, scored
 # directly against the population reconstructed at the current hyperparameters.
 # That prior is parameter-dependent, so it is added in `logdensity` (from the
 # reconstructed nested `NamedTuple`) rather than in the fixed per-row prior
-# vector. The `(path, param, pool)` rows are collected ONCE at `as_logdensity`
-# (`_centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
+# vector. The `(path, param, pool)` rows are collected once at `as_logdensity`
+# (`centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
 # no per-evaluation cost.
 
-# The centred pooled parameters' `(path, param, pool)` triples, in table order.
-function _centred_pool_rows(dist)
+@doc raw"
+
+The centred pooled parameters' `(path, param, pool)` triples, in table order.
+
+Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
+construction time), so a tree with only non-centred (or no) pooling adds no
+per-evaluation cost. Reached by qualified name from outside this package —
+DistributionsInference.jl's fit-protocol extension calls this directly to
+find the rows [`pool_centred_logprior`](@ref) needs to score (#212).
+
+# Arguments
+- the composed tree whose centred-pooled rows are collected.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions.centred_pool_rows(tree)
+```
+
+# See also
+- [`CentredPoolPrior`](@ref), [`pool_centred_logprior`](@ref)
+"
+function centred_pool_rows(dist)
     tbl = params_table(dist)
     prcol = Tables.getcolumn(tbl, :prior)
     edges = Tables.getcolumn(tbl, :edge)
@@ -410,9 +446,65 @@ function _centred_pool_rows(dist)
     return rows
 end
 
-# Sum each centred member's log-density against its population reconstructed at
-# the current hyperparameters (read from the flattened draw `nt`).
-function _pool_centred_logprior(rows, nt)
+@doc raw"
+
+Deprecated alias for [`centred_pool_rows`](@ref); kept transitionally so a
+caller already qualifying it (`ComposedDistributions._centred_pool_rows`, or
+an explicit `using ComposedDistributions: _centred_pool_rows`) keeps working
+across the rename (#212 declared this `public` with the leading underscore,
+which the org's naming convention reserves for internal-only names). New code
+should call `centred_pool_rows`; this alias is removed in a future cleanup
+once DistributionsInference.jl's fit-protocol extension has moved off it.
+
+# Arguments
+- the composed tree whose centred-pooled rows are collected; see
+  [`centred_pool_rows`](@ref).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions._centred_pool_rows(tree)
+```
+
+# See also
+- [`centred_pool_rows`](@ref)
+"
+const _centred_pool_rows = centred_pool_rows
+
+@doc raw"
+
+Sum each centred member's log-density against its population reconstructed at
+the current hyperparameters (read from the flattened draw `nt`).
+
+Reached by qualified name from outside this package — DistributionsInference.jl's
+fit-protocol extension calls this to score a composed tree's centred-pooled
+population term (#212).
+
+# Arguments
+- `rows`: the `(path, param, pool)` triples from [`centred_pool_rows`](@ref).
+- `nt`: the nested `NamedTuple` from `unflatten` at the same draw.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+rows = ComposedDistributions.centred_pool_rows(tree)
+x = fill(0.5, ComposedDistributions.flat_dimension(tree))
+nt = ComposedDistributions.unflatten(tree, x)
+ComposedDistributions.pool_centred_logprior(rows, nt)
+```
+
+# See also
+- [`centred_pool_rows`](@ref), [`CentredPoolPrior`](@ref)
+"
+function pool_centred_logprior(rows, nt)
     isempty(rows) && return 0.0
     return sum(rows) do (path, param, pool)
         logpdf(_collapse_population(pool.population, _pool_hyper(nt, pool)),
@@ -420,9 +512,42 @@ function _pool_centred_logprior(rows, nt)
     end
 end
 
+@doc raw"
+
+Deprecated alias for [`pool_centred_logprior`](@ref); kept transitionally so a
+caller already qualifying it (`ComposedDistributions._pool_centred_logprior`,
+or an explicit `using ComposedDistributions: _pool_centred_logprior`) keeps
+working across the rename (#212 declared this `public` with the leading
+underscore, which the org's naming convention reserves for internal-only
+names). New code should call `pool_centred_logprior`; this alias is removed in
+a future cleanup once DistributionsInference.jl's fit-protocol extension has
+moved off it.
+
+# Arguments
+- `rows`: the `(path, param, pool)` triples from [`centred_pool_rows`](@ref).
+- `nt`: the nested `NamedTuple` from `unflatten` at the same draw.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+rows = ComposedDistributions.centred_pool_rows(tree)
+x = fill(0.5, ComposedDistributions.flat_dimension(tree))
+nt = ComposedDistributions.unflatten(tree, x)
+ComposedDistributions._pool_centred_logprior(rows, nt)
+```
+
+# See also
+- [`pool_centred_logprior`](@ref)
+"
+const _pool_centred_logprior = pool_centred_logprior
+
 # --- group consistency gate --------------------------------------------------
 #
-# Every leaf of a pooling group must declare the SAME population and
+# Every leaf of a pooling group must declare the same population and
 # parameterisation (they are one population); the params-table walk emits the
 # group's hyperparameters from the first member it meets. `_validate_pool_groups`
 # (called once at `as_logdensity`, not per gradient evaluation) rejects a
@@ -468,17 +593,17 @@ end
 # --- namespace collision gate -------------------------------------------------
 #
 # `pool` groups, `shared` tags, and a tree's own top-level (root) edge names
-# all end up as sibling entries in the SAME root-lifted NamedTuple at readback
-# (`chain_to_params` in the FlexiChains extension merges each family's
-# top-level entry alongside the tree's own names). A pool group and a shared
-# tag sharing a name silently clobber each other in that merge, and so does
-# either family sharing a name with a root edge (see #177 and the #178 risk
-# list). `_validate_tree_names` gates all three cross-role collisions once at
-# `as_logdensity` construction time, alongside `_validate_pool_groups`'s pool
-# group consistency check, not per gradient evaluation. Reusing the SAME tag
-# for a deliberate tie (`shared`/`tie`, or a pool group with several members)
-# is the intended feature and is not flagged; only a name crossing ROLES is an
-# error.
+# all end up as sibling entries in the same root-lifted NamedTuple the codec
+# builds (`unflatten`'s `_root_merge_expr` in `codec_gen.jl` merges each
+# family's top-level entry alongside the tree's own names). A pool group and a
+# shared tag sharing a name silently clobber each other in that merge, and so
+# does either family sharing a name with a root edge (see #177 and the #178
+# risk list). `_validate_tree_names` gates all three cross-role collisions
+# once at `as_logdensity` construction time, alongside
+# `_validate_pool_groups`'s pool group consistency check, not per gradient
+# evaluation. Reusing the same tag for a deliberate tie (`shared`/`tie`, or a
+# pool group with several members) is the intended feature and is not
+# flagged; only a name crossing roles is an error.
 function _validate_tree_names(d)
     pools = Dict{Symbol, Pool}()
     _collect_pools!(pools, d)
@@ -504,14 +629,16 @@ function _validate_tree_names(d)
 end
 
 # The direct child names at the root of a composer tree, the level the
-# readback merge (`chain_to_params`) lifts pool/shared entries onto. Every
+# codec's root-lift merge (see `_validate_tree_names` above) lifts pool/shared
+# entries onto. Every
 # `AbstractComposedDistribution` subtype implements `component_names`.
 _root_edge_names(d) = component_names(d)
 
 # A `Pool` value in an `update` NamedTuple makes that parameter pooled (a spec),
 # like a distribution value makes it uncertain, so an update carrying only a
-# `pool(...)` spec switches `update` to MERGE mode (attach) rather than STRICT
-# mode (concrete replacement). Extends the `_has_distribution_value` router.
+# `pool(...)` spec switches `update` to *merge* mode (attach) rather than
+# *strict* mode (concrete replacement). Extends the `_has_distribution_value`
+# router.
 _has_distribution_value(::Pool) = true
 
 # --- the spec surface: rand, show, equality ---------------------------------

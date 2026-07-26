@@ -99,10 +99,57 @@ end
 
     r = resolve(:event => (Gamma(1.5, 1.0), 0.4), :none => (NoEvent(), 0.6))
     @test occurrence_probability(r) ≈ 0.4
-    # A defective marginal has no scalar logpdf / mean / as_mixture.
+    # A defective marginal has no scalar logpdf / as_mixture: the observed
+    # non-occurrence mass is scored through the event-vector path instead.
     @test_throws ArgumentError logpdf(r, 2.0)
-    @test_throws ArgumentError mean(r)
     @test_throws ArgumentError as_mixture(r)
+end
+
+@testitem "Resolve: defective marginal survival (#254)" begin
+    using Distributions
+
+    r = resolve(:event => (Gamma(2.0, 1.0), 0.6), :none => (NoEvent(), 0.4))
+
+    # `cdf` sums only the occurring branches, so it rises to
+    # `occurrence_probability` rather than one.
+    @test cdf(r, 3.0) ≈ 0.6 * cdf(Gamma(2.0, 1.0), 3.0)
+    @test cdf(r, Inf) ≈ occurrence_probability(r)
+
+    # `ccdf` (the generic `1 - cdf` fallback) flattens at the no-event mass
+    # instead of decaying to zero.
+    @test ccdf(r, 3.0) ≈ 0.4 + 0.6 * ccdf(Gamma(2.0, 1.0), 3.0)
+    @test ccdf(r, Inf) ≈ 0.4
+
+    # `mean` is the conditional-on-occurrence mean of the observed branches,
+    # renormalised by `occurrence_probability` (a single occurring branch
+    # here, so it equals that branch's own mean).
+    @test mean(r) ≈ mean(Gamma(2.0, 1.0))
+
+    # Two occurring branches: the conditional mean is their probability-
+    # weighted average, renormalised by the occurrence probability.
+    r2 = resolve(:a => (Gamma(2.0, 1.0), 0.3), :b => (Gamma(5.0, 1.0), 0.3),
+        :none => (NoEvent(), 0.4))
+    @test mean(r2) ≈
+          (0.3 * mean(Gamma(2.0, 1.0)) + 0.3 * mean(Gamma(5.0, 1.0))) / 0.6
+
+    # A proper node (no no-event branch) is unaffected: `mean`/`cdf` still
+    # match the ordinary mixture lowering.
+    proper = resolve(:a => (Gamma(2.0, 1.0), 0.4), :b => (Gamma(1.5, 1.0), 0.6))
+    @test mean(proper) ≈ mean(as_mixture(proper))
+    @test cdf(proper, 1.0) ≈ cdf(as_mixture(proper), 1.0)
+
+    # A non-terminal node (a composer-valued outcome) stays multivariate:
+    # `mean`/`cdf` still reject it, no-event branch or not.
+    inner = resolve(:a => (Gamma(2.0, 1.0), 0.5), :b => (Gamma(1.5, 1.0), 0.5))
+    nonterminal = resolve(:sub => (inner, 0.5), :c => (Gamma(1.0, 1.0), 0.5))
+    @test_throws ArgumentError mean(nonterminal)
+    @test_throws ArgumentError cdf(nonterminal, 1.0)
+
+    # No occurring branch at all: the conditional-on-occurrence mean would be
+    # a `0/0` division, so it throws rather than silently returning `NaN`.
+    never = resolve(:a => (NoEvent(), 0.5), :b => (NoEvent(), 0.5))
+    @test occurrence_probability(never) == 0.0
+    @test_throws ArgumentError mean(never)
 end
 
 @testitem "Choose: whole-tree mean/var/std are ill-defined" begin
@@ -156,6 +203,88 @@ end
     @test sum(values(p)) <= 1.0
     @test occurrence_probability(c) ≈ 1.0
     @test occurrence_probability(c) <= 1.0
+end
+
+@testitem "Compete: quadrature window survives a composite/heavy cause (#259)" begin
+    using Distributions
+    using ConvolvedDistributions: GaussLegendre, integrate
+
+    # A high-node reference split for `c`, independent of the production
+    # window-construction path (it takes `hi` directly): used to tell a
+    # genuinely accurate split from a wrong-but-plausible-shaped one, which
+    # `isfinite`/bounds/sum checks alone cannot (see #294).
+    function reference_probs(c, hi; n = 65536)
+        rule = GaussLegendre(; n = n)
+        names = ComposedDistributions.component_names(c)
+        vals = ntuple(length(names)) do j
+            integrate(rule,
+                t -> exp(ComposedDistributions._hazard_cause_logpdf(c, j, t)),
+                0.0, hi)
+        end
+        return NamedTuple{names}(vals)
+    end
+
+    # A composite (convolved) cause has no `quantile` method: the shared
+    # window falls back to a moment-based (`mean + 10*std`) window instead of
+    # raising a `MethodError`. Here that fallback window is modest (~28
+    # units), so the fixed 64-node quadrature is genuinely accurate, not just
+    # crash-free: it matches a 65536-node reference to ~9 decimal places.
+    composite = observed_distribution(sequential(Gamma(2.0, 1.0),
+        LogNormal(0.5, 0.4)))
+    bad = compete(:composite => composite, :b => Gamma(3.0, 2.0))
+    p_bad = probs(bad)
+    @test all(isfinite, values(p_bad))
+    @test all(>=(0.0), values(p_bad))
+    @test sum(values(p_bad)) ≈ 1.0 atol = 1e-3
+    @test occurrence_probability(bad) ≈ 1.0 atol = 1e-3
+    @test mean(bad) > 0
+    @test var(bad) >= 0
+    ref_bad = reference_probs(bad, ComposedDistributions._hazard_quad_window(bad))
+    @test p_bad.composite ≈ ref_bad.composite atol = 1e-6
+    @test p_bad.b ≈ ref_bad.b atol = 1e-6
+
+    # A cause with an extreme (heavy-tailed) `quantile` never returns `NaN` or
+    # throws; the split stays a valid, finite, sub-stochastic-or-proper
+    # vector. That's all this fix guarantees: the *accuracy* of the split is
+    # a separate, tracked gap (#294) -- `quantile(Pareto(0.5, 1.0), 0.9999) ≈
+    # 1e8`, and the fixed 64-node rule over a window that wide is not merely
+    # imprecise, it is badly wrong (the converged split is ≈ (0.51, 0.47), not
+    # the (0.0, 0.0) this returns). The `@test_broken` below documents that
+    # gap directly rather than silently passing a wrong-but-plausible-shaped
+    # answer; flip it to `@test` once #294 lands.
+    heavy = Pareto(0.5, 1.0)
+    hnode = compete(:heavy => heavy, :b => Gamma(3.0, 2.0))
+    p_heavy = probs(hnode)
+    @test all(isfinite, values(p_heavy))
+    @test all(p -> 0.0 <= p <= 1.0, values(p_heavy))
+    @test sum(values(p_heavy)) <= 1.0
+    ref_heavy = reference_probs(hnode,
+        ComposedDistributions._hazard_quad_window(hnode))
+    @test_broken p_heavy.heavy ≈ ref_heavy.heavy atol = 1e-2
+    @test_broken p_heavy.b ≈ ref_heavy.b atol = 1e-2
+
+    # An ordinary (non-heavy-tailed) composite cause whose own moment-based
+    # fallback window is large (#294's second case): still crash-free and
+    # bounds-valid, but the 64-node split is again wrong -- badly enough that
+    # the wrong cause comes out ahead (`skewed` loses the race at 64 nodes,
+    # `skewed` wins it once converged).
+    skewed = observed_distribution(sequential(
+        LogNormal(0.0, 2.5), LogNormal(0.0, 2.5)))
+    race = compete(:skewed => skewed, :b => Gamma(3.0, 2.0))
+    p_race = probs(race)
+    @test all(isfinite, values(p_race))
+    @test all(p -> 0.0 <= p <= 1.0, values(p_race))
+    @test sum(values(p_race)) <= 1.0
+    ref_race = reference_probs(race, ComposedDistributions._hazard_quad_window(race))
+    @test_broken p_race.skewed ≈ ref_race.skewed atol = 1e-2
+    @test_broken p_race.skewed > p_race.b  # converged: skewed wins the race
+
+    # A mixture of both stays finite and never throws.
+    mix = compete(:composite => composite, :heavy => heavy, :b => Gamma(3.0, 2.0))
+    p_mix = probs(mix)
+    @test all(isfinite, values(p_mix))
+    @test all(p -> 0.0 <= p <= 1.0, values(p_mix))
+    @test sum(values(p_mix)) <= 1.0
 end
 
 @testitem "Compete: support floor is the earliest cause (staggered floors)" begin
@@ -386,6 +515,50 @@ end
     @test logpdf(tree, draw) ≈ logpdf(tree, collect(values(draw)))
 end
 
+@testitem "Missing-admitting scoring on Sequential/Parallel (#271)" begin
+    using Distributions
+
+    # A `missing` value scores the observed prefix and integrates out the
+    # unobserved remainder (each unobserved step's own marginal contributes
+    # zero log density).
+    s = sequential(:first => Gamma(2.0, 1.0), :second => LogNormal(0.5, 0.4))
+    @test logpdf(s, (first = 3.2, second = missing)) ≈
+          logpdf(Gamma(2.0, 1.0), 3.2)
+    @test logpdf(s, (first = missing, second = missing)) == 0.0
+    # A fully-observed record still round-trips.
+    @test logpdf(s, (first = 3.2, second = 0.6)) ≈
+          logpdf(Gamma(2.0, 1.0), 3.2) + logpdf(LogNormal(0.5, 0.4), 0.6)
+
+    p = parallel(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
+    @test logpdf(p, (a = 3.2, b = missing)) ≈ logpdf(Gamma(2.0, 1.0), 3.2)
+
+    # A `missing` value inside a nested composer step is integrated out at its
+    # own leaf, the surrounding steps still scored.
+    nested = sequential(:inner => sequential(:x => Gamma(2.0, 1.0),
+            :y => Gamma(1.0, 1.0)),
+        :outer => LogNormal(0.5, 0.4))
+    draw = rand(nested)
+    partial = merge(draw, (inner_y = missing,))
+    @test logpdf(nested, partial) ≈
+          logpdf(Gamma(2.0, 1.0), draw.inner_x) +
+          logpdf(LogNormal(0.5, 0.4), draw.outer)
+
+    # A `missing` value at a `Resolve` child (a collapsed value slot within a
+    # `Sequential`) is integrated out like any other leaf.
+    node = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.7))
+    chain = sequential(:onset => Gamma(2.0, 1.0), :resolve_step => node)
+    chain_draw = rand(chain)
+    chain_partial = merge(chain_draw, (resolve_step = missing,))
+    @test logpdf(chain, chain_partial) ≈
+          logpdf(Gamma(2.0, 1.0), chain_draw.onset)
+
+    # The flat-vector entry point also admits `missing` directly, and the
+    # dimension-mismatch guard still applies.
+    @test logpdf(s, [3.2, missing]) ≈ logpdf(Gamma(2.0, 1.0), 3.2)
+    @test_throws DimensionMismatch logpdf(s, [1.0, missing, 2.0])
+end
+
 @testitem "Introspection: params_table, event_names, event_tree, event" begin
     using Distributions
 
@@ -480,6 +653,7 @@ end
 end
 
 @testitem "update: replace parameters from a nested NamedTuple" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -491,6 +665,7 @@ end
 end
 
 @testitem "structural edits: update node, prune, splice" begin
+    using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
@@ -542,6 +717,7 @@ end
 end
 
 @testitem "structural edits through a nested Compete: update, prune, tie" begin
+    using ComposedDistributions: update
     using Distributions
 
     node = compete(:immediate => Gamma(2.0, 1.0),
@@ -645,6 +821,42 @@ end
     @test isfinite(logpdf(seq, draw))
 end
 
+@testitem "nested non-terminal one_of: clear rand error, structural edits still work (#200)" begin
+    using Distributions, Random
+    using ComposedDistributions: update
+    import ComposedDistributions: _is_nonterminal
+
+    # A non-terminal one_of: an outcome payload is itself a subtree, so the node
+    # spans several event slots rather than collapsing to one scalar marginal.
+    onward = sequential(:icu => Gamma(1.2, 1.0), :death => Gamma(1.5, 1.0))
+    nonterminal = compete(:delayed => onward, :immediate => Gamma(2.0, 1.5))
+    @test _is_nonterminal(nonterminal)
+
+    # Composition stays permissive: the tree builds, and the structural verbs
+    # (which walk by name, never touching the flat value vector) work on it.
+    tree = compose((path = nonterminal, other = Gamma(3.0, 1.0)))
+    @test event(update(tree, (:path, :immediate) => Gamma(4.0, 2.0)),
+        :path, :immediate) == Gamma(4.0, 2.0)
+
+    # But sampling the flat value vector fails with a clear, actionable error
+    # naming the limitation, not the cryptic inner `as_mixture` failure (#200).
+    err = try
+        rand(Xoshiro(1), tree)
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    msg = sprint(showerror, err)
+    @test occursin("non-terminal", msg)
+    @test occursin("Structural edits", msg)
+
+    # A terminal (leaf-outcome) one_of nested in a chain still samples fine.
+    terminal = sequential(:onset => Gamma(2.0, 1.0),
+        :out => resolve(:death => (Gamma(1.5, 1.0), 0.4),
+            :disch => Gamma(2.0, 1.5)))
+    @test rand(Xoshiro(1), terminal) isa NamedTuple
+end
+
 @testitem "params_table is a 5-column superset with a thin hook (#96)" begin
     using Distributions
     import ComposedDistributions: extra_leaf_params, leaf_param_names
@@ -733,8 +945,13 @@ end
     @test unique(params_table(tied).edge) == [:g]
 end
 
-@testitem "observed_distribution / convolve re-export" begin
+@testitem "observed_distribution / convolve interop" begin
     using Distributions
+    using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
+                                  discretise_pmf, DelayPMF, Difference,
+                                  difference, product, Product, Convolved,
+                                  AnalyticalSolver, NumericSolver, GaussLegendre,
+                                  integrate, gl_integrate, AbstractSolverMethod
 
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     od = observed_distribution(s)
@@ -749,18 +966,29 @@ end
         Sequential(Gamma(1.0, 1.0), Parallel(Gamma(1.0, 1.0), Gamma(1.0, 1.0))))
 end
 
-@testitem "re-exported ConvolvedDistributions surface is reachable" begin
-    # These names come through ComposedDistributions' re-export, so downstream
-    # packages sit on ComposedDistributions alone.
-    @test isdefined(ComposedDistributions, :convolved)
-    @test isdefined(ComposedDistributions, :convolve_series)
-    @test isdefined(ComposedDistributions, :integrate)
-    @test isdefined(ComposedDistributions, :gl_integrate)
-    @test isdefined(ComposedDistributions, :GaussLegendre)
-    @test isdefined(ComposedDistributions, :AbstractSolverMethod)
-    @test isdefined(ComposedDistributions, :AnalyticalSolver)
-    @test isdefined(ComposedDistributions, :NumericSolver)
-    @test isdefined(ComposedDistributions, :Difference)
+@testitem "ConvolvedDistributions surface is no longer re-exported (#228)" begin
+    # #139 re-exported these names so a downstream sat on ComposedDistributions
+    # alone; #228 dropped the re-export (own package boundary, own `using`).
+    # `Base.isexported` (not `isdefined`) is the right check: `convolve_series`/
+    # `Difference`/`Convolved`/`convolved`/`GaussLegendre`/`integrate` stay
+    # defined internally (this package extends/constructs them), just no
+    # longer exported, which is what a downstream `using ComposedDistributions`
+    # actually sees.
+    @test !Base.isexported(ComposedDistributions, :convolved)
+    @test !Base.isexported(ComposedDistributions, :convolve_series)
+    @test !Base.isexported(ComposedDistributions, :integrate)
+    @test !Base.isexported(ComposedDistributions, :gl_integrate)
+    @test !Base.isexported(ComposedDistributions, :GaussLegendre)
+    @test !Base.isexported(ComposedDistributions, :AbstractSolverMethod)
+    @test !Base.isexported(ComposedDistributions, :AnalyticalSolver)
+    @test !Base.isexported(ComposedDistributions, :NumericSolver)
+    @test !Base.isexported(ComposedDistributions, :Difference)
+    # Genuinely gone (not merely unexported): dropped from the internal
+    # import entirely since CD never constructs/extends them itself.
+    @test !isdefined(ComposedDistributions, :gl_integrate)
+    @test !isdefined(ComposedDistributions, :AbstractSolverMethod)
+    @test !isdefined(ComposedDistributions, :AnalyticalSolver)
+    @test !isdefined(ComposedDistributions, :NumericSolver)
 end
 
 @testitem "Monte-Carlo: chain rand mean matches analytic mean" begin
@@ -775,6 +1003,7 @@ end
 end
 
 @testitem "leaf_ctor: a leaf whose params are not its native ctor args" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions
 

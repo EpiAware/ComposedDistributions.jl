@@ -17,7 +17,7 @@ differentiating through Distributions.jl's censored `logpdf`/`logcdf`).
 `:latent` covers the full `as_logdensity`/`logdensity` codec path: an
 uncertain-leaf tree (differentiating the flat-vector -> nested-NamedTuple
 codec, `unflatten`/`update`, into the data likelihood), a centred pool
-(differentiating the `_pool_centred_logprior` term against the population), a
+(differentiating the `pool_centred_logprior` term against the population), a
 `Shared`-tagged uncertain leaf occurring twice (differentiating through the
 tag-dedup: one flat parameter, its gradient accumulated from both
 occurrences' likelihoods), and a `Truncated`-wrapped uncertain leaf (`#215`,
@@ -105,22 +105,24 @@ broken_scenario_names() = String[]
 # internal, not a Julia-level type/activity error) inside Enzyme's LLVM
 # `nodecayed_phis!` optimisation pass, failing within `_update(::Parallel,
 # ::NamedTuple, ::NamedTuple, ::Bool)` (introspection.jl) — the `ntuple(...)
-# do i ... end` closure that rebuilds a `Parallel`'s children. Every `ad`
-# CI run since #190 landed reproduces it deterministically (same 149-pass/
-# 1-error split, same failing method) on GitHub Actions' runners; it does
-# not reproduce locally on a dev machine with the exact same resolved
-# package versions (Enzyme 0.13.188, Enzyme_jll 0.0.285+0, GPUCompiler
-# 1.23.0, LLVM.jl 9.10.1) — see the #223 comment for the full
-# characterisation and a draft upstream report. Ledgered here (rather than
-# left to error CI red) so a real regression stays visible without failing
-# the suite; remove this entry once the upstream fix lands or the local
-# machine can reproduce a fix to verify.
+# do i ... end` closure that rebuilds a `Parallel`'s children, indexing the
+# heterogeneous `d.components` tuple by `i`. Every `ad` CI run since #190
+# landed reproduced it deterministically (same 149-pass/1-error split, same
+# failing method) on GitHub Actions' runners; it did not reproduce locally
+# on a dev machine with the exact same resolved package versions (Enzyme
+# 0.13.188, Enzyme_jll 0.0.285+0, GPUCompiler 1.23.0, LLVM.jl 9.10.1) — see
+# the #223 comment for the full characterisation and a draft upstream
+# report. Restructured `_update`'s composer rebuild to a structurally-
+# recursive `map` over the paired children/names tuples rather than an
+# index-driven `ntuple` closure, on the theory that this sidesteps the LLVM
+# phi-node shape the crash needed; the scenario is unledgered here on that
+# basis, and the `ad`/Enzyme reverse CI job on the PR landing this change
+# is the verification. If that job is not green, this entry must be
+# restored.
 #
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()
-    return Dict{String, Set{String}}(
-        "Enzyme reverse" => Set(["Uncertain-leaf logdensity codec"])
-    )
+    return Dict{String, Set{String}}()
 end
 
 "Per-backend scenario names too unstable to run at all."
@@ -170,7 +172,7 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
 
         # Centred pool: two members pool a `shape` centred against a fixed
         # `Gamma` population, so the gradient flows through
-        # `_pool_centred_logprior` (the population-scored latent term) as well as
+        # `pool_centred_logprior` (the population-scored latent term) as well as
         # each member's own Gamma likelihood. The centred reconstruction is the
         # identity (the latent IS the parameter), so this exercises the centred
         # scoring path distinct from the non-centred reconstruction.

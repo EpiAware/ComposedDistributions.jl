@@ -43,6 +43,7 @@
 end
 
 @testitem "pool: rides an uncertain leaf and is seen as uncertain" begin
+    using ComposedDistributions: update
     using Distributions
 
     leaf = uncertain(Gamma(2.0, 1.0); shape = pool(:district))
@@ -124,6 +125,7 @@ end
 end
 
 @testitem "pool: non-centred codec round-trip and reconstruction" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flatten, unflatten
 
@@ -164,6 +166,7 @@ end
 end
 
 @testitem "pool: non-centred logdensity is hyperprior + latents + likelihood" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: as_logdensity, logdensity, unflatten
 
@@ -192,6 +195,7 @@ end
 end
 
 @testitem "pool: centred general population" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: as_logdensity, logdensity, flatten, unflatten,
                                  flat_dimension
@@ -276,6 +280,7 @@ end
 end
 
 @testitem "pool: rejects an inconsistent group and a missing population" begin
+    using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: as_logdensity
 
@@ -373,6 +378,7 @@ end
 end
 
 @testitem "pool: prior-predictive draws shrink toward the population" begin
+    using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ComposedDistributions: unflatten, flatten
 
