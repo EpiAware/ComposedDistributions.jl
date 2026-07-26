@@ -41,6 +41,38 @@ end
           rand(Xoshiro(7), tree, 4).side          # same seed, same draws
 end
 
+@testitem "rand(d, n): the rng-less form threads the default RNG" begin
+    using ComposedDistributions: compose, sequential, _value_names
+    using Distributions, Random
+    import Tables
+
+    # `rand(d, n)` without an explicit rng must build the same column table as
+    # the seeded form — same layout, same width, same round trip — differing
+    # only in which RNG feeds it. Both the Parallel (`compose`) and Sequential
+    # arms of the method's Union take this path.
+    trees = (
+        compose((onset = Gamma(2.0, 1.0), rash = LogNormal(0.5, 0.4))),
+        sequential(:a => Gamma(2.0, 1.0), :b => Gamma(1.5, 1.0)))
+    for tree in trees
+        tbl = rand(tree, 5)
+        @test Tables.istable(tbl)
+        @test Tuple(Tables.columnnames(tbl)) == _value_names(tree)
+        @test length(Tables.getcolumn(tbl, 1)) == 5
+        rows = collect(Tables.namedtupleiterator(tbl))
+        @test logpdf(tree, tbl) ≈ sum(logpdf(tree, r) for r in rows)
+    end
+
+    # Threading the default RNG (rather than a fresh one per call) makes the
+    # rng-less form reproducible under `Random.seed!`.
+    tree = compose((onset = Gamma(2.0, 1.0), rash = LogNormal(0.5, 0.4)))
+    Random.seed!(20260726)
+    a = rand(tree, 4)
+    Random.seed!(20260726)
+    b = rand(tree, 4)
+    @test Tables.getcolumn(a, :onset) == Tables.getcolumn(b, :onset)
+    @test Tables.getcolumn(a, :rash) == Tables.getcolumn(b, :rash)
+end
+
 @testitem "rand(d, n): a nested resolve scores back too" begin
     using ComposedDistributions: compose, sequential, resolve
     using Distributions, Random
