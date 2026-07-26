@@ -36,18 +36,18 @@ _n_branches(c::AbstractOneOf) = length(component_names(c))
 
 @doc "
 
-Marker distribution for a NO-EVENT (absorbing) outcome of a [`resolve`](@ref)
+Marker distribution for a no-event (absorbing) outcome of a [`resolve`](@ref)
 node: the outcome where *nothing happens* and no event time is written.
 
 A `none => (NoEvent(), q)` branch carries no delay; its mass `q` is the
 probability that no event occurs. On `rand` a no-event win yields `missing` (no
-time recorded). On `logpdf` an OBSERVED non-occurrence (an explicit `no event by
-the horizon` record) scores the survival term `log q` (mixture) or the
-racing-hazard survival `∏ S_k`; a latent non-occurrence (a record whose no-event
+time recorded). On `logpdf` an *observed* non-occurrence (an explicit `no event
+by the horizon` record) scores the survival term `log q` (mixture) or the
+racing-hazard survival `∏ S_k`; a *latent* non-occurrence (a record whose no-event
 slot is simply missing) contributes no one_of term.
 
 `NoEvent` is a degenerate placeholder, not a sampling distribution: it has no
-support and errors if asked for a density or a draw. It exists only to MARK the
+support and errors if asked for a density or a draw. It exists only to mark the
 absorbing branch so the one_of node carries its mass `q`.
 
 # See also
@@ -108,7 +108,7 @@ Being univariate, a `Resolve` nests as a child of [`Sequential`](@ref) or
 [`Parallel`](@ref). This is the plain generic composition; per-record outcome
 selection and censoring are not part of this type.
 
-The branch probabilities are ordinarily fixed structure. To ESTIMATE them,
+The branch probabilities are ordinarily fixed structure. To estimate them,
 attach a simplex-valued `Distributions.Dirichlet` prior with
 [`update`](@ref)`(node, (branch_probs = Dirichlet(α),))`: the `Dirichlet` is
 what you write, but the codec estimates the node through the `Dirichlet`'s K-1
@@ -138,7 +138,7 @@ struct Resolve{names, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     branch_probs::P
     "The attached simplex-valued prior over the branch probabilities (a
     `Distributions.Dirichlet`), or `nothing` when the probabilities are fixed
-    structure. When present the branch probabilities are ESTIMATED through the
+    structure. When present the branch probabilities are estimated through the
     stick-breaking codec: the user writes the `Dirichlet`, K-1 stick
     coordinates are what the sampler estimates, and the probabilities are
     recovered from any draw (see [`update`](@ref))."
@@ -311,17 +311,17 @@ end
 @doc "
 
 Build a fixed-probability [`Resolve`](@ref) node from
-`name => (delay, branch_prob)` outcomes: exactly one outcome RESOLVES, with cause
+`name => (delay, branch_prob)` outcomes: exactly one outcome resolves, with cause
 independent of timing.
 
 Each outcome is `name => (delay, branch_prob)`; the branch probabilities must
 each lie in ``[0, 1]`` and sum to one, and at least two outcomes are required.
 
-The LAST outcome's probability may be OMITTED (a bare `name => delay`): it then
+The last outcome's probability may be omitted (a bare `name => delay`): it then
 takes the residual `1 - sum(of the others)`, so a probability that is fully
 determined by the rest need not be written out (and cannot disagree with them).
 The leading probabilities must sum to at most one. Omitting any outcome but the
-last, or more than one, is rejected. To omit EVERY probability (a racing-hazard
+last, or more than one, is rejected. To omit every probability (a racing-hazard
 node where the winning probability is derived from the hazards) use
 [`compete`](@ref) instead.
 
@@ -394,8 +394,8 @@ function resolve(outcomes::Pair...)
             "probability derived from the hazards) use `compete` instead"))
     end
     throw(ArgumentError(
-        "`resolve` outcomes must ALL carry a branch probability " *
-        "(`name => (delay, prob)`), or carry one on every outcome BUT the " *
+        "`resolve` outcomes must all carry a branch probability " *
+        "(`name => (delay, prob)`), or carry one on every outcome but the " *
         "last (`name => delay`), which then takes the residual " *
         "`1 - sum(others)`; the given mix is unclear. For an all-bare-delay " *
         "racing-hazard node use `compete`"))
@@ -408,10 +408,10 @@ resolve(outcomes::NamedTuple) = resolve(_nt_pairs(outcomes)...)
 @doc "
 
 Build a racing-hazard [`Compete`](@ref) node from bare `name => delay`
-outcomes: the cause-specific delays RACE, the first wins, and the winning
-probability of each cause is DERIVED from the hazards (cause coupled to timing).
+outcomes: the cause-specific delays race, the first wins, and the winning
+probability of each cause is *derived* from the hazards (cause coupled to timing).
 
-Each outcome is `name => delay` (a bare delay, NO branch probability). At least
+Each outcome is `name => delay` (a bare delay, no branch probability). At least
 two outcomes are required. To give an explicit fixed probability per outcome (a
 mixture where cause is independent of timing) use [`resolve`](@ref) instead.
 
@@ -728,8 +728,8 @@ Mean of the one_of-outcome marginal.
 
 For a proper node this is the ordinary mixture mean. For a defective node (a
 no-event branch present) there is no unconditional mean — the marginal has an
-atom at \"never\", no finite time — so this reports the CONDITIONAL-ON-
-OCCURRENCE mean instead: the branch-prob-weighted average of the observed
+atom at \"never\", no finite time — so this reports the conditional-on-
+occurrence mean instead: the branch-prob-weighted average of the observed
 branches' means, renormalised by [`occurrence_probability`](@ref).
 
 See also: [`as_mixture`](@ref), [`occurrence_probability`](@ref)
@@ -860,8 +860,8 @@ end
 # wherever the marginal time alone is wanted.
 _one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 
-# Internal: sample a one_of outcome AND its time, returning `(name, time)`. This
-# is the compact pair view backing `rand(c; outcome = true)`; it retains WHICH
+# Internal: sample a one_of outcome and its time, returning `(name, time)`. This
+# is the compact pair view backing `rand(c; outcome = true)`; it retains which
 # outcome/cause occurred, unlike the univariate marginal draw (the time only,
 # which discards which outcome/cause won). Dispatches on the composer:
 #
@@ -1029,7 +1029,7 @@ names.
 
 This is the [`Resolve`](@ref) method of `Distributions.probs`, the standard
 mixture-weight reader: a `Resolve` lowers to a `MixtureModel` (see
-[`as_mixture`](@ref)), so its weights ARE the declared branch probabilities.
+[`as_mixture`](@ref)), so its weights *are* the declared branch probabilities.
 The racing-hazard [`Compete`](@ref) sibling derives the same split from the
 hazards instead.
 
@@ -1053,7 +1053,7 @@ end
 
 @doc "
 
-The probability that ANY (non-no-event) outcome occurs for a fixed-probability
+The probability that any (non-no-event) outcome occurs for a fixed-probability
 [`Resolve`](@ref) node: one minus the no-event branch mass.
 
 See also: `Distributions.probs`

@@ -16,7 +16,7 @@
 # at model-build time, not per-gradient) and by `_spec_priors` below.
 _estimated_rows(table) = findall(!isnothing, Tables.getcolumn(table, :prior))
 
-# The flat layout: a vector of `(path, param)` keys, one per ESTIMATED row, in
+# The flat layout: a vector of `(path, param)` keys, one per estimated row, in
 # table order. `path` is the `_split_edge` tuple of the row's edge; `param` the
 # leaf key. This list is the bijection between flat index and estimated
 # parameter, used only at `as_turing` model-build time (not per gradient).
@@ -44,7 +44,7 @@ _default_loglik(d, data) = sum(record -> logpdf(d, record), data)
 A PPL-neutral log-density over a composed distribution's flat parameters.
 
 `ComposedLogDensity` carries everything needed to evaluate the (unnormalised)
-log-posterior of a composed distribution over its ESTIMATED flat parameter
+log-posterior of a composed distribution over its estimated flat parameter
 vector, with no DynamicPPL/Turing dependency: the template `dist`, the
 per-parameter `priors` (a nested `NamedTuple`; the uncertain specs read off the
 object by default), the observed `data`, and a `loglik` reducer scoring `data`
@@ -234,7 +234,7 @@ end
 
 Map an unconstrained vector to the constrained scale and its log-Jacobian.
 
-`to_constrained(prob, z)` returns `(x, logjac)`: the constrained ESTIMATED flat
+`to_constrained(prob, z)` returns `(x, logjac)`: the constrained estimated flat
 parameters `x` corresponding to the unconstrained vector `z`, and the
 log-determinant Jacobian of that (inverse) transform. The transform is built
 per row from [`ComposedLogDensity`](@ref)'s stored `flat_priors` (each row's

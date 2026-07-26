@@ -45,11 +45,11 @@ day-binned primary) as the way to build a PMF first, then
 `convolve_series(pmf, series)`. This method does not choose a scheme on the
 caller's behalf (#226) — it collapses the tree and delegates, nothing more.
 
-Pass `events` to convolve the series to a chosen INTERIM event of the chain
+Pass `events` to convolve the series to a chosen interim event of the chain
 rather than its endpoint. A single event name returns the count series at that
 event; a tuple or vector of names returns a `NamedTuple` of series keyed by the
 names. The cumulative delay to an interim event is the observed collapse of the
-chain PREFIX up to that event (the convolution of the steps leading to it), so
+chain prefix up to that event (the convolution of the steps leading to it), so
 selecting the terminal event reproduces the plain whole-chain result. Only a
 plain continuous chain (every step a delay leaf, no branching) has such
 per-event cumulative delays; a chain with a branching step is rejected.
@@ -141,7 +141,7 @@ end
 #
 # `convolve_series(chain, series; events)` convolves the series to a named
 # interim event of the chain: the cumulative delay to that event is the observed
-# collapse of the chain PREFIX up to it (`_event_prefix_delay`), then the reused
+# collapse of the chain prefix up to it (`_event_prefix_delay`), then the reused
 # univariate series-through-a-delay method runs. A single name returns the series;
 # a tuple/vector of names returns a `NamedTuple` of series keyed by the names.
 # Only a plain continuous chain has per-event cumulative delays, so a branching
@@ -244,8 +244,8 @@ end
 # --- Convolved / Difference as a see-through composite leaf ------------------
 #
 # A `Convolved` / `Difference` node used as a leaf is a pre-formed composite
-# delay whose parameters ARE its components' parameters. The prior/params
-# interface sees THROUGH it to the component leaves: `params_table` inventories
+# delay whose parameters *are* its components' parameters. The prior/params
+# interface sees through it to the component leaves: `params_table` inventories
 # each component's scalar parameters under a `component_i` path segment (so a
 # two-Gamma `Convolved` at edge `:total` lists `total.component_1.shape`,
 # `total.component_1.scale`, `total.component_2.shape`, ...), and `update`
@@ -255,10 +255,10 @@ end
 # like any other leaf parameter.
 #
 # So the composite joins the shared `_node_children` / `_rebuild` walk the
-# composer nodes use: its components ARE its node children, which lets the
+# composer nodes use: its components *are* its node children, which lets the
 # deferred-leaf guards (`has_uncertain` / `has_varying`) and `instantiate` recurse
 # through it with the same machinery rather than a parallel per-composite path.
-# It nonetheless stays a single flat SCORED slot (`length` 1) and an atomic node
+# It nonetheless stays a single flat scored slot (`length` 1) and an atomic node
 # to the structural edits (`prune` / `splice` navigate by child name and do not
 # read `_node_children`), so only the parameter inventory, reconstruction, and
 # deferred-leaf resolution see inside it.
