@@ -102,7 +102,7 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
-# Event-skeleton topology: `@events` declares an event tree's STRUCTURE (named
+# Event-skeleton topology: `@events` declares an event tree's structure (named
 # holes joined by → / | / & operators) with no distributions attached;
 # `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
 # composed tree through the existing verbs (a `|` node becomes a `Resolve` or
@@ -133,7 +133,7 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # same ambiguous-binding clash #233 hit with `as_turing` when two packages
 # both export a same-named generic (#221).
 export params_table, event_names, event_tree, event, build_priors,
-       default_prior, param_priors, inspect
+       default_prior, param_priors, inspect, reserved_record_fields
 
 # Record transforms: `event_times` maps a drawn record of per-step increments
 # to absolute positions from the origin; `event_increments` is the inverse.

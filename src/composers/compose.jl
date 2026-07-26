@@ -34,10 +34,10 @@ stays primary.
 
 # Contract
 
-`compose` ALWAYS returns a composer, never a bare univariate leaf.
+`compose` *always* returns a composer, never a bare univariate leaf.
 A single branch stays a [`Parallel`](@ref)-of-one and a single step a
 one-element [`Sequential`](@ref); the wrapper is never collapsed away.
-A bare leaf is used directly at the SCORING layer, where downstream helpers
+A bare leaf is used directly at the scoring layer, where downstream helpers
 such as `record_distributions` and `composed_distribution_model` accept a
 bare `UnivariateDistribution`, so callers do not need `compose` to pass one
 through.

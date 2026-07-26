@@ -10,6 +10,14 @@
   composer types so it never shadows the flat single-record method. Reach the
   event-name schema view through `event_names`/`event_tree`, and a record's
   absolute positions through `event_times`.
+- **feature:** `reserved_record_fields()` publishes the reserved per-record
+  field names (`weight`/`count`/`obs_time`/`obs_window`/`branch_probs`/
+  `branch_prob`) that a scoring row carries for their own meaning rather than as
+  events, documented with each field's owner, type, default and when it is read
+  (#262). A row that misspells a reserved field (e.g. `obs_tim`) now raises a
+  clear error naming the reserved field instead of a bare "not an event". No
+  behaviour change for valid records; the covariate-context merge-overwrite
+  guard the issue also raises is a separate design decision left open.
 - **chore:** renamed the two `public`-declared centred-pooling internals from
   `_centred_pool_rows`/`_pool_centred_logprior` to `centred_pool_rows`/
   `pool_centred_logprior` (org naming convention: a leading underscore marks
@@ -53,6 +61,30 @@
   no-event node (there is no proper `MixtureModel` over a marker with no
   density); a non-terminal node (a composer-valued outcome) still rejects
   `cdf`/`ccdf`/`mean`, no-event branch or not.
+- **fix:** a racing-hazard (`Compete`) node's `probs`/`occurrence_probability`
+  no longer raise a `MethodError` when a cause is itself a composite/
+  convolved distribution with no `quantile` method (#259). The shared
+  quadrature window's `_hazard_quad_window` called `quantile(cause, 0.9999)`
+  directly on every cause; it now falls back to a moment-based
+  (`mean + 10*std`) window when a cause's `quantile` is unavailable or
+  non-finite, and ignores a cause with no usable window (neither a finite
+  quantile nor finite moments) rather than letting it poison the shared
+  integral. The support floor/ceiling feeding the window (previously the
+  public `minimum`/`maximum(::Compete)`, which themselves throw if any
+  cause's own `minimum`/`maximum` throws) are now built the same
+  fallback-robust way. This fix is scoped to the crash only: the shared
+  64-node quadrature can still return a **badly wrong** (not merely
+  imprecise) split when the resolved window is wide — for a genuinely
+  heavy-tailed or high-variance cause the 64-node answer can be off by
+  100% (including the wrong cause winning), while still looking plausible
+  (finite, in `[0, 1]`, summing to `<= 1`); see #294, filed from this PR's
+  review, for the tracked accuracy gap and worked examples.
+- **docs:** swept ALL-CAPS emphasis from `src/` docstrings and comments,
+  following the org convention (Censored#513 / kit#57): routine emphasis is
+  now lowercase or italicised (`*not*`, `*derived*`, ...), reserving capitals
+  for a genuine hard-constraint marker (`MUST NOT`, `CANNOT`) or a real
+  acronym/type name (`AD`, `IO`, `PPL`, `VS`, ...). Typography only; no
+  docstring's documented behaviour or constraint changed (#204).
 - **breaking:** removed the `ComposedDistributionsFlexiChainsExt` weakdep
   extension and its `chain_to_params`/`param_draws`/`strip_prefix`/
   `update(template, chain)` surface (#221). DistributionsInference.jl already
@@ -84,6 +116,17 @@
   mixture collapse with a cryptic "no scalar `as_mixture`" error (#200).
   Composition and the structural verbs (`update`/`prune`/`tie`/`splice`) are
   unchanged — they still work on such a nested node.
+- **fix:** `update(tree, table)` no longer throws when a tree holds both an
+  uncertain leaf and an unrelated fixed-probability `Resolve` (#219). One
+  distribution-valued row used to flip the whole update into merge mode, and
+  merge mode then demanded a `Dirichlet` for every `Resolve`'s `branch_probs`,
+  so `update(tree, params_table(tree))` — the round-trip shown in `update`'s
+  own docstring — failed. A concrete per-outcome `NamedTuple` `branch_probs`
+  in merge mode now pins the fixed probabilities (as a `Real` pins a leaf
+  parameter), so the round-trip works. The pin path also now enforces
+  sum-to-one, so a hand-supplied set that does not sum to one (e.g.
+  `(0.9, 0.9)`) is rejected rather than silently scoring an unnormalised
+  mixture; a stick-reconstructed simplex (the readback path) still passes.
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec

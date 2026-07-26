@@ -1,18 +1,18 @@
 @doc "
 
 Resolve risks by racing hazards: the dual of `convolved`
-under MINIMUM instead of sum.
+under minimum instead of sum.
 
 Given cause-specific delay distributions `D_1, ..., D_n`, `Compete`
 represents the first-event time `T = min_k D_k` together with which cause won.
 The marginal `any-event` survival is `∏_k S_k(t)` and density
 `∑_j f_j(t) ∏_{k≠j} S_k(t)`, so it nests as a univariate leaf. Observing a
 resolved `(cause j, time t)` scores `f_j(t) ∏_{k≠j} S_k(t)`. The winning
-probability of each cause is DERIVED from the hazards
-(`P(cause = j) = ∫ f_j ∏_{k≠j} S_k`), NOT a free parameter — this is the key
+probability of each cause is *derived* from the hazards
+(`P(cause = j) = ∫ f_j ∏_{k≠j} S_k`), *not* a free parameter — this is the key
 difference from the fixed-probability mixture [`Resolve`](@ref).
 
-Build it with the [`compete`](@ref) constructor by giving BARE delays
+Build it with the [`compete`](@ref) constructor by giving bare delays
 (no branch probabilities): `compete(:death => D1, :recover => D2)`.
 
 Three views must agree: [`rand`](@ref) draws a latent time per cause and
@@ -50,7 +50,7 @@ struct Compete{names, D <: Tuple} <: AbstractOneOf
             throw(ArgumentError("Compete outcome names must be unique"))
         any(_is_no_event, delays) && throw(ArgumentError(
             "a racing-hazard one_of node has no no-event branch: the " *
-            "no-event probability is DERIVED as the survival ∏ S_k(horizon). " *
+            "no-event probability is derived as the survival ∏ S_k(horizon). " *
             "Use the fixed-probability `Resolve` for an explicit no-event mass"))
         return new{names, D}(delays)
     end
@@ -68,7 +68,7 @@ component_names(::Compete{names}) where {names} = names
 @doc "
 
 Build a racing-hazard [`Compete`](@ref) node from `name => delay`
-outcomes (bare delays, NO branch probabilities).
+outcomes (bare delays, no branch probabilities).
 
 Each outcome is `name => delay`. The winning probability of each cause is derived
 from the hazards, so no branch probability is supplied (that is what selects this
@@ -107,7 +107,7 @@ end
 params(c::Compete) = map(params, c.delays)
 
 # The marginal any-event distribution `T = min_k D_k` is univariate: its survival
-# is `∏_k S_k(t)` and its support runs from the union floor (the soonest ANY
+# is `∏_k S_k(t)` and its support runs from the union floor (the soonest any
 # cause can fire, i.e. the earliest cause lower bound) up to the largest cause
 # maximum. With staggered onsets the floor must be the earliest cause, not the
 # latest: a min over racing causes can fire as soon as the first one's support
@@ -172,7 +172,7 @@ pdf(c::Compete, t::Real) = exp(logpdf(c, t))
 # floor may be positive; the integral runs from zero over the survival so the
 # `E[T] = ∫ S` identity holds for a non-negative time.
 function _hazard_marginal_window(c::Compete)
-    hi = float(maximum(c))
+    hi = _hazard_support_ceiling(c)
     isfinite(hi) && return hi
     return _hazard_quad_window(c)
 end
@@ -283,13 +283,13 @@ _rand_outcome(c::Compete) = _rand_outcome(default_rng(), c)
 
 @doc "
 
-The DERIVED per-cause winning probabilities of a racing-hazard
+The derived per-cause winning probabilities of a racing-hazard
 [`Compete`](@ref) node: `P(cause = j) = ∫ f_j(t) ∏_{k≠j} S_k(t) dt`,
 returned as a `NamedTuple` keyed by the outcome names.
 
 This is the [`Compete`](@ref) method of `Distributions.probs`, the standard
 mixture-weight reader: it gives the same per-outcome split [`Resolve`](@ref)
-returns from its declared branch probabilities, but DERIVED here from the
+returns from its declared branch probabilities, but derived here from the
 hazards rather than declared.
 
 Computed by AD-safe fixed-node Gauss-Legendre quadrature of the cause-resolved
@@ -297,6 +297,17 @@ sub-density over the marginal support. The probabilities are sub-stochastic-free
 (they sum to one for proper, eventually-certain causes); a node whose causes can
 leave residual survival at `+∞` (a defective cause) sums to less than one, the
 deficit being the never-resolved mass.
+
+!!! warning \"Accuracy for a wide quadrature window\"
+    The quadrature runs on a fixed 64-node rule over whatever window the
+    causes resolve to (see `_hazard_quad_window`). For a genuinely
+    heavy-tailed cause, or an ordinary composite/convolved cause whose
+    moment-based fallback window is itself large, that window can be wide
+    enough that the returned split is badly wrong -- not merely imprecise,
+    off by 100% and potentially naming the wrong winning cause -- while
+    still looking like a valid split (finite, in `[0, 1]`, summing to
+    `<= 1`). Never throws or returns `NaN` for such a cause, but does not
+    yet guarantee accuracy either; see #294.
 
 # Arguments
 - `c`: the [`Compete`](@ref) node whose derived per-cause winning split to read.
@@ -313,8 +324,8 @@ See also: [`Compete`](@ref), [`occurrence_probability`](@ref)
 "
 function probs(c::Compete)
     _is_nonterminal(c) && _nonterminal_marginal_error("probs")
-    lo = float(minimum(c))
-    hi_raw = float(maximum(c))
+    lo = _hazard_support_floor(c)
+    hi_raw = _hazard_support_ceiling(c)
     # Bind `hi` unconditionally (a ternary, not `isfinite(hi) || (hi = ...)`): the
     # short-circuit-assignment form leaves `hi` only conditionally assigned, and the
     # `ntuple` closure below that captures it then trips JET's `local variable hi is
@@ -335,16 +346,71 @@ function probs(c::Compete)
     return NamedTuple{component_names(c)}(winning)
 end
 
-# A finite quadrature window for a cause with unbounded support: a high quantile
-# of the soonest-firing marginal. Uses the largest cause `0.9999` quantile so the
-# tail beyond it carries negligible mass for the winning-probability integral.
+# Evaluate `f()`, returning `default` instead of propagating an exception. Used
+# to make the shared quadrature window construction robust to a cause whose
+# `minimum`/`maximum`/`quantile` is unavailable (e.g. a composite/convolved
+# cause with no such method, or a defective node) rather than letting one
+# awkward cause raise a `MethodError` for the whole node.
+function _try_or(f, default)
+    try
+        return f()
+    catch
+        return default
+    end
+end
+
+# Component-robust support floor/ceiling for the shared quadrature domain: a
+# per-cause `minimum`/`maximum` that throws (a composite/convolved cause with
+# no such method) contributes `0`/`Inf` respectively instead of stopping the
+# whole node's `probs`/`mean`/`var` from computing over the other causes.
+function _hazard_support_floor(c::Compete)
+    return minimum(map(d -> _try_or(() -> float(minimum(d)), 0.0), c.delays))
+end
+function _hazard_support_ceiling(c::Compete)
+    return maximum(map(d -> _try_or(() -> float(maximum(d)), Inf), c.delays))
+end
+
+# A finite quadrature window for a cause with unbounded support: a high
+# quantile of the soonest-firing marginal, so the tail beyond it carries
+# negligible mass for the winning-probability integral. Falls back to a
+# moment-based window (`mean + 10*std`) when a cause has no `quantile` method
+# (e.g. a composite/convolved cause) or its `0.9999` quantile is itself
+# non-finite; a cause with neither a usable `quantile` nor usable moments
+# (e.g. a defective node, whose true upper quantile is infinite) is ignored
+# rather than letting it poison the shared window. Errors only if no cause
+# has any usable bound.
+#
+# This only guards against a crash (a thrown MethodError or a non-finite
+# window). It does *not* guard the shared quadrature's accuracy: `probs`'s
+# fixed 64-node Gauss-Legendre rule integrates over whatever window this
+# returns, and for a wide window (a genuinely heavy-tailed cause, or an
+# ordinary composite/convolved cause whose `mean + 10*std` fallback is
+# itself large) the 64-node answer can be badly wrong -- not merely
+# imprecise, off by 100% including the wrong cause winning -- while still
+# looking like a valid split (finite, in [0, 1], summing to <= 1). See #294
+# for worked examples and the tracked fix.
 function _hazard_quad_window(c::Compete)
-    return maximum(map(d -> quantile(d, 0.9999), c.delays))
+    windows = filter(isfinite, map(_component_quad_window, c.delays))
+    isempty(windows) && throw(ArgumentError(
+        "no cause of this Compete node has a usable quadrature window " *
+        "(a finite `quantile(cause, 0.9999)` and a finite `mean`/`std` are " *
+        "both unavailable for every cause); provide at least one cause " *
+        "with one of these"))
+    return maximum(windows)
+end
+
+# The quadrature window bound for one cause: its own `0.9999` quantile when
+# finite, else a moment-based `mean + 10*std` window, else `Inf` (no usable
+# bound; the caller ignores this cause).
+function _component_quad_window(d)
+    q = _try_or(() -> float(quantile(d, 0.9999)), Inf)
+    isfinite(q) && return q
+    return _try_or(() -> float(mean(d) + 10 * std(d)), Inf)
 end
 
 @doc "
 
-The probability that ANY (non-no-event) outcome occurs for a one_of node.
+The probability that any (non-no-event) outcome occurs for a one_of node.
 
 For a racing-hazard [`Compete`](@ref) node `occurrence_probability` is the
 sum of the derived per-cause split `Distributions.probs` returns (one for

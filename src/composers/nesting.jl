@@ -39,13 +39,13 @@ _is_composer_outcome(::UnivariateDistribution) = false
 _is_nonterminal(c::AbstractOneOf) = any(_is_composer_outcome, c.delays)
 
 # A non-terminal one_of node (a `Resolve`/`Compete` whose outcomes are subtrees)
-# spans multiple event slots, but the flat VALUE path a `Sequential`/`Parallel`
+# spans multiple event slots, but the flat value path a `Sequential`/`Parallel`
 # child walks (`child_nleaves`/`child_logpdf`/`child_rand!`) treats a one_of
-# child as a SINGLE scalar slot (its marginal time-to-resolution). A non-terminal
+# child as a single scalar slot (its marginal time-to-resolution). A non-terminal
 # node has no scalar marginal, so the flat `rand`/`logpdf` of a tree nesting one
 # used to fail deep inside the mixture collapse with a cryptic `as_mixture`
 # error (#200). Composition itself stays permissive: a non-terminal one_of nests
-# fine for the STRUCTURAL verbs (`update`/`prune`/`tie`/`splice`, which walk the
+# fine for the structural verbs (`update`/`prune`/`tie`/`splice`, which walk the
 # tree by name and never touch the flat value vector), so the clear error lives
 # at the flat value boundary rather than at construction.
 @noinline function _throw_nonterminal_nesting(c)
