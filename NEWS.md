@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **fix:** a censored leaf no longer breaks the printed tree (#282).
+  Distributions.jl gives `Censored` only a multi-line struct dump, which
+  escaped the tree prefix and left a blank line behind; it now labels inline
+  the way its `Truncated` sibling does, and a leaf whose render is still
+  multi-line keeps the tree prefix on every line. `Varying` prints as its
+  `varying(...)` constructor form, matching `uncertain`/`shared`/`pool`.
 - **feature:** `reserved_record_fields()` publishes the reserved per-record
   field names (`weight`/`count`/`obs_time`/`obs_window`/`branch_probs`/
   `branch_prob`) that a scoring row carries for their own meaning rather than as

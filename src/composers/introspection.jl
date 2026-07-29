@@ -56,9 +56,23 @@ function _show_composer_tree(io::IO, d)
     return nothing
 end
 
+# A leaf's inline label. `show(io, leaf)` is the label, routed through this
+# shim so a foreign leaf type whose upstream `show` is a multi-line struct dump
+# still gets a one-line label inside the tree (Distributions.jl dumps any
+# distribution with a distribution-valued field, `Censored` being the one that
+# reaches a tree, over several lines; #282). A wrapper type this package or a
+# downstream one OWNS needs no method here — it defines `Base.show` instead.
+_leaf_label(leaf) = sprint(show, leaf)
+
+# The label split into lines, trailing blank lines dropped. A label that is
+# still multi-line (a foreign type with no shim) then keeps the tree prefix on
+# every line rather than breaking out of the tree.
+_leaf_label_lines(leaf) = split(rstrip(_leaf_label(leaf), '\n'), '\n')
+
 # Print the named children of `node` under `prefix`. Each child gets a `├─ `
 # connector (`└─ ` for the last); a composer child recurses with an extended
-# prefix (`│  ` for non-last siblings, three spaces for the last).
+# prefix (`│  ` for non-last siblings, three spaces for the last), and a leaf's
+# label continuation lines sit under that same prefix.
 function _show_children(io::IO, node, prefix::String)
     children = _named_children(node)
     n = length(children)
@@ -67,11 +81,16 @@ function _show_children(io::IO, node, prefix::String)
         connector = last ? "└─ " : "├─ "
         name, child, note = children[i]
         label = isempty(note) ? "$(name): " : "$(name) ($(note)): "
+        child_prefix = prefix * (last ? "   " : "│  ")
         if _is_composer_dist(child)
             println(io, prefix, connector, label, _node_header(child))
-            _show_children(io, child, prefix * (last ? "   " : "│  "))
+            _show_children(io, child, child_prefix)
         else
-            println(io, prefix, connector, label, child)
+            lines = _leaf_label_lines(child)
+            println(io, prefix, connector, label, first(lines))
+            for line in Iterators.drop(lines, 1)
+                println(io, child_prefix, line)
+            end
         end
     end
     return nothing

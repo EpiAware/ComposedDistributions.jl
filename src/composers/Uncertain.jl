@@ -548,7 +548,7 @@ See also: [`uncertain`](@ref)
 "
 function Base.show(io::IO, d::Uncertain)
     specs = join(("$(k) = $(v)" for (k, v) in pairs(d.specs)), ", ")
-    print(io, "uncertain(", d.template, "; ", specs, ")")
+    print(io, "uncertain(", _leaf_label(d.template), "; ", specs, ")")
     return nothing
 end
 
