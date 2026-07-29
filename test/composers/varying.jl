@@ -451,6 +451,37 @@ end
           ComposedDistributions._event_child_nleaves(first_bare)
 end
 
+@testitem "Varying wrapping a composite as a one_of outcome (#257)" begin
+    using Distributions, Random
+
+    node_v = varying(t -> resolve(:icu => (Gamma(1.5, 1.0), 0.4),
+        :ward => Gamma(2.0, 1.0)))
+    bare = node_v.reference
+    res_v = resolve(:admit => (node_v, 0.3), :disch => Gamma(2.0, 1.5))
+    res_bare = resolve(:admit => (bare, 0.3), :disch => Gamma(2.0, 1.5))
+
+    # The composite side of the terminal/composer outcome split the
+    # plain-leaf case above covers: a wrapped composite outcome is
+    # NON-terminal and spans its reference's own outcome slots.
+    @test ComposedDistributions._is_composer_outcome(node_v)
+    @test ComposedDistributions._one_of_outcome_slots(node_v) ==
+          ComposedDistributions._one_of_outcome_slots(bare) == 2
+
+    # So the flat event walk expands the outcome's subtree (`:icu`/`:ward`)
+    # rather than giving the wrapper one positional slot.
+    chain_v = sequential(:onset_admit => Gamma(2.0, 1.0), :admit_out => res_v)
+    chain_bare = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_out => res_bare)
+    @test event_names(chain_v) == event_names(chain_bare)
+    @test event_names(chain_v) == (:onset, :admit, :icu, :ward, :disch)
+    @test event_tree(chain_v) == event_tree(chain_bare)
+
+    # The wrapper opens no scalar `rand` its reference refuses: a
+    # non-terminal node is multivariate and scores through the event vector.
+    @test_throws ArgumentError rand(Xoshiro(1), res_v)
+    @test_throws ArgumentError rand(Xoshiro(1), res_bare)
+end
+
 @testitem "Varying child: a missing flat slot is integrated out (#257)" begin
     using Distributions
 
