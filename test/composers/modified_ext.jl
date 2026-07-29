@@ -167,13 +167,13 @@ end
     @test g ≈ fd rtol = 1e-4
 end
 
-@testitem "Modified extension: convolve_series with an affine chain step" begin
+@testitem "Modified extension: convolve_series with an affine chain step" setup=[DelayMasses] begin
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
-                                  discretise_pmf, DelayPMF, Difference,
-                                  difference, product, Product, Convolved,
-                                  AnalyticalSolver, NumericSolver, GaussLegendre,
-                                  integrate, gl_integrate, AbstractSolverMethod
+                                  Difference, difference, product, Product,
+                                  Convolved, AnalyticalSolver, NumericSolver,
+                                  GaussLegendre, integrate, gl_integrate,
+                                  AbstractSolverMethod
     using ModifiedDistributions: affine
 
     aff = affine(Gamma(2.0, 1.0); scale = 2.0, shift = 1.0)
@@ -182,12 +182,12 @@ end
 
     # observed_distribution keeps the affine step (it is the observed delay,
     # not a free parameter), so convolving the chain honours it. Under
-    # ConvolvedDistributions 0.2 the bare-distribution convolve_series is
+    # ConvolvedDistributions the bare-distribution convolve_series is
     # discrete-only: the continuous observed total is rejected the same way
     # a plain chain's is (#226) — discretise explicitly, then convolve.
     @test_throws ArgumentError convolve_series(chain, series)
     maxlag = length(series) - 1
-    out = convolve_series(discretise_pmf(observed_distribution(chain), maxlag),
+    out = convolve_series(delay_masses(observed_distribution(chain), maxlag),
         series)
     @test length(out) == length(series)
 end

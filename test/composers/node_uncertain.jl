@@ -212,10 +212,10 @@ end
     using ComposedDistributions: update
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
-                                  discretise_pmf, DelayPMF, Difference,
-                                  difference, product, Product, Convolved,
-                                  AnalyticalSolver, NumericSolver, GaussLegendre,
-                                  integrate, gl_integrate, AbstractSolverMethod
+                                  Difference, difference, product, Product,
+                                  Convolved, AnalyticalSolver, NumericSolver,
+                                  GaussLegendre, integrate, gl_integrate,
+                                  AbstractSolverMethod
     using ComposedDistributions: flat_dimension
 
     # A mixed tree: a Resolve (uncertain branch_probs via promote), a Convolved

@@ -397,10 +397,10 @@ end
 @testitem "Scenario: renewal convolution through a delay chain" tags = [:scenarios] begin
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
-                                  discretise_pmf, DelayPMF, Difference,
-                                  difference, product, Product, Convolved,
-                                  AnalyticalSolver, NumericSolver, GaussLegendre,
-                                  integrate, gl_integrate, AbstractSolverMethod
+                                  Difference, difference, product, Product,
+                                  Convolved, AnalyticalSolver, NumericSolver,
+                                  GaussLegendre, integrate, gl_integrate,
+                                  AbstractSolverMethod
 
     # Story: an infection incidence series pushed through the onset→admission→
     # death delay chain to expected downstream counts — the EpiNow2-style latent
@@ -408,6 +408,13 @@ end
     chain = sequential(:onset_admit => Gamma(2.0, 1.0),
         :admit_death => LogNormal(0.5, 0.4))
     infections = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0, 1.0, 0.0, 0.0]
+
+    # The CDF-difference masses `ConvolvedDistributions.discretise_pmf` used to
+    # build (dropped in 0.3). Spelled out here rather than taken from the shared
+    # `DelayMasses` snippet: JuliaFormatter reflows a `@testitem` body when the
+    # item carries a second keyword.
+    delay_masses(d, maxlag) = max.(
+        cdf.(d, 1.0:(maxlag + 1)) .- cdf.(d, 0.0:maxlag), 0.0)
 
     # The chain's observed total is continuous, and ConvolvedDistributions is
     # discrete-only: convolving through the chain directly delegates to
@@ -417,7 +424,7 @@ end
 
     # Discretise explicitly, then convolve: unchanged from the pre-#226 output.
     counts = convolve_series(
-        discretise_pmf(observed_distribution(chain), length(infections) - 1),
+        delay_masses(observed_distribution(chain), length(infections) - 1),
         infections)
     @test length(counts) == length(infections)
 
@@ -435,11 +442,11 @@ end
     admit_prefix = ComposedDistributions._event_prefix_delay(chain, :admit)
     @test cdf(death_prefix, 5.0) ≈ cdf(observed_distribution(chain), 5.0)
     @test cdf(admit_prefix, 5.0) ≈ cdf(Gamma(2.0, 1.0), 5.0)
-    @test convolve_series(discretise_pmf(death_prefix, length(infections) - 1),
+    @test convolve_series(delay_masses(death_prefix, length(infections) - 1),
         infections) ≈ counts
-    @test convolve_series(discretise_pmf(admit_prefix, length(infections) - 1),
+    @test convolve_series(delay_masses(admit_prefix, length(infections) - 1),
         infections) ≈ convolve_series(
-        discretise_pmf(Gamma(2.0, 1.0), length(infections) - 1), infections)
+        delay_masses(Gamma(2.0, 1.0), length(infections) - 1), infections)
 end
 
 @testitem "Scenario: shared incubation tied across two branches" tags = [:scenarios] begin
@@ -473,10 +480,10 @@ end
 @testitem "Scenario: difference of two observed reporting totals" tags = [:scenarios] begin
     using Distributions, Random
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
-                                  discretise_pmf, DelayPMF, Difference,
-                                  difference, product, Product, Convolved,
-                                  AnalyticalSolver, NumericSolver, GaussLegendre,
-                                  integrate, gl_integrate, AbstractSolverMethod
+                                  Difference, difference, product, Product,
+                                  Convolved, AnalyticalSolver, NumericSolver,
+                                  GaussLegendre, integrate, gl_integrate,
+                                  AbstractSolverMethod
 
     # Story: the gap between two observed reporting totals — an onset→admit→
     # death chain and an onset→report→confirm chain — as a Difference of the two

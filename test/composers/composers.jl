@@ -948,10 +948,10 @@ end
 @testitem "observed_distribution / convolve interop" begin
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
-                                  discretise_pmf, DelayPMF, Difference,
-                                  difference, product, Product, Convolved,
-                                  AnalyticalSolver, NumericSolver, GaussLegendre,
-                                  integrate, gl_integrate, AbstractSolverMethod
+                                  Difference, difference, product, Product,
+                                  Convolved, AnalyticalSolver, NumericSolver,
+                                  GaussLegendre, integrate, gl_integrate,
+                                  AbstractSolverMethod
 
     s = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     od = observed_distribution(s)
