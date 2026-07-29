@@ -6,6 +6,11 @@
   the way its `Truncated` sibling does, and a leaf whose render is still
   multi-line keeps the tree prefix on every line. `Varying` prints as its
   `varying(...)` constructor form, matching `uncertain`/`shared`/`pool`.
+- **docs:** the getting-started overview renders the example tree once rather
+  than twice (#281). The construction block's own auto-printed value is the
+  render; the bare `admission` block that repeated it is gone. A lint for
+  unintended final-expression output across the org belongs in
+  EpiAwarePackageTools and is left for a separate item.
 - **feature:** `reserved_record_fields()` publishes the reserved per-record
   field names (`weight`/`count`/`obs_time`/`obs_window`/`branch_probs`/
   `branch_prob`) that a scoring row carries for their own meaning rather than as
