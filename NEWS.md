@@ -1,5 +1,13 @@
 ## Unreleased
 
+- **chore:** compat widened to `ConvolvedDistributions = "0.2, 0.3, 1"`.
+  0.3 removes `discretise_pmf` and `DelayPMF` (Convolved#68/#79), so the
+  `convolve_series` docstring example and the vector-convolution tests now
+  build the delay masses themselves and pass the plain vector to
+  `convolve_series(pmf, series)`. No API change here: this package still
+  collapses a composed tree and delegates, and still adds no discretiser of
+  its own (#108). The test environment resolves to 0.2 until
+  ModifiedDistributions widens its own bound (MD#125).
 - **feature:** `reserved_record_fields()` publishes the reserved per-record
   field names (`weight`/`count`/`obs_time`/`obs_window`/`branch_probs`/
   `branch_prob`) that a scoring row carries for their own meaning rather than as
