@@ -209,6 +209,47 @@ function varying(f; covariate::Symbol = :time, reference = f(0.0))
     return Varying(f, covariate, reference)
 end
 
+@doc "
+
+Build a covariate-threshold [`Varying`](@ref) node: one subtree below a
+covariate value, another at or above it.
+
+`threshold(covariate, cutoff; below, above)` is the common activation shape
+(a regime that switches at a given index value) as one call rather than a
+hand-written `varying` map. Right-continuous at `cutoff`, matching the rest
+of the ecosystem's step-function convention: `below` applies for a
+covariate strictly less than `cutoff`, `above` for a covariate at or past
+it. `below` and `above` may themselves be composite nodes (a `Resolve`/
+`Compete`), since `threshold` builds on [`varying`](@ref).
+
+# Arguments
+- `covariate`: the [`Context`](@ref) field name to read.
+- `cutoff`: the switching value; `above` applies at or past it.
+
+# Keyword Arguments
+- `below`: the subtree used for a covariate strictly less than `cutoff`.
+- `above`: the subtree used for a covariate at or past `cutoff`.
+- `reference`: the distribution used without a context (default `below`,
+  the pre-threshold regime).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+sw = threshold(:x, 10.0; below = Gamma(2.0, 1.0), above = Gamma(2.0, 3.0))
+instantiate(sw, Context(x = 5.0))    # the `below` subtree
+instantiate(sw, Context(x = 15.0))   # the `above` subtree
+```
+
+# See also
+- [`varying`](@ref): the general covariate-indexed map this specialises.
+"
+function threshold(covariate::Symbol, cutoff::Real;
+        below::UnivariateDistribution, above::UnivariateDistribution,
+        reference::UnivariateDistribution = below)
+    return varying(x -> x < cutoff ? below : above; covariate, reference)
+end
+
 # --- Distributions delegation (a Varying leaf behaves as its reference) -----
 #
 # Without a context a Varying leaf *is* its reference distribution, so every
@@ -230,8 +271,21 @@ mean(d::Varying) = mean(d.reference)
 var(d::Varying) = var(d.reference)
 std(d::Varying) = std(d.reference)
 sampler(d::Varying) = sampler(d.reference)
-Base.rand(rng::AbstractRNG, d::Varying) = rand(rng, d.reference)
-Base.rand(d::Varying) = rand(default_rng(), d.reference)
+# `kwargs...` passes through a one_of reference's own `outcome`/`kind`
+# keyword (e.g. `rand(varying_node; outcome = true)`), so a `Varying`
+# wrapping a `Resolve`/`Compete` supports its reference's full sampling
+# surface, not just the bare draw (#257).
+Base.rand(rng::AbstractRNG, d::Varying; kwargs...) = rand(rng, d.reference; kwargs...)
+function Base.rand(d::Varying; kwargs...)
+    return rand(default_rng(), d.reference; kwargs...)
+end
+Base.rand(rng::AbstractRNG, d::Varying, n::Int) = rand(rng, d.reference, n)
+Base.rand(d::Varying, n::Int) = rand(default_rng(), d.reference, n)
+# A standalone one_of reference's own record-shaped `logpdf` (the shape its
+# `rand` returns), so `logpdf(varying_node, rand(varying_node))` round-trips
+# at the reference exactly as it does for a bare `Resolve`/`Compete` (#257).
+logpdf(d::Varying, x::NamedTuple) = logpdf(d.reference, x)
+probs(d::Varying) = probs(d.reference)
 
 # The varying map is fixed structure; the reference carries the free parameters.
 # Peel/rewrap through the wrapper so `params_table` / `update` see the inner free
@@ -243,9 +297,96 @@ end
 _shared_tag(d::Varying) = _shared_tag(d.reference)
 extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 
+@doc "
+
+Print a [`Varying`](@ref) leaf as its constructor form: the covariate it maps
+and its reference distribution.
+
+See also: [`varying`](@ref)
+"
 function Base.show(io::IO, d::Varying)
-    print(io, "Varying(", d.covariate, " -> ", d.reference, ")")
+    print(io, "varying(", d.covariate, " -> ", _leaf_label(d.reference), ")")
     return nothing
+end
+
+# --- node-aware delegation (#257) --------------------------------------------
+#
+# `Varying <: UnivariateDistribution` so a `reference` that is itself a
+# composite univariate node (a `Resolve`/`Compete` one_of, the only
+# univariate composers) is admitted by the `D <: UnivariateDistribution`
+# bound already -- `varying(x -> resolve(...))` constructs today. What is
+# missing is that every tree walker below sees `Varying` as an opaque leaf
+# rather than looking through it at the reference's own node shape: the
+# outcome-count, event-name and flat-slot machinery all special-case
+# `AbstractOneOf` (and `Sequential`/`Parallel`/`Choose`, structurally
+# unreachable here since they are multivariate) by CONCRETE type, so a
+# `Varying` wrapping one falls to each function's generic leaf branch
+# instead. Each delegation below forwards to `d.reference`, so a
+# `Varying`-wrapped one_of node is stable and usable (event names, flat
+# slot count, sampling, scoring) BEFORE any `instantiate` call, exactly as
+# it is after one -- an un-resolved `Varying` behaves as its reference
+# throughout, matching the rest of this file's delegation, not a special
+# case for the composite reference. All are unconstrained on the reference
+# type (not narrowed to `D <: AbstractOneOf`): for a plain leaf reference
+# they resolve to the same generic leaf method as before, so this changes
+# nothing there.
+
+# The node-interface trio (`component_names`/`event_names`/`event_tree`):
+# stable BEFORE resolution, reading the reference's own outcome/branch
+# names rather than treating the wrapper as one flat leaf slot.
+component_names(d::Varying) = component_names(d.reference)
+event_names(d::Varying) = event_names(d.reference)
+event_tree(d::Varying) = event_tree(d.reference)
+# `event_tree`'s own composer methods recurse through this private
+# NAME-carrying per-child helper (introspection.jl), not `event_tree`
+# itself, so a `Varying` child needs its own entry here too: delegating to
+# `_event_tree_child(name, d.reference)` (not the one-arg `event_tree`)
+# keeps a plain-leaf reference on its existing `::Any` branch (the name,
+# unchanged) and only a composite reference expands to its own nested
+# NamedTuple.
+_event_tree_child(name::Symbol, d::Varying) = _event_tree_child(name, d.reference)
+
+# The flat, data-free value-vector contract (`child_nleaves`/`child_logpdf`/
+# `child_rand!`, see nesting.jl): a `Varying` nested as a `Sequential`/
+# `Parallel` child must occupy its reference's OWN slot width (a one_of
+# reference's marginal time-to-resolution is one slot; a leaf reference is
+# also one slot), not the generic-leaf default that happens to also be one
+# slot for a leaf but silently mismatches sampling for a one_of reference
+# (`rand` would try to write a one_of's full labelled RECORD into a single
+# flat numeric slot without this, throwing).
+child_nleaves(d::Varying) = child_nleaves(d.reference)
+function child_logpdf(d::Varying, x, offset, n::Int)
+    return child_logpdf(d.reference, x, offset, n)
+end
+# Disambiguates against the missing-aware `UnivariateDistribution` method
+# above: without this, `x::AbstractVector{>:Missing}` matches both that
+# method (via `Varying <: UnivariateDistribution`) and the generic one
+# just above equally specifically. Delegates the same way.
+function child_logpdf(
+        d::Varying, x::AbstractVector{>:Missing}, offset, n::Int)
+    return child_logpdf(d.reference, x, offset, n)
+end
+function child_rand!(out, offset, rng::AbstractRNG, d::Varying)
+    return child_rand!(out, offset, rng, d.reference)
+end
+
+# The flat event-NAME tree walk (tree_events.jl): a `Varying` nested as a
+# `Sequential`/`Parallel` child, or as a one_of outcome, contributes its
+# reference's own event-name shape (one slot per one_of outcome) rather than
+# a single positional slot.
+_event_child_nleaves(d::Varying) = _event_child_nleaves(d.reference)
+_one_of_outcome_slots(d::Varying) = _one_of_outcome_slots(d.reference)
+_is_composer_outcome(d::Varying) = _is_composer_outcome(d.reference)
+function _edge_origin_pair(edge_name::Symbol, child::Varying)
+    return _edge_origin_pair(edge_name, child.reference)
+end
+function _walk_edge!(
+        names, edge_name::Symbol, child::Varying, origin::Symbol, counter)
+    return _walk_edge!(names, edge_name, child.reference, origin, counter)
+end
+function _walk_one_of_outcome!(
+        names, oname::Symbol, delay::Varying, origin::Symbol, counter)
+    return _walk_one_of_outcome!(names, oname, delay.reference, origin, counter)
 end
 
 # --- the resolution seam ----------------------------------------------------
@@ -283,7 +424,16 @@ observed_distribution(at_day5)                     # the convolution kernel at t
 "
 instantiate(d, ::Nothing) = d
 instantiate(d::UnivariateDistribution, ::AbstractContext) = d
-instantiate(d::Varying, ctx::AbstractContext) = d.f(_covariate(ctx, d.covariate))
+# Recurses into the produced subtree, not just `d.f(...)` alone: `f` can
+# itself build a composite node (a `Resolve`/`Compete`) whose own outcomes
+# may embed a further `Varying` leaf, and that nested leaf needs resolving
+# against the SAME context too, so a single `instantiate` call fully
+# resolves a `Varying` node regardless of how deep its produced subtree
+# goes (#257). A no-op for the common case where `f` returns an
+# already-stationary subtree.
+function instantiate(d::Varying, ctx::AbstractContext)
+    return instantiate(d.f(_covariate(ctx, d.covariate)), ctx)
+end
 
 # A composer resolves every child against the context and rebuilds itself
 # unchanged, so the tree shape and names are preserved and only the leaves
@@ -366,4 +516,162 @@ has_varying(d::Shared) = has_varying(d.dist)
 # per-node walk; `has_uncertain` mirrors this.
 function has_varying(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
     return any(has_varying, _node_children(d))
+end
+
+# --- required_covariates / missing_covariates -------------------------------
+#
+# `has_varying` (above) only answers *that* a covariate is still needed;
+# these name *which* one(s), keyed to the node paths that read them, so a
+# fitting loop can validate a data source's columns up front rather than
+# discovering a gap reactively, one covariate at a time, mid-`instantiate`.
+# A dedicated tree walk (not routed through `_node_children`) since it needs
+# per-position edge names (`component_names`), like `params_table`'s walk.
+
+@doc "
+
+The covariate names a composed distribution's [`Varying`](@ref) leaves and
+data-selected [`Choose`](@ref) disjunctions will read, keyed to the node paths
+that read them.
+
+Returns a `Dict{Symbol, Vector{Symbol}}`: each key is a covariate name a
+[`Varying`](@ref) leaf's `covariate` field or a [`Choose`](@ref)'s `selector`
+names, and each value is the dotted edge path (the same `edge` namespace
+[`params_table`](@ref) uses) of every node that reads it. A stationary tree
+(no `Varying` leaf, no data-selected `Choose`) returns an empty `Dict`.
+
+Pair with [`missing_covariates`](@ref) to check a [`Context`](@ref) up front,
+reporting every covariate a fitting loop still needs instead of discovering
+each one reactively, one at a time, mid-[`instantiate`](@ref).
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = varying(t -> Gamma(2.0, 1.0 + 0.1t)),
+    admit = LogNormal(0.5, 0.4)))
+required_covariates(tree)
+```
+
+# See also
+- [`required_parameters`](@ref): the symmetric sibling over unpinned parameters.
+- [`missing_covariates`](@ref): check a [`Context`](@ref) against this set.
+- [`has_varying`](@ref): the boolean guard this generalises.
+"
+function required_covariates(d)
+    acc = Dict{Symbol, Vector{Symbol}}()
+    _walk_covariates!(acc, d, ())
+    return acc
+end
+
+function _walk_covariates!(acc, d::Union{Sequential, Parallel}, path)
+    for (name, child) in zip(component_names(d), d.components)
+        _walk_covariates!(acc, child, (path..., name))
+    end
+    return nothing
+end
+
+# A `Choose` itself reads a covariate (its `selector`, a data-selected
+# disjunction) in addition to whatever its alternatives read; its own
+# requirement is labelled with a `:selector` suffix (mirroring how
+# `params_table` labels a `Resolve`'s own `branch_probs` row), so a root-level
+# `Choose` reports a real edge name instead of an empty path.
+function _walk_covariates!(acc, d::Choose, path)
+    push!(get!(acc, d.selector, Symbol[]), _join_path((path..., :selector)))
+    for (name, alt) in zip(component_names(d), d.alternatives)
+        _walk_covariates!(acc, alt, (path..., name))
+    end
+    return nothing
+end
+
+function _walk_covariates!(acc, c::AbstractOneOf, path)
+    for (name, delay) in zip(component_names(c), c.delays)
+        _is_no_event(delay) && continue
+        _walk_covariates!(acc, delay, (path..., name))
+    end
+    return nothing
+end
+
+function _walk_covariates!(acc, d::Varying, path)
+    push!(get!(acc, d.covariate, Symbol[]), _join_path(path))
+    return nothing
+end
+
+# Fixed-structure wrappers are transparent: a `Varying` leaf nested under a
+# `Truncated`/`Censored`/`Shared` wrapper still reports its covariate.
+_walk_covariates!(acc, d::Truncated, path) = _walk_covariates!(acc, d.untruncated, path)
+function _walk_covariates!(acc, d::Distributions.Censored, path)
+    return _walk_covariates!(acc, d.uncensored, path)
+end
+_walk_covariates!(acc, d::Shared, path) = _walk_covariates!(acc, d.dist, path)
+
+_walk_covariates!(acc, ::UnivariateDistribution, path) = nothing
+
+@doc "
+
+The unpinned (estimated) parameters a composed distribution's
+[`params_table`](@ref) still needs, as `(edge, param)` pairs.
+
+The symmetric sibling of [`required_covariates`](@ref): where that lists the
+covariate columns a tree's [`Varying`](@ref)/[`Choose`](@ref) leaves still
+need from a [`Context`](@ref), this lists the parameters an [`uncertain`](@ref)
+leaf still needs a value for (every [`params_table`](@ref) row whose `prior`
+is not `nothing`). A fully concrete (pinned) tree returns an empty vector.
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to inspect.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    admit = LogNormal(0.5, 0.4)))
+required_parameters(tree)
+```
+
+# See also
+- [`required_covariates`](@ref): the symmetric sibling over covariate columns.
+- [`params_table`](@ref): the full parameter inventory this reads.
+"
+function required_parameters(d)
+    tbl = params_table(d)
+    return [(edge = e, param = p)
+            for (e, p, prior) in zip(tbl.edge, tbl.param, tbl.prior)
+            if prior !== nothing]
+end
+
+@doc "
+
+The covariate names [`required_covariates`](@ref)`(d)` lists that a
+[`Context`](@ref) does not carry.
+
+`missing_covariates(d, ctx)` returns the (possibly empty) vector of covariate
+names required by `d` but absent from `ctx`, so a caller can validate a data
+source up front — confirming every needed covariate column is present before
+the first [`instantiate`](@ref) — rather than discovering a gap reactively,
+one covariate at a time, mid-resolution.
+
+# Arguments
+- `d`: the composed distribution, node, or leaf to inspect.
+- `ctx`: the [`Context`](@ref) to check.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = varying(t -> Gamma(2.0, 1.0 + 0.1t)),
+    admit = LogNormal(0.5, 0.4)))
+missing_covariates(tree, Context(region = \"a\"))
+missing_covariates(tree, Context(time = 4.0))
+```
+
+# See also
+- [`required_covariates`](@ref): the full set this checks against.
+- [`instantiate`](@ref): resolve a tree once its covariates are all present.
+"
+function missing_covariates(d, ctx::AbstractContext)
+    return [name for name in keys(required_covariates(d)) if !_has_covariate(ctx, name)]
 end

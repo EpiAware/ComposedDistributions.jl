@@ -125,10 +125,10 @@ end
 @testitem "codec/params_table order: Convolved/Difference leaves" setup=[
     CodecConsistencyHelpers] begin
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
-                                  discretise_pmf, DelayPMF, Difference,
-                                  difference, product, Product, Convolved,
-                                  AnalyticalSolver, NumericSolver, GaussLegendre,
-                                  integrate, gl_integrate, AbstractSolverMethod
+                                  Difference, difference, product, Product,
+                                  Convolved, AnalyticalSolver, NumericSolver,
+                                  GaussLegendre, integrate, gl_integrate,
+                                  AbstractSolverMethod
 
     conv_leaf = convolved(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
         Gamma(1.0, 1.0))

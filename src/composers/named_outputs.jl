@@ -145,6 +145,11 @@ end
 # which fields happen to be present (mirrors `_row_event_vector_by_name`).
 
 function logpdf(d::Union{Sequential, Parallel}, x::NamedTuple)
+    # A column table (a `NamedTuple` of vectors, as `rand(d, n)` returns) is a
+    # multi-record source: sum the per-record scorer over its rows. A single
+    # labelled draw (scalar fields) scores below. Mirrors `Choose`'s table path.
+    Tables.istable(x) &&
+        return sum(logpdf(d, r) for r in Tables.namedtupleiterator(x))
     return logpdf(d, _named_value_vector(d, x))
 end
 
