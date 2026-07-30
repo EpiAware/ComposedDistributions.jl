@@ -141,6 +141,54 @@ end
         :disch => Gamma(2.0, 1.5)))
 end
 
+@testitem "required_covariates / required_parameters / missing_covariates (#266)" begin
+    using Distributions
+
+    # A stationary, fully-concrete tree needs neither covariates nor parameters.
+    stationary = sequential(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
+    @test isempty(required_covariates(stationary))
+    @test isempty(required_parameters(stationary))
+    @test isempty(missing_covariates(stationary, Context()))
+
+    # A single Varying leaf: the covariate is keyed to its edge path.
+    tree = sequential(:onset => varying(t -> Gamma(2.0, 1.0 + 0.1 * t)),
+        :admit => LogNormal(0.5, 0.4))
+    rc = required_covariates(tree)
+    @test rc == Dict(:time => [:onset])
+    @test missing_covariates(tree, Context(region = "a")) == [:time]
+    @test isempty(missing_covariates(tree, Context(time = 4.0)))
+
+    # Two leaves sharing the same covariate name both land under one key.
+    both = sequential(:onset => varying(t -> Gamma(2.0, 1.0 + 0.1 * t)),
+        :admit => varying(t -> LogNormal(0.5, 0.4 + 0.01 * t)))
+    @test Set(required_covariates(both)[:time]) == Set([:onset, :admit])
+
+    # A Varying leaf nested inside a Resolve outcome is still found.
+    nested = resolve(:death => (varying(t -> Gamma(1.5, 1.0 + 0.1 * t)), 0.3),
+        :disch => Gamma(2.0, 1.5))
+    @test required_covariates(nested) == Dict(:time => [:death])
+
+    # A data-selected `Choose` reads its own `selector` covariate, labelled
+    # with a `:selector` suffix (mirroring how `params_table` labels a
+    # `Resolve`'s own `branch_probs` row), in addition to whatever its
+    # alternatives read.
+    ch = choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(4.0, 1.5))
+    @test required_covariates(ch) == Dict(:kind => [:selector])
+
+    mixed = sequential(:br => choose(
+        :a => varying(t -> Gamma(2.0, 1.0 + 0.1 * t)), :b => Gamma(1.0, 1.0)))
+    rc_mixed = required_covariates(mixed)
+    @test rc_mixed[:kind] == [Symbol("br.selector")]
+    @test rc_mixed[:time] == [Symbol("br.a")]
+
+    # An uncertain leaf's estimated parameter is reported by
+    # `required_parameters`; a fixed leaf contributes nothing.
+    utree = sequential(:onset => uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(0.0, 0.3)),
+        :admit => LogNormal(0.5, 0.4))
+    @test required_parameters(utree) == [(edge = :onset, param = :shape)]
+end
+
 @testitem "instantiate: the convolution kernel varies with the context" begin
     using Distributions
 
