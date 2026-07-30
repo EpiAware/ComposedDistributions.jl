@@ -35,6 +35,22 @@ end
 shared_tag(d::Distributions.Censored) = shared_tag(d.uncensored)
 has_varying(d::Distributions.Censored) = has_varying(d.uncensored)
 
+# Upstream gives `Truncated` a one-line `show` but `Censored` only the generic
+# multi-line struct dump (its `uncensored` field is a distribution), which broke
+# out of the tree prefix when a censored leaf printed inline (#282). Label it
+# the way `Truncated` labels itself; fixing this by pirating `show` on an
+# upstream type is not ours to do.
+function _leaf_label(d::Distributions.Censored)
+    bounds = if d.lower === nothing
+        "; upper=$(d.upper)"
+    elseif d.upper === nothing
+        "; lower=$(d.lower)"
+    else
+        "; lower=$(d.lower), upper=$(d.upper)"
+    end
+    return "Censored($(_leaf_label(d.uncensored))$(bounds))"
+end
+
 # --- `censored` pushed inside an `Uncertain` template, mirroring `truncated` -
 #
 # Without this, `censored(u::Uncertain, ...)` would nest as

@@ -194,6 +194,20 @@ end
     @test tbl.support == ref.support
 end
 
+@testitem "Varying prints as its constructor form (#282)" begin
+    using Distributions
+
+    # Constructor form, matching `uncertain` / `shared` / `pool`.
+    d = varying(t -> Gamma(2.0, 1.0 + 0.1 * t))
+    @test startswith(repr(d), "varying(time -> ")
+    @test occursin("Gamma", repr(d))
+
+    # A censored reference labels on one line, not as a struct dump.
+    c = varying(t -> censored(Gamma(2.0, 1.0 + 0.1 * t); upper = 5.0))
+    @test !occursin('\n', repr(c))
+    @test occursin("Censored(", repr(c))
+end
+
 @testitem "instantiate: node-level variation (a time-varying Resolve CFR)" begin
     using Distributions
 

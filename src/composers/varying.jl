@@ -243,8 +243,15 @@ end
 _shared_tag(d::Varying) = _shared_tag(d.reference)
 extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 
+@doc "
+
+Print a [`Varying`](@ref) leaf as its constructor form: the covariate it maps
+and its reference distribution.
+
+See also: [`varying`](@ref)
+"
 function Base.show(io::IO, d::Varying)
-    print(io, "Varying(", d.covariate, " -> ", d.reference, ")")
+    print(io, "varying(", d.covariate, " -> ", _leaf_label(d.reference), ")")
     return nothing
 end
 
