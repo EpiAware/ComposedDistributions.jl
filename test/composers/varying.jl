@@ -324,3 +324,243 @@ end
     # A stationary alternative selects with no other covariate needed.
     @test instantiate(ch, Context(kind = :sourced)) == Gamma(4.0, 1.5)
 end
+
+@testitem "Varying wrapping a Resolve: node-aware, stable BEFORE resolution (#257)" begin
+    using Distributions, Random
+
+    node_v = varying(t -> resolve(:death => (Gamma(1.5, 1.0), 0.2 + 0.02 * t),
+        :disch => Gamma(2.0, 1.5)))
+    ref_node = node_v.reference
+
+    # The node interface (component_names/event_names/event_tree/probs) sees
+    # through the wrapper to the reference's own outcome shape, stable BEFORE
+    # any `instantiate` call — not a single flat leaf slot.
+    @test ComposedDistributions.component_names(node_v) ==
+          ComposedDistributions.component_names(ref_node)
+    @test event_names(node_v) == event_names(ref_node)
+    @test event_tree(node_v) == event_tree(ref_node)
+    @test probs(node_v) == probs(ref_node)
+
+    # A bare draw is usable at the reference, no throw, matching the
+    # reference's own record shape exactly. `isequal` (not `==`) since a
+    # one_of record can carry `missing` in its un-fired outcome slots, and
+    # `==` over `missing` propagates to `missing` rather than a Bool.
+    rng = Xoshiro(1)
+    rng_ref = Xoshiro(1)
+    @test isequal(rand(rng, node_v), rand(rng_ref, ref_node))
+
+    # The `outcome = true` keyword forwards to the reference too.
+    rng2 = Xoshiro(2)
+    rng2_ref = Xoshiro(2)
+    @test rand(rng2, node_v; outcome = true) == rand(rng2_ref, ref_node; outcome = true)
+
+    # A standalone record round-trips through logpdf at the reference.
+    rec = rand(Xoshiro(3), node_v)
+    @test logpdf(node_v, rec) == logpdf(ref_node, rec)
+
+    # After instantiate the event-name set is unchanged in shape (stable
+    # across resolution, per the wrapper's documented contract).
+    resolved = instantiate(node_v, Context(time = 10.0))
+    @test event_names(resolved) == event_names(node_v)
+end
+
+@testitem "Varying wrapping a Resolve nested as a Sequential child (#257)" begin
+    using Distributions, Random
+
+    v_node = varying(t -> resolve(:death => (Gamma(1.5, 1.0), 0.2 + 0.02 * t),
+        :disch => Gamma(2.0, 1.5)))
+    bare_node = v_node.reference
+
+    seq_v = Sequential(Gamma(2.0, 1.0), v_node)
+    seq_bare = Sequential(Gamma(2.0, 1.0), bare_node)
+
+    # The flat value-vector slot count matches the bare (un-wrapped) case: a
+    # one_of child is one value slot (its marginal), not the record shape.
+    @test ComposedDistributions.child_nleaves(seq_v) ==
+          ComposedDistributions.child_nleaves(seq_bare)
+
+    # Sampling and scoring the flat value vector work identically (this used
+    # to throw: rand tried to write the one_of's full labelled record into a
+    # single numeric flat slot).
+    rng = Xoshiro(1)
+    rng_ref = Xoshiro(1)
+    @test rand(rng, seq_v) == rand(rng_ref, seq_bare)
+    draw = collect(values(rand(Xoshiro(2), seq_bare)))
+    @test logpdf(seq_v, draw) == logpdf(seq_bare, draw)
+
+    # The flat event-NAME tree expands per outcome (:death/:disch), not a
+    # single positional slot, matching the bare-Resolve-child layout exactly.
+    @test event_names(seq_v) == event_names(seq_bare)
+    @test event_tree(seq_v) == event_tree(seq_bare)
+end
+
+@testitem "instantiate on a Varying fully resolves a nested Varying too (#257)" begin
+    using Distributions
+
+    # `f` produces a Resolve whose `:death` outcome is ITSELF a further
+    # Varying leaf: one `instantiate` call on the outer node must resolve
+    # both levels, not just the outer map.
+    inner(t) = varying(s -> Gamma(1.5, 1.0 + 0.05 * s); covariate = :extra)
+    outer = varying(t -> resolve(:death => (inner(t), 0.2 + 0.02 * t),
+        :disch => Gamma(2.0, 1.5)))
+
+    ctx = with_covariates(Context(time = 10.0); extra = 4.0)
+    resolved = instantiate(outer, ctx)
+    @test resolved == resolve(:death => (Gamma(1.5, 1.2), 0.4),
+        :disch => Gamma(2.0, 1.5))
+    @test !has_varying(resolved)
+end
+
+@testitem "threshold: the below/above activation shape (#257)" begin
+    using Distributions
+
+    below = Gamma(2.0, 1.0)
+    above = Gamma(2.0, 3.0)
+    sw = threshold(:x, 10.0; below, above)
+
+    @test sw isa ComposedDistributions.Varying
+    @test sw.covariate === :x
+    # The reference defaults to `below` (the pre-threshold regime).
+    @test sw.reference == below
+
+    @test instantiate(sw, Context(x = 5.0)) == below
+    # Right-continuous at the cutoff: the cutoff value itself uses `above`,
+    # matching the ecosystem's step-function convention.
+    @test instantiate(sw, Context(x = 10.0)) == above
+    @test instantiate(sw, Context(x = 15.0)) == above
+
+    # An explicit reference overrides the default.
+    sw2 = threshold(:x, 10.0; below, above, reference = above)
+    @test sw2.reference == above
+
+    # A composite node works as either regime too (threshold builds on
+    # `varying`, which already admits a univariate composer).
+    swc = threshold(:x, 10.0;
+        below = resolve(:a => (Gamma(1.0, 1.0), 0.5), :b => Gamma(2.0, 1.0)),
+        above = Gamma(3.0, 1.0))
+    @test instantiate(swc, Context(x = 0.0)) isa ComposedDistributions.Resolve
+    @test instantiate(swc, Context(x = 20.0)) == Gamma(3.0, 1.0)
+end
+
+@testitem "Varying: the rng-less and count draw forms delegate too (#257)" begin
+    using Distributions, Random
+
+    leaf_v = varying(t -> Gamma(2.0, 1.0 + 0.1 * t))
+    node_v = varying(t -> resolve(:death => (Gamma(1.5, 1.0), 0.2 + 0.02 * t),
+        :disch => Gamma(2.0, 1.5)))
+
+    # The rng-less bare draw threads the default RNG into the reference, so the
+    # same seed gives the same draw as sampling the reference directly.
+    Random.seed!(20260726)
+    wrapped = rand(leaf_v)
+    Random.seed!(20260726)
+    @test wrapped == rand(leaf_v.reference)
+
+    # ... and carries the reference's own keyword surface with it, so a
+    # one_of reference keeps its `outcome` keyword through the wrapper.
+    Random.seed!(11)
+    wrapped_pair = rand(node_v; outcome = true)
+    Random.seed!(11)
+    @test isequal(wrapped_pair, rand(node_v.reference; outcome = true))
+
+    # The count forms delegate as well: a leaf reference gives the plain
+    # Distributions vector, a one_of reference its vector of records.
+    @test rand(Xoshiro(4), leaf_v, 3) == rand(Xoshiro(4), leaf_v.reference, 3)
+    @test isequal(rand(Xoshiro(5), node_v, 3), rand(Xoshiro(5), node_v.reference, 3))
+
+    Random.seed!(3)
+    counted = rand(leaf_v, 3)
+    Random.seed!(3)
+    @test counted == rand(leaf_v.reference, 3)
+    @test length(counted) == 3
+end
+
+@testitem "Varying as a one_of outcome and as a chain's first edge (#257)" begin
+    using Distributions, Random
+
+    v_leaf = varying(t -> Gamma(1.5, 1.0 + 0.05 * t))
+    bare = v_leaf.reference
+    res_v = resolve(:death => (v_leaf, 0.3), :disch => Gamma(2.0, 1.5))
+    res_bare = resolve(:death => (bare, 0.3), :disch => Gamma(2.0, 1.5))
+
+    # A `Varying` OUTCOME wrapping a plain leaf is a TERMINAL outcome occupying
+    # one event slot, exactly as the bare reference is — not a composer outcome
+    # spanning a subtree — so the standalone record layout is unchanged and the
+    # node keeps its marginal `rand`.
+    @test !ComposedDistributions._is_composer_outcome(v_leaf)
+    @test ComposedDistributions._one_of_outcome_slots(v_leaf) ==
+          ComposedDistributions._one_of_outcome_slots(bare)
+    @test keys(rand(Xoshiro(1), res_v)) == keys(rand(Xoshiro(1), res_bare))
+
+    # Nested in a chain, the wrapped outcome contributes its own name to the
+    # flat event walk rather than falling to the composer-outcome branch.
+    chain_v = sequential(:onset_admit => Gamma(2.0, 1.0), :admit_out => res_v)
+    chain_bare = sequential(:onset_admit => Gamma(2.0, 1.0), :admit_out => res_bare)
+    @test event_names(chain_v) == event_names(chain_bare)
+
+    # As the FIRST edge of a chain the wrapper must still yield the edge-name
+    # split that anchors the root origin event (`:onset` out of `:onset_admit`).
+    first_v = sequential(:onset_admit => v_leaf, :admit_death => Gamma(2.0, 1.5))
+    first_bare = sequential(:onset_admit => bare, :admit_death => Gamma(2.0, 1.5))
+    @test event_names(first_v) == event_names(first_bare)
+    @test event_names(first_v) == (:onset, :admit, :death)
+
+    # A `Varying` chain child contributes its reference's own event-slot width,
+    # not the generic-leaf default the wrapper would otherwise fall to.
+    @test ComposedDistributions._event_child_nleaves(v_leaf) ==
+          ComposedDistributions._event_child_nleaves(bare)
+    @test ComposedDistributions._event_child_nleaves(first_v) ==
+          ComposedDistributions._event_child_nleaves(first_bare)
+end
+
+@testitem "Varying wrapping a composite as a one_of outcome (#257)" begin
+    using Distributions, Random
+
+    node_v = varying(t -> resolve(:icu => (Gamma(1.5, 1.0), 0.4),
+        :ward => Gamma(2.0, 1.0)))
+    bare = node_v.reference
+    res_v = resolve(:admit => (node_v, 0.3), :disch => Gamma(2.0, 1.5))
+    res_bare = resolve(:admit => (bare, 0.3), :disch => Gamma(2.0, 1.5))
+
+    # The composite side of the terminal/composer outcome split the
+    # plain-leaf case above covers: a wrapped composite outcome is
+    # NON-terminal and spans its reference's own outcome slots.
+    @test ComposedDistributions._is_composer_outcome(node_v)
+    @test ComposedDistributions._one_of_outcome_slots(node_v) ==
+          ComposedDistributions._one_of_outcome_slots(bare) == 2
+
+    # So the flat event walk expands the outcome's subtree (`:icu`/`:ward`)
+    # rather than giving the wrapper one positional slot.
+    chain_v = sequential(:onset_admit => Gamma(2.0, 1.0), :admit_out => res_v)
+    chain_bare = sequential(:onset_admit => Gamma(2.0, 1.0),
+        :admit_out => res_bare)
+    @test event_names(chain_v) == event_names(chain_bare)
+    @test event_names(chain_v) == (:onset, :admit, :icu, :ward, :disch)
+    @test event_tree(chain_v) == event_tree(chain_bare)
+
+    # The wrapper opens no scalar `rand` its reference refuses: a
+    # non-terminal node is multivariate and scores through the event vector.
+    @test_throws ArgumentError rand(Xoshiro(1), res_v)
+    @test_throws ArgumentError rand(Xoshiro(1), res_bare)
+end
+
+@testitem "Varying child: a missing flat slot is integrated out (#257)" begin
+    using Distributions
+
+    v_leaf = varying(t -> Gamma(1.5, 1.0 + 0.05 * t))
+    seq_v = Sequential(Gamma(2.0, 1.0), v_leaf)
+    seq_bare = Sequential(Gamma(2.0, 1.0), v_leaf.reference)
+
+    # A flat record whose element type admits `Missing` selects the wrapper's
+    # own missing-aware `child_logpdf` (the method disambiguating against the
+    # `UnivariateDistribution` one `Varying` also matches). An unobserved
+    # Varying slot integrates out to zero, exactly as the bare reference does.
+    unobserved = Union{Missing, Float64}[3.2, missing]
+    @test logpdf(seq_v, unobserved) == logpdf(seq_bare, unobserved)
+    @test logpdf(seq_v, unobserved) ≈ logpdf(Gamma(2.0, 1.0), 3.2)
+
+    # An observed slot scores at the reference through the same method.
+    observed = Union{Missing, Float64}[3.2, 1.7]
+    @test logpdf(seq_v, observed) ≈ logpdf(seq_bare, observed)
+    @test logpdf(seq_v, observed) ≈ logpdf(seq_v, [3.2, 1.7])
+end
