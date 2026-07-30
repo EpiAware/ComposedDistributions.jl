@@ -205,14 +205,15 @@ end
     @test occurrence_probability(c) <= 1.0
 end
 
-@testitem "Compete: quadrature window survives a composite/heavy cause (#259)" begin
+@testitem "Compete: quadrature window survives a composite/heavy cause (#259, #294)" begin
     using Distributions
     using ConvolvedDistributions: GaussLegendre, integrate
 
-    # A high-node reference split for `c`, independent of the production
-    # window-construction path (it takes `hi` directly): used to tell a
+    # A high-node single-window reference split for `c` over `[0, hi]`,
+    # independent of the production PANELLED path (#294): used to tell a
     # genuinely accurate split from a wrong-but-plausible-shaped one, which
-    # `isfinite`/bounds/sum checks alone cannot (see #294).
+    # `isfinite`/bounds/sum checks alone cannot. Reliable when `hi` itself
+    # isn't extreme (below); see `reference_probs_truncated` for when it is.
     function reference_probs(c, hi; n = 65536)
         rule = GaussLegendre(; n = n)
         names = ComposedDistributions.component_names(c)
@@ -224,10 +225,25 @@ end
         return NamedTuple{names}(vals)
     end
 
+    # A single Gauss-Legendre window over the FULL shared window is itself
+    # ill-conditioned once that window is extreme (e.g. `Pareto(0.5, 1.0)`'s
+    # own `0.9999` quantile is ~1e8): the affine map onto such a wide interval
+    # loses enough precision that the "reference" doesn't even converge as `n`
+    # grows (checked up to n = 1_048_576, still drifting). Truncating to a
+    # much smaller but still-sufficient domain sidesteps that: the race's
+    # winning-probability integrand is bounded by whichever cause's own
+    # survival is smallest, so once the FASTER cause has essentially resolved
+    # the joint survival is already negligible, well before the heavy-tailed
+    # cause's own extreme quantiles -- independently confirmed against
+    # QuadGK's adaptive quadrature during implementation.
+    function reference_probs_truncated(c, hi_trunc; n = 65536)
+        return reference_probs(c, hi_trunc; n = n)
+    end
+
     # A composite (convolved) cause has no `quantile` method: the shared
     # window falls back to a moment-based (`mean + 10*std`) window instead of
     # raising a `MethodError`. Here that fallback window is modest (~28
-    # units), so the fixed 64-node quadrature is genuinely accurate, not just
+    # units), so the panelled quadrature is genuinely accurate, not just
     # crash-free: it matches a 65536-node reference to ~9 decimal places.
     composite = observed_distribution(sequential(Gamma(2.0, 1.0),
         LogNormal(0.5, 0.4)))
@@ -243,31 +259,27 @@ end
     @test p_bad.composite ≈ ref_bad.composite atol = 1e-6
     @test p_bad.b ≈ ref_bad.b atol = 1e-6
 
-    # A cause with an extreme (heavy-tailed) `quantile` never returns `NaN` or
-    # throws; the split stays a valid, finite, sub-stochastic-or-proper
-    # vector. That's all this fix guarantees: the *accuracy* of the split is
-    # a separate, tracked gap (#294) -- `quantile(Pareto(0.5, 1.0), 0.9999) ≈
-    # 1e8`, and the fixed 64-node rule over a window that wide is not merely
-    # imprecise, it is badly wrong (the converged split is ≈ (0.51, 0.47), not
-    # the (0.0, 0.0) this returns). The `@test_broken` below documents that
-    # gap directly rather than silently passing a wrong-but-plausible-shaped
-    # answer; flip it to `@test` once #294 lands.
+    # A heavy-tailed cause with an extreme but finite `quantile` (#294's
+    # headline case): `quantile(Pareto(0.5, 1.0), 0.9999) ≈ 1e8`, and the
+    # OLD fixed-64-node single-window rule over a window that wide was badly
+    # wrong ((0.0, 0.0) against a converged (≈0.51, ≈0.47)). The quantile-
+    # panelled quadrature (#294) resolves this: the split is now accurate to
+    # well inside 1e-2 against an independent truncated-domain reference.
     heavy = Pareto(0.5, 1.0)
     hnode = compete(:heavy => heavy, :b => Gamma(3.0, 2.0))
     p_heavy = probs(hnode)
     @test all(isfinite, values(p_heavy))
     @test all(p -> 0.0 <= p <= 1.0, values(p_heavy))
     @test sum(values(p_heavy)) <= 1.0
-    ref_heavy = reference_probs(hnode,
-        ComposedDistributions._hazard_quad_window(hnode))
-    @test_broken p_heavy.heavy ≈ ref_heavy.heavy atol = 1e-2
-    @test_broken p_heavy.b ≈ ref_heavy.b atol = 1e-2
+    ref_heavy = reference_probs_truncated(hnode, 1.0e4)
+    @test p_heavy.heavy ≈ ref_heavy.heavy atol = 1e-2
+    @test p_heavy.b ≈ ref_heavy.b atol = 1e-2
 
     # An ordinary (non-heavy-tailed) composite cause whose own moment-based
-    # fallback window is large (#294's second case): still crash-free and
-    # bounds-valid, but the 64-node split is again wrong -- badly enough that
-    # the wrong cause comes out ahead (`skewed` loses the race at 64 nodes,
-    # `skewed` wins it once converged).
+    # fallback window is large (#294's second case): the panelled quadrature
+    # resolves this too, including the winner-flip the old single-window rule
+    # got wrong (`skewed` used to lose the race at 64 nodes; it wins once
+    # accurate, matching the converged split).
     skewed = observed_distribution(sequential(
         LogNormal(0.0, 2.5), LogNormal(0.0, 2.5)))
     race = compete(:skewed => skewed, :b => Gamma(3.0, 2.0))
@@ -276,8 +288,8 @@ end
     @test all(p -> 0.0 <= p <= 1.0, values(p_race))
     @test sum(values(p_race)) <= 1.0
     ref_race = reference_probs(race, ComposedDistributions._hazard_quad_window(race))
-    @test_broken p_race.skewed ≈ ref_race.skewed atol = 1e-2
-    @test_broken p_race.skewed > p_race.b  # converged: skewed wins the race
+    @test p_race.skewed ≈ ref_race.skewed atol = 1e-2
+    @test p_race.skewed > p_race.b  # matches the converged split
 
     # A mixture of both stays finite and never throws.
     mix = compete(:composite => composite, :heavy => heavy, :b => Gamma(3.0, 2.0))
