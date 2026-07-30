@@ -662,7 +662,8 @@ Print a [`Pool`](@ref) spec as its constructor form.
 See also: [`pool`](@ref)
 "
 function Base.show(io::IO, p::Pool)
-    print(io, "pool(", repr(pool_group(p)), ", ", p.population, ")")
+    print(io, "pool(", repr(pool_group(p)), ", ",
+        _leaf_label(p.population), ")")
     return nothing
 end
 

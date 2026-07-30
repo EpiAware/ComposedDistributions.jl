@@ -154,7 +154,7 @@ Print a [`Shared`](@ref) tagged leaf as its tag and wrapped distribution.
 See also: [`shared`](@ref)
 "
 function Base.show(io::IO, d::Shared{tag}) where {tag}
-    print(io, "shared(", repr(tag), ", ", d.dist, ")")
+    print(io, "shared(", repr(tag), ", ", _leaf_label(d.dist), ")")
     return nothing
 end
 

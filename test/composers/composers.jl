@@ -652,6 +652,43 @@ end
     @test inspect(tree) === nothing
 end
 
+@testitem "Composer show: a censored leaf labels on one line (#282)" begin
+    using Distributions
+
+    tree = compose((onset_report = truncated(Gamma(1.5, 1.0); upper = 21.0),
+        onset_referral = censored(Gamma(1.0, 2.0); upper = 14.0),
+        onset_both = censored(Gamma(1.0, 2.0); lower = 1.0, upper = 14.0)))
+    lines = split(rstrip(sprint(show, MIME"text/plain"(), tree), '\n'), '\n')
+
+    # Upstream gives `Censored` only a multi-line struct dump, which used to
+    # break out of the tree; it now labels like its `Truncated` sibling.
+    @test length(lines) == 4
+    @test !any(isempty, lines)
+    referral = only(filter(l -> occursin("onset_referral", l), lines))
+    @test occursin("Censored(", referral)
+    @test occursin("upper=14.0)", referral)
+    both = only(filter(l -> occursin("onset_both", l), lines))
+    @test occursin("lower=1.0, upper=14.0)", both)
+end
+
+@testitem "Composer show: a multi-line leaf keeps the tree prefix (#282)" begin
+    using Distributions
+
+    # `MixtureModel` has no compact upstream label, so its render stays
+    # multi-line; the continuation lines are indented under the child rather
+    # than breaking out of the tree.
+    tree = compose((mixed = MixtureModel([Gamma(1.5, 1.0), Gamma(2.0, 1.5)]),
+        plain = Gamma(2.0, 1.0)))
+    lines = split(rstrip(sprint(show, MIME"text/plain"(), tree), '\n'), '\n')
+
+    @test length(lines) > 3
+    @test !any(isempty, lines)
+    @test all(
+        l -> startswith(l, "├─ ") || startswith(l, "└─ ") ||
+             startswith(l, "│  ") || startswith(l, "   "),
+        lines[2:end])
+end
+
 @testitem "update: replace parameters from a nested NamedTuple" begin
     using ComposedDistributions: update
     using Distributions
