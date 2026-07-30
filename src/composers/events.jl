@@ -1,10 +1,10 @@
-# The event-skeleton spec: an event-tree TOPOLOGY (names and composition
-# structure) with NO distributions attached. `@events` (in events_macro.jl)
+# The event-skeleton spec: an event-tree topology (names and composition
+# structure) with *no* distributions attached. `@events` (in events_macro.jl)
 # lowers an operator diagram to one of these, and `update(skeleton; fills...)`
 # fills each named hole with a distribution and builds the concrete composed
 # tree through the existing `sequential` / `parallel` / `resolve` / `compete`
 # verbs. The spec is deliberately Turing- and ModifiedDistributions-free: a fill
-# value is ANY valid leaf (a plain distribution, an `uncertain(...)` leaf, a
+# value is any valid leaf (a plain distribution, an `uncertain(...)` leaf, a
 # ModifiedDistributions modifier leaf, or a pre-built subtree), so the fill never
 # hard-codes to a distribution family. A ModifiedDistributions leaf composes
 # through ModifiedDistributions' own `ModifiedDistributionsComposedDistributionsExt`
@@ -52,7 +52,7 @@ end
 
 # --- names -----------------------------------------------------------------
 
-# The representative name of a spec node: a `Hole`'s own name, a chain's TERMINAL
+# The representative name of a spec node: a `Hole`'s own name, a chain's terminal
 # event (the destination the chain resolves to), and a group's deterministic
 # join of its branch representatives (`_or_` for one_of, `_and_` for parallel).
 # This is both the step name a node takes inside an enclosing chain / parallel
@@ -89,13 +89,13 @@ _hole_names(spec::AbstractEventSpec) = _collect_holes!(Symbol[], spec)
 
 @doc "
 
-An event-tree TOPOLOGY: named events and their composition structure, with NO
+An event-tree topology: named events and their composition structure, with *no*
 distributions attached yet.
 
 An `EventSkeleton` is built by [`@events`](@ref) from a readable operator
 diagram: `→` (`\\to`) chains events into a [`Sequential`](@ref), `|` branches
 into a one_of outcome, `&` runs branches in [`Parallel`](@ref), and parentheses
-group for precedence. A bare identifier is an event NAME and becomes a named
+group for precedence. A bare identifier is an event name and becomes a named
 hole. Fill the holes with [`update`](@ref)`(skeleton; name = dist, ...)` to build
 the concrete composed tree; whether a `|` node becomes a fixed-probability
 [`Resolve`](@ref) or a racing-hazard [`Compete`](@ref) is decided there by the
@@ -176,7 +176,7 @@ hole with its fill, and lowers each structural node through the matching verb: a
 `|`-group a fixed-probability [`Resolve`](@ref) or a racing-hazard
 [`Compete`](@ref) decided by the fill value type.
 
-A fill value is ANY valid leaf and is never coerced to a distribution family: a
+A fill value is any valid leaf and is never coerced to a distribution family: a
 plain `UnivariateDistribution`, an [`uncertain`](@ref) / `@uncertain` leaf, a
 ModifiedDistributions modifier leaf (`affine` / `weighted` / `thin` / censored),
 or a pre-built composed subtree. A ModifiedDistributions leaf composes through

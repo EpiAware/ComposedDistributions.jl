@@ -51,7 +51,7 @@ import Tables
 # The convolution + quadrature substrate CD's own interop methods build on
 # (see composers/convolved_interop.jl and hazard_one_of.jl) — not re-exported
 # (#228): a caller reaches ConvolvedDistributions' own surface (`convolved`,
-# `product`, `DelayPMF`, the solver types, ...) with its own
+# `product`, the solver types, ...) with its own
 # `using ConvolvedDistributions`. Only the names CD extends or constructs
 # internally are imported here.
 using ConvolvedDistributions: ConvolvedDistributions, convolved,
@@ -102,7 +102,7 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
-# Event-skeleton topology: `@events` declares an event tree's STRUCTURE (named
+# Event-skeleton topology: `@events` declares an event tree's structure (named
 # holes joined by → / | / & operators) with no distributions attached;
 # `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
 # composed tree through the existing verbs (a `|` node becomes a `Resolve` or
@@ -135,7 +135,7 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # same ambiguous-binding clash #233 hit with `as_turing` when two packages
 # both export a same-named generic (#221).
 export params_table, event_names, event_tree, event, build_priors,
-       default_prior, param_priors, inspect
+       default_prior, param_priors, inspect, reserved_record_fields
 
 # Record transforms: `event_times` maps a drawn record of per-step increments
 # to absolute positions from the origin; `event_increments` is the inverse.
@@ -147,6 +147,9 @@ export event_times, event_increments
 export prune, splice
 
 export observed_distribution
+
+# Distribution-level elapsed distance between two named events of a chain.
+export elapsed_between
 
 # --- includes --------------------------------------------------------------
 
@@ -221,11 +224,19 @@ include("composers/observed.jl")
 # / update walks it extends to see through a composite leaf) and Uncertain.jl
 # (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")
+# Distribution-level elapsed-distance accessors over a named chain: after
+# observed.jl (`_observed_leaves`), introspection.jl (`event_names`) and the
+# `convolved` re-export, whose public verbs it reads.
+include("composers/event_intervals.jl")
 # Per-edge delay moments: after the composers it walks and observed.jl.
 include("composers/composed_moments.jl")
 # Labelled NamedTuple outputs + the generic realisation seam. Last: wraps the
 # composers' vector-valued draws by name.
 include("composers/named_outputs.jl")
+# Batch record sampler + scorer (`rand(d, n)` -> Tables.jl column table that
+# scores back through `logpdf`): after named_outputs (reuses
+# `_named_composer_rand` / `_value_names` and the NamedTuple `logpdf`).
+include("composers/batch_records.jl")
 # Record transform between per-step increments and absolute positions
 # (`event_times` / `event_increments`): after named_outputs (reuses
 # `_value_names` / `_join_value_path`) and the composer verbs.

@@ -1,12 +1,9 @@
 # MANAGED by EpiAwarePackageTools.scaffold — do not edit by hand.
 name: Auto Version Increment
 
-# Parked until v0.1.0 is tagged (#113): the version is deliberately held
-# at 0.1.0 for the initial release, so the push-triggered bump attempt
-# fails/red-Xs every main commit. Restore the push trigger after the
-# first tag.
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   check-version:
@@ -17,7 +14,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}

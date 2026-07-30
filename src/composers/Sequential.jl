@@ -174,8 +174,8 @@ The child names of a composed distribution.
 
 Returns the tuple of names for a composer's direct children: the step names of a
 [`Sequential`](@ref) chain, the branch names of a [`Parallel`](@ref) set, or the
-outcome names of a [`Resolve`](@ref) node. These EDGE names key the parameter
-inventory, distinct from the flat EVENT names of `_flat_event_names`.
+outcome names of a [`Resolve`](@ref) node. These *edge* names key the parameter
+inventory, distinct from the flat *event* names of `_flat_event_names`.
 
 # Examples
 ```@example
@@ -188,8 +188,8 @@ ComposedDistributions.component_names(tree)
 ```
 
 # See also
-- [`event_names`](@ref): the public EDGE-name accessor
-- `_flat_event_names`: the flat EVENT names
+- [`event_names`](@ref): the public *edge*-name accessor
+- `_flat_event_names`: the flat *event* names
 "
 component_names(::Sequential{names}) where {names} = names
 

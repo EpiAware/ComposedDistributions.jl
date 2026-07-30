@@ -56,10 +56,6 @@ admission branch itself a two-step chain ending in the death/discharge split,
 and the reporting and referral branches keeping their `truncated()` and
 `censored()` wrappers visible in the printed tree.
 
-```@example overview
-admission
-```
-
 The same object simulates a structured record and scores one straight back.
 
 ```@example overview

@@ -5,7 +5,7 @@
 # files. Kept as its own file so it does not collide with the ongoing
 # introspection.jl work elsewhere in the org (design-verbs' CD#202).
 #
-# Also hosts the tree-level guard: `truncated`/`censored` applied to a WHOLE
+# Also hosts the tree-level guard: `truncated`/`censored` applied to a whole
 # composed distribution's event tree, which is either impossible
 # (`Sequential`/`Parallel` are multivariate; Distributions.jl's
 # truncated/censored are univariate-only, so plain Julia dispatch already
@@ -35,11 +35,27 @@ end
 shared_tag(d::Distributions.Censored) = shared_tag(d.uncensored)
 has_varying(d::Distributions.Censored) = has_varying(d.uncensored)
 
+# Upstream gives `Truncated` a one-line `show` but `Censored` only the generic
+# multi-line struct dump (its `uncensored` field is a distribution), which broke
+# out of the tree prefix when a censored leaf printed inline (#282). Label it
+# the way `Truncated` labels itself; fixing this by pirating `show` on an
+# upstream type is not ours to do.
+function _leaf_label(d::Distributions.Censored)
+    bounds = if d.lower === nothing
+        "; upper=$(d.upper)"
+    elseif d.upper === nothing
+        "; lower=$(d.lower)"
+    else
+        "; lower=$(d.lower), upper=$(d.upper)"
+    end
+    return "Censored($(_leaf_label(d.uncensored))$(bounds))"
+end
+
 # --- `censored` pushed inside an `Uncertain` template, mirroring `truncated` -
 #
 # Without this, `censored(u::Uncertain, ...)` would nest as
 # `Censored{Uncertain}`, and the generated codec (which only recognises
-# `Uncertain` as the OUTERMOST wrapper, codec_gen.jl's `_leaf_unflatten_expr`)
+# `Uncertain` as the outermost wrapper, codec_gen.jl's `_leaf_unflatten_expr`)
 # would silently treat the whole leaf as fixed, dropping the estimated
 # parameter. Mirrors Uncertain.jl's `truncated(d::Uncertain, ...)` method set
 # exactly, one method per upstream `censored` signature shape.
@@ -58,7 +74,7 @@ Distributions.censored(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # --- forbid truncated()/censored() on a whole composed tree -----------------
 #
-# One method per upstream signature SHAPE (matching Distributions.jl's own
+# One method per upstream signature shape (matching Distributions.jl's own
 # `truncated`/`censored` dispatch table exactly, with `AbstractComposedDistribution`
 # in place of `UnivariateDistribution`), so each override is strictly more
 # specific than the corresponding upstream method in every argument position

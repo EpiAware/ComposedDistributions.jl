@@ -70,10 +70,10 @@ scalar mean of the
 overall observed delay — the mean of [`observed_distribution`](@ref)`(d)` (the
 convolved total for a chain, the marginal time-to-resolution for a `Resolve`).
 For a genuinely multivariate [`Parallel`](@ref) (several independent observed
-endpoints) it returns the per-ENDPOINT `Vector`, one overall mean per branch
-endpoint, NOT the origin / intermediate events. Censoring is seen through to
-the free delay. An [`uncertain`](@ref) leaf contributes its TEMPLATE moment
-(parameter uncertainty is NOT propagated); guard with
+endpoints) it returns the per-endpoint `Vector`, one overall mean per branch
+endpoint, *not* the origin / intermediate events. Censoring is seen through to
+the free delay. An [`uncertain`](@ref) leaf contributes its template moment
+(parameter uncertainty is *not* propagated); guard with
 [`has_uncertain`](@ref)`(d)` if that matters, draw the marginal with `rand`, or
 collapse the leaf to its concrete template with [`update`](@ref)`(tree, params)`
 to work with fixed parameters.
@@ -103,7 +103,7 @@ Overall variance of a composed distribution.
 
 `var(d)` mirrors [`mean`](@ref): the scalar variance of the overall observed
 delay for a univariate-collapsible composer (the variance of
-[`observed_distribution`](@ref)`(d)`), or the per-ENDPOINT `Vector` for a
+[`observed_distribution`](@ref)`(d)`), or the per-endpoint `Vector` for a
 [`Parallel`](@ref). For a single event's own variance, use
 `var(event(d, name))`.
 

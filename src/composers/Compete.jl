@@ -1,18 +1,18 @@
 @doc "
 
 Resolve risks by racing hazards: the dual of `convolved`
-under MINIMUM instead of sum.
+under minimum instead of sum.
 
 Given cause-specific delay distributions `D_1, ..., D_n`, `Compete`
 represents the first-event time `T = min_k D_k` together with which cause won.
 The marginal `any-event` survival is `∏_k S_k(t)` and density
 `∑_j f_j(t) ∏_{k≠j} S_k(t)`, so it nests as a univariate leaf. Observing a
 resolved `(cause j, time t)` scores `f_j(t) ∏_{k≠j} S_k(t)`. The winning
-probability of each cause is DERIVED from the hazards
-(`P(cause = j) = ∫ f_j ∏_{k≠j} S_k`), NOT a free parameter — this is the key
+probability of each cause is *derived* from the hazards
+(`P(cause = j) = ∫ f_j ∏_{k≠j} S_k`), *not* a free parameter — this is the key
 difference from the fixed-probability mixture [`Resolve`](@ref).
 
-Build it with the [`compete`](@ref) constructor by giving BARE delays
+Build it with the [`compete`](@ref) constructor by giving bare delays
 (no branch probabilities): `compete(:death => D1, :recover => D2)`.
 
 Three views must agree: [`rand`](@ref) draws a latent time per cause and
@@ -50,7 +50,7 @@ struct Compete{names, D <: Tuple} <: AbstractOneOf
             throw(ArgumentError("Compete outcome names must be unique"))
         any(_is_no_event, delays) && throw(ArgumentError(
             "a racing-hazard one_of node has no no-event branch: the " *
-            "no-event probability is DERIVED as the survival ∏ S_k(horizon). " *
+            "no-event probability is derived as the survival ∏ S_k(horizon). " *
             "Use the fixed-probability `Resolve` for an explicit no-event mass"))
         return new{names, D}(delays)
     end
@@ -68,7 +68,7 @@ component_names(::Compete{names}) where {names} = names
 @doc "
 
 Build a racing-hazard [`Compete`](@ref) node from `name => delay`
-outcomes (bare delays, NO branch probabilities).
+outcomes (bare delays, no branch probabilities).
 
 Each outcome is `name => delay`. The winning probability of each cause is derived
 from the hazards, so no branch probability is supplied (that is what selects this
@@ -107,7 +107,7 @@ end
 params(c::Compete) = map(params, c.delays)
 
 # The marginal any-event distribution `T = min_k D_k` is univariate: its survival
-# is `∏_k S_k(t)` and its support runs from the union floor (the soonest ANY
+# is `∏_k S_k(t)` and its support runs from the union floor (the soonest any
 # cause can fire, i.e. the earliest cause lower bound) up to the largest cause
 # maximum. With staggered onsets the floor must be the earliest cause, not the
 # latest: a min over racing causes can fire as soon as the first one's support
@@ -283,13 +283,13 @@ _rand_outcome(c::Compete) = _rand_outcome(default_rng(), c)
 
 @doc "
 
-The DERIVED per-cause winning probabilities of a racing-hazard
+The derived per-cause winning probabilities of a racing-hazard
 [`Compete`](@ref) node: `P(cause = j) = ∫ f_j(t) ∏_{k≠j} S_k(t) dt`,
 returned as a `NamedTuple` keyed by the outcome names.
 
 This is the [`Compete`](@ref) method of `Distributions.probs`, the standard
 mixture-weight reader: it gives the same per-outcome split [`Resolve`](@ref)
-returns from its declared branch probabilities, but DERIVED here from the
+returns from its declared branch probabilities, but derived here from the
 hazards rather than declared.
 
 Computed by AD-safe fixed-node Gauss-Legendre quadrature of the cause-resolved
@@ -381,7 +381,7 @@ end
 # has any usable bound.
 #
 # This only guards against a crash (a thrown MethodError or a non-finite
-# window). It does NOT guard the shared quadrature's ACCURACY: `probs`'s
+# window). It does *not* guard the shared quadrature's accuracy: `probs`'s
 # fixed 64-node Gauss-Legendre rule integrates over whatever window this
 # returns, and for a wide window (a genuinely heavy-tailed cause, or an
 # ordinary composite/convolved cause whose `mean + 10*std` fallback is
@@ -410,7 +410,7 @@ end
 
 @doc "
 
-The probability that ANY (non-no-event) outcome occurs for a one_of node.
+The probability that any (non-no-event) outcome occurs for a one_of node.
 
 For a racing-hazard [`Compete`](@ref) node `occurrence_probability` is the
 sum of the derived per-cause split `Distributions.probs` returns (one for
