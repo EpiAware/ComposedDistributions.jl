@@ -75,8 +75,7 @@ maxlag = length(infections) - 1
 # own (continuous) observed total: a caller-owned PMF, here from a discrete
 # distribution's own masses.
 masses = pdf.(NegativeBinomial(5, 0.5), 0:maxlag)
-pmf = ConvolvedDistributions.DelayPMF(masses, 1.0)
-expected_counts = convolve_series(pmf, infections)
+expected_counts = convolve_series(masses, infections)
 
 # The count series at named interim events (here the prefix to each event).
 onset_to = sequential(:onset_admit => Gamma(2.0, 1.0),
