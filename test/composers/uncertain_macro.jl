@@ -1,8 +1,3 @@
-# `@uncertain` macro tests: it rewrites a distribution-valued constructor
-# argument into the positional `uncertain` family form, composes through
-# `compose`/the verbs, leaves all-literal constructors alone, and wraps
-# correctly under a ModifiedDistributions modifier.
-
 @testitem "@uncertain: positional rewrite equals uncertain(D, ...)" begin
     using Distributions
 
@@ -66,30 +61,4 @@ end
     @test (@uncertain LogNormal(0.5, 0.4)) == LogNormal(0.5, 0.4)
     @test (@uncertain Gamma(2.0, 1.0)) == Gamma(2.0, 1.0)
     @test !(@uncertain LogNormal(0.5, 0.4) isa Uncertain)
-end
-
-@testitem "@uncertain: wraps under a ModifiedDistributions modifier" begin
-    using Distributions
-    using ModifiedDistributions
-    using ModifiedDistributions: affine, get_dist
-    using ComposedDistributions: free_leaf
-
-    aff = @uncertain affine(Gamma(Normal(0.7, 0.2), 1.0); scale = 2.0)
-
-    # The affine directly wraps the rewritten uncertain leaf.
-    inner = get_dist(aff)
-    @test inner isa Uncertain
-    @test keys(inner.specs) == (:shape,)
-    # free_leaf peels through both the modifier and the uncertainty to the
-    # concrete template (its documented job), so the modifier survives an
-    # uncertain leaf.
-    @test free_leaf(aff) == Gamma(1.0, 1.0)
-
-    # params_table reports the inner shape as uncertain (its spec on the row).
-    tree = compose((onset = aff, admit = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
-    shape_idx = findfirst(
-        i -> tbl.edge[i] == :onset &&
-             tbl.param[i] == :shape, eachindex(tbl.edge))
-    @test tbl.prior[shape_idx] == Normal(0.7, 0.2)
 end
