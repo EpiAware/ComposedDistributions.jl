@@ -120,7 +120,7 @@ end
 
     register_leaf_wrapper!(ReplaceableWrap; free_index = 1)
     @test _resolve_leaf_free_type(ReplaceableWrap{Float64}) == Float64
-    
+
     register_leaf_wrapper!(ReplaceableWrap; free_index = 1, extra_names = (:replaced,))
     @test ComposedDistributions._resolve_extra_names(ReplaceableWrap{Float64}) ==
           (:replaced,)
