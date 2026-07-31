@@ -16,16 +16,6 @@ const QA_CONFIG = (
     # Per-check Aqua relaxations, e.g. (; ambiguities = false). Empty = all on.
     aqua = (;),
 
-    # ExplicitImports `ignore`: symbols imported non-publicly.
-    # (`logccdf_ad_safe` is a public EpiAwareADTools export the racing-hazard node
-    # reuses and extends, so it needs no ignore. The published leaf protocol —
-    # `uncertain_specs`, `leaf_detail_lines`, `shared_tag`, `leaf_param_names`,
-    # `leaf_mean`, `leaf_var`, `extra_leaf_params`, `set_extra_leaf_params` — is
-    # `public` (#170), so the ModifiedDistributions extension that extends or
-    # reuses it needs no ignore.) `CentredPoolPrior` and `_population_template`
-    # are the internal pooling marker type and population-family lookup the
-    # Bijectors extension reuses to read a centred-pooled row's constraint off
-    # its population instead of a fixed prior.
     ei_ignore = (:CentredPoolPrior, :_population_template),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
