@@ -416,7 +416,7 @@ end
 
     below = Gamma(2.0, 1.0)
     above = Gamma(2.0, 3.0)
-    sw = threshold(:x, 10.0; below, above)
+    sw = ComposedDistributions.threshold(:x, 10.0; below, above)
 
     @test sw isa ComposedDistributions.Varying
     @test sw.covariate === :x
@@ -430,12 +430,12 @@ end
     @test instantiate(sw, Context(x = 15.0)) == above
 
     # An explicit reference overrides the default.
-    sw2 = threshold(:x, 10.0; below, above, reference = above)
+    sw2 = ComposedDistributions.threshold(:x, 10.0; below, above, reference = above)
     @test sw2.reference == above
 
     # A composite node works as either regime too (threshold builds on
     # `varying`, which already admits a univariate composer).
-    swc = threshold(:x, 10.0;
+    swc = ComposedDistributions.threshold(:x, 10.0;
         below = resolve(:a => (Gamma(1.0, 1.0), 0.5), :b => Gamma(2.0, 1.0)),
         above = Gamma(3.0, 1.0))
     @test instantiate(swc, Context(x = 0.0)) isa ComposedDistributions.Resolve
