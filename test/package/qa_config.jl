@@ -14,9 +14,7 @@ const QA_CONFIG = (
     jet_env = joinpath(@__DIR__, "..", "jet"),
 
     # Per-check Aqua relaxations, e.g. (; ambiguities = false). Empty = all on.
-    aqua = (;),
-
-    ei_ignore = (:CentredPoolPrior, :_population_template),
+    aqua = (;), ei_ignore = (:CentredPoolPrior, :_population_template),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface
