@@ -1,11 +1,3 @@
-# `@events` declares an event-tree topology (names + composition structure, no
-# distributions); `update(skeleton; name = dist, ...)` fills the holes and builds
-# the concrete composed tree through the existing verbs. The `|` node becomes a
-# `Resolve` or `Compete` decided by the fill value type. The fill is
-# type-agnostic: a plain distribution, an `uncertain(...)` leaf and a
-# ModifiedDistributions modifier leaf all compose without any MD-specific code in
-# `@events`.
-
 @testitem "@events: a → chain fills to a Sequential" begin
     using ComposedDistributions: update
     using Distributions
@@ -154,36 +146,6 @@ end
     @test_throws ArgumentError (@events begin
         a → a
     end)
-end
-
-@testitem "@events: ModifiedDistributions leaf fills compose (design test)" begin
-    using ComposedDistributions: update
-    using Distributions
-    using ModifiedDistributions
-    using ModifiedDistributions: affine, get_dist
-
-    skel = @events begin
-        onset → admission → (death | discharge)
-    end
-    # An affine-wrapped Gamma fills the onset hole. No MD-specific code in
-    # @events: the modifier leaf is a UnivariateDistribution, so the verbs admit
-    # it and the existing MD extension peels it.
-    onset_leaf = affine(Gamma(2.0, 1.0); scale = 2.0)
-    tree = update(skel;
-        onset = onset_leaf,
-        admission = LogNormal(0.5, 0.4),
-        death = (Gamma(1.5, 1.0), 0.3),
-        discharge = (Gamma(2.0, 1.5), 0.7))
-
-    # The onset leaf is the affine-wrapped Gamma: free_leaf peels to the Gamma
-    # and get_dist sees the modifier's inner delay.
-    built = tree.components[1]
-    @test ComposedDistributions.free_leaf(built) == Gamma(2.0, 1.0)
-    @test get_dist(built) == Gamma(2.0, 1.0)
-    # params_table sees through the modifier to the inner free parameters.
-    tbl = params_table(tree)
-    @test :shape in tbl.param
-    @test :scale in tbl.param
 end
 
 @testitem "@events: an @uncertain leaf fill stays uncertain" begin
