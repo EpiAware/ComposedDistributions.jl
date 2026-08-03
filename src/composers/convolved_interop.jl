@@ -2,7 +2,7 @@
 # ConvolvedDistributions interop: composed trees feeding the convolution layer
 # ============================================================================
 #
-# ComposedDistributions re-exports the ConvolvedDistributions verbs so a composed
+# ComposedDistributions extends the ConvolvedDistributions verbs so a composed
 # tree feeds the convolution layer without the caller collapsing it by hand:
 #   - `convolve_series(chain, series)`: the timeseries (renewal / latent)
 #     convolution driven by a composed chain's observed total delay;
@@ -12,10 +12,12 @@
 # Each collapses the composed operand to its observed univariate quantity
 # (`observed_distribution`) and then reuses the univariate ConvolvedDistributions
 # method. `difference` reuses it directly. `convolve_series` collapses to a
-# CONTINUOUS observed total, which ConvolvedDistributions 0.2 no longer
-# discretises silently (it is discrete-only), so the chain path discretises the
-# total with the interval-censored-secondary scheme (`discretise_pmf`) before
-# convolving — identical to the pre-0.2 continuous output by construction.
+# CONTINUOUS observed total, which ConvolvedDistributions 0.2 does not
+# discretise (it is discrete-only): the chain path used to discretise it
+# silently with a fixed scheme before convolving; it no longer does (#226) —
+# see the docstring below. Discretisation is an explicit modelling choice
+# (single- vs double-interval censoring), and that choice belongs with
+# CensoredDistributions.jl, not here.
 
 # --- vector (timeseries) convolution driven by a composed chain --------------
 
@@ -25,24 +27,24 @@ Convolve a timeseries through a composed chain's observed delay.
 
 `convolve_series(chain, series)`, where `series` is a numeric timeseries
 vector, collapses the [`Sequential`](@ref) chain to its observed total delay
-([`observed_distribution`](@ref), the convolution of the chain steps) and returns
-the causal discrete convolution of `series` with that delay's discretised PMF,
-truncated to the `series` window. With `series` the expected events at unit-spaced
-times `0, 1, ..., t` (e.g. infections), the result is the expected downstream
-event counts at the same times — the EpiNow2-style latent / renewal observation
-layer, driven by a composed delay rather than a bare distribution.
+([`observed_distribution`](@ref), the convolution of the chain steps) and
+convolves `series` through it. With `series` the expected events at
+unit-spaced times `0, 1, ..., t` (e.g. infections), the result is the expected
+downstream event counts at the same times — the EpiNow2-style latent /
+renewal observation layer, driven by a composed delay rather than a bare
+distribution.
 
-ConvolvedDistributions 0.2 makes the bare-distribution `convolve_series`
-discrete-only, because discretising a continuous delay is an explicit modelling
-choice (single- vs double-interval censoring). A composed chain collapses to a
-CONTINUOUS observed total, so this convenience discretises it for you with the
-interval-censored-secondary scheme ([`discretise_pmf`](@ref) over lags
-`0:(length(series) - 1)`) before convolving; the result is
-`convolve_series(discretise_pmf(observed_distribution(chain),`
-`length(series) - 1; interval), series)` and is unchanged from the pre-0.2
-continuous output. For day-binned (double-interval-censored) primaries,
-discretise the total yourself and pass the PMF to
-`convolve_series(pmf, series)`.
+This is a thin collapse-then-delegate: `convolve_series(observed_distribution`
+`(chain), series)`, the ordinary ConvolvedDistributions method. A discrete
+observed total convolves directly; a CONTINUOUS one (the common case for a
+composed chain of continuous delay leaves) is rejected with `ConvolvedDistributions`'
+own `ArgumentError` (#226 — CD no longer discretises a continuous total
+silently, a policy choice that belongs with `CensoredDistributions.jl`).
+Discretise explicitly first and convolve the PMF directly:
+`convolve_series(discretise_pmf(observed_distribution(chain), length(series) - 1),`
+`series)` for interval-censored-secondary masses (exact primary), or a
+`CensoredDistributions.jl` double-interval-censored PMF for day-binned
+primaries.
 
 Pass `events` to convolve the series to a chosen INTERIM event of the chain
 rather than its endpoint. A single event name returns the count series at that
@@ -51,16 +53,18 @@ names. The cumulative delay to an interim event is the observed collapse of the
 chain PREFIX up to that event (the convolution of the steps leading to it), so
 selecting the terminal event reproduces the plain whole-chain result. Only a
 plain continuous chain (every step a delay leaf, no branching) has such
-per-event cumulative delays; a chain with a branching step is rejected.
+per-event cumulative delays; a chain with a branching step is rejected. The
+same continuous-delay restriction applies here: an interim cumulative delay is
+typically continuous too, and is rejected on the same terms as the endpoint
+case (there is no `events`-selecting discretise-first convenience — collapse
+the chain PREFIX to a [`Sequential`](@ref) of its own and discretise that,
+`observed_distribution`, first).
 
 # Arguments
 - `chain`: a [`Sequential`](@ref) chain, collapsed to its observed total delay.
 - `series`: the input timeseries (expected events at unit-spaced times from 0).
 
 # Keyword Arguments
-- `interval`: the discretisation grid width passed to [`discretise_pmf`](@ref),
-  which is also the series time-step (default `1`). The series is read on this
-  grid, so lag `k` shifts by `k` steps of this width.
 - `events`: a chain event name, or a tuple/vector of names, to convolve the
   series to (the cumulative delay of the chain prefix up to that event). The
   valid names are the chain's [`event_names`](@ref) after the origin. `nothing`
@@ -68,16 +72,19 @@ per-event cumulative delays; a chain with a branching step is rejected.
 
 # Examples
 ```@example
-using ComposedDistributions, Distributions
+using ComposedDistributions, ConvolvedDistributions, Distributions
 
 chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
 infections = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
-expected_counts = convolve_series(chain, infections)
+# The observed total is continuous, so discretise it explicitly first.
+pmf = discretise_pmf(observed_distribution(chain), length(infections) - 1)
+expected_counts = convolve_series(pmf, infections)
 
-# The count series at named interim events (here the prefix to each event).
-onset_to = sequential(:onset_admit => Gamma(2.0, 1.0),
-    :admit_death => LogNormal(0.5, 0.4))
-by_event = convolve_series(onset_to, infections;
+# A discrete observed total (e.g. every leaf a discrete delay) convolves
+# directly, endpoint or a named interim event alike — no discretisation step.
+discrete_chain = sequential(:onset_admit => Poisson(3.0),
+    :admit_death => Poisson(5.0))
+by_event = convolve_series(discrete_chain, infections;
     events = (:admit, :death))
 ```
 
@@ -87,38 +94,21 @@ by_event = convolve_series(onset_to, infections;
 - [`difference`](@ref): the difference of two observed totals.
 "
 function ConvolvedDistributions.convolve_series(
-        d::Sequential, series::AbstractVector{<:Real};
-        interval = 1, events = nothing)
-    events === nothing && return _convolve_observed_series(
-        observed_distribution(d), series, interval)
-    return _convolve_chain_events(d, series, events, interval)
-end
-
-# ConvolvedDistributions 0.2 makes the bare-distribution `convolve_series`
-# discrete-only: a continuous delay carries no mass on the integer lag grid
-# until it is discretised, and the single- vs double-interval-censoring choice
-# is one upstream will not make silently. A composed tree collapses to a
-# CONTINUOUS observed total delay, so the composed-tree convenience discretises
-# it here rather than pushing that step onto the caller. `discretise_pmf`'s
-# CDF-difference masses over lags `0:(length(series) - 1)` are exactly the
-# pre-0.2 continuous discretisation, so the composed output is unchanged; the
-# masses then ride the discrete `convolve_series(pmf, series)` method.
-function _convolve_observed_series(
-        delay::UnivariateDistribution, series::AbstractVector{<:Real}, interval)
-    pmf = discretise_pmf(delay, length(series) - 1; interval = interval)
-    return convolve_series(pmf, series)
+        d::Sequential, series::AbstractVector{<:Real}; events = nothing)
+    events === nothing && return ConvolvedDistributions.convolve_series(
+        observed_distribution(d), series)
+    return _convolve_chain_events(d, series, events)
 end
 
 # A one_of node (`Resolve` / `Compete`) IS a univariate continuous delay — its
 # marginal time to the resolving event — so `observed_distribution` returns it
-# unchanged. Under ConvolvedDistributions 0.2 the bare-distribution
-# `convolve_series` is discrete-only and would reject that continuous marginal,
-# so the composed-tree convenience discretises it here (identical to the pre-0.2
-# output) rather than making the caller collapse and discretise it by hand.
+# unchanged, and the ordinary ConvolvedDistributions method runs on it
+# directly (rejecting it, per #226, if it is continuous and not yet
+# discretised — see the `Sequential` method's docstring).
 function ConvolvedDistributions.convolve_series(
-        d::AbstractOneOf, series::AbstractVector{<:Real}; interval = 1)
-    return _convolve_observed_series(
-        observed_distribution(d), series, interval)
+        d::AbstractOneOf, series::AbstractVector{<:Real})
+    return ConvolvedDistributions.convolve_series(
+        observed_distribution(d), series)
 end
 
 # A `Parallel` has several independent endpoints and so no single observed delay
@@ -126,7 +116,7 @@ end
 # kwarg is accepted (and ignored) so passing it still lands on this informative
 # error rather than a bare `MethodError`.
 function ConvolvedDistributions.convolve_series(
-        ::Parallel, ::AbstractVector{<:Real}; interval = 1, events = nothing)
+        ::Parallel, ::AbstractVector{<:Real}; events = nothing)
     throw(ArgumentError(
         "cannot convolve a timeseries through a Parallel: it has several " *
         "independent observed endpoints and no single observed delay; " *
@@ -137,7 +127,7 @@ end
 # A `Choose`'s observed delay depends on the data-selected alternative, so there
 # is no single delay to convolve through; select an alternative first.
 function ConvolvedDistributions.convolve_series(
-        ::Choose, ::AbstractVector{<:Real}; interval = 1, events = nothing)
+        ::Choose, ::AbstractVector{<:Real}; events = nothing)
     throw(ArgumentError(
         "cannot convolve a timeseries through a Choose: its active " *
         "alternative is data-selected; convolve the chosen alternative, " *
@@ -155,22 +145,24 @@ end
 # step (whose flat events do not line up one-to-one with the delay steps) is
 # rejected.
 
-# A single event name: the series at that one event.
+# A single event name: the series at that one event. Delegates straight to the
+# ordinary ConvolvedDistributions method, exactly like the whole-chain method
+# above — a continuous cumulative delay is rejected unless discretised first
+# (#226).
 function _convolve_chain_events(
-        d::Sequential, series::AbstractVector{<:Real}, name::Symbol, interval)
+        d::Sequential, series::AbstractVector{<:Real}, name::Symbol)
     delay = _event_prefix_delay(d, name)
-    return _convolve_observed_series(delay, series, interval)
+    return ConvolvedDistributions.convolve_series(delay, series)
 end
 
 # Several event names: a `NamedTuple` of the per-event series, keyed by the names.
 function _convolve_chain_events(
-        d::Sequential, series::AbstractVector{<:Real}, names, interval)
+        d::Sequential, series::AbstractVector{<:Real}, names)
     syms = Tuple(names)
     all(n -> n isa Symbol, syms) || throw(ArgumentError(
         "convolve_series(..., events = ...): `events` must be an event " *
         "name or a tuple/vector of event names (Symbols); got $(typeof(names))"))
-    series_by_event = map(
-        n -> _convolve_chain_events(d, series, n, interval), syms)
+    series_by_event = map(n -> _convolve_chain_events(d, series, n), syms)
     return NamedTuple{syms}(series_by_event)
 end
 

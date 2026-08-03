@@ -176,13 +176,12 @@ end
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
     # observed_distribution keeps the affine step (it is the observed delay,
-    # not a free parameter), so convolving the chain honours it. Under
-    # ConvolvedDistributions 0.2 the bare-distribution convolve_series is
-    # discrete-only, so the chain path discretises the observed total first.
-    out = convolve_series(chain, series)
+    # not a free parameter), so convolving the chain honours it. The observed
+    # total is continuous, so convolving through the chain directly is
+    # rejected (#226); discretise it explicitly first.
     maxlag = length(series) - 1
-    @test out ==
-          convolve_series(discretise_pmf(observed_distribution(chain), maxlag),
+    @test_throws ArgumentError convolve_series(chain, series)
+    out = convolve_series(discretise_pmf(observed_distribution(chain), maxlag),
         series)
     @test length(out) == length(series)
 end

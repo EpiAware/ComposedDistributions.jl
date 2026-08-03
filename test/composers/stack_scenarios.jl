@@ -401,23 +401,25 @@ end
         :admit_death => LogNormal(0.5, 0.4))
     infections = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0, 1.0, 0.0, 0.0]
 
-    # Convolving through the chain is identical to collapsing it to its observed
-    # total, discretising that (ConvolvedDistributions 0.2 is discrete-only), and
-    # convolving the PMF — the pre-0.2 continuous output unchanged.
-    counts = convolve_series(chain, infections)
-    @test length(counts) == length(infections)
-    @test counts ≈ convolve_series(
+    # The observed total is continuous, so convolving through the chain
+    # directly is rejected (#226); discretise it explicitly first.
+    @test_throws ArgumentError convolve_series(chain, infections)
+    counts = convolve_series(
         discretise_pmf(observed_distribution(chain), length(infections) - 1),
         infections)
+    @test length(counts) == length(infections)
 
-    # Selecting the chain's interim events gives the count series at each event;
-    # the terminal event reproduces the whole-chain result, and the first event
-    # is just the first step's convolution.
-    by_event = convolve_series(chain, infections; events = (:admit, :death))
-    @test keys(by_event) == (:admit, :death)
-    @test by_event.death ≈ counts
-    @test by_event.admit ≈ convolve_series(
+    # Selecting the chain's interim events is rejected the same way; each
+    # interim cumulative delay is discretised explicitly the same manner.
+    @test_throws ArgumentError convolve_series(
+        chain, infections; events = (:admit, :death))
+    death = convolve_series(
+        discretise_pmf(observed_distribution(chain), length(infections) - 1),
+        infections)
+    admit = convolve_series(
         discretise_pmf(Gamma(2.0, 1.0), length(infections) - 1), infections)
+    @test death ≈ counts
+    @test admit isa AbstractVector
 end
 
 @testitem "Scenario: shared incubation tied across two branches" tags = [:scenarios] begin

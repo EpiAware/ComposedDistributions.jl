@@ -1,5 +1,24 @@
 ## Unreleased
 
+- **breaking:** `convolve_series(chain, series)` (and the `events`-selecting
+  and racing-marginal forms) no longer discretise a continuous observed total
+  silently (#226). They are now a thin collapse-then-delegate to the ordinary
+  `ConvolvedDistributions.convolve_series`, which rejects a continuous delay
+  outright — discretisation (single- vs double-interval censoring) is an
+  explicit modelling choice that belongs with `CensoredDistributions.jl`, not
+  a policy this package should make on a caller's behalf. **Migration**: a
+  caller relying on the old auto-discretise convenience now discretises
+  explicitly first and convolves the PMF directly:
+  `convolve_series(discretise_pmf(observed_distribution(chain), length(series) - 1), series)`
+  (unchanged as a direct call — nothing about `discretise_pmf` itself moves in
+  this release). A discrete observed total (every leaf a discrete delay)
+  is unaffected and convolves directly, as before. The now-unused `interval`
+  keyword argument is also removed from `convolve_series(chain, series; ...)`
+  — it only ever fed the removed auto-discretise step. Tracked for a future
+  home in `CensoredDistributions.jl` (an auto-discretising convenience for
+  composed chains, mirroring this package's removed behaviour) on
+  CensoredDistributions#887.
+
 - **breaking:** the `ComposedDistributionsLogDensityProblemsExt` extension
   (#220) and the `ComposedDistributionsDynamicPPLExt` extension and `as_turing`
   stub (#233) are removed, along with the `LogDensityProblems` weakdep.

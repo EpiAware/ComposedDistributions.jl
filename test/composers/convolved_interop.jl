@@ -11,15 +11,16 @@
     chain = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    out = convolve_series(chain, series)
-    # ConvolvedDistributions 0.2 is discrete-only, so the chain collapses to its
-    # continuous observed total and discretises it explicitly; the composed path
-    # is identical to discretising the total by hand and convolving the PMF (and
-    # so reproduces the pre-0.2 continuous output exactly).
+    # ComposedDistributions no longer discretises a continuous observed total
+    # silently (#226): `convolve_series(chain, series)` is a thin
+    # collapse-then-delegate to the ordinary ConvolvedDistributions method,
+    # which rejects a continuous delay outright.
     obs = observed_distribution(chain)
-    @test out == convolve_series(discretise_pmf(obs, length(series) - 1), series)
-    # The bare continuous total is now rejected: it must be discretised first.
+    @test_throws ArgumentError convolve_series(chain, series)
     @test_throws ArgumentError convolve_series(obs, series)
+
+    # Discretise explicitly first and convolve the PMF directly.
+    out = convolve_series(discretise_pmf(obs, length(series) - 1), series)
     @test length(out) == length(series)
     # First step ties directly to the observed-total CDF over the first grid
     # bin (the lag-0 interval mass times the first series value).
@@ -28,9 +29,24 @@
     # A nested chain collapses through to the same flat total.
     nested = Sequential(Sequential(Gamma(2.0, 1.0), Gamma(1.0, 1.0)),
         LogNormal(0.5, 0.4))
-    @test convolve_series(nested, series) == convolve_series(
+    @test_throws ArgumentError convolve_series(nested, series)
+    @test convolve_series(
         discretise_pmf(observed_distribution(nested), length(series) - 1),
-        series)
+        series) isa AbstractVector
+end
+
+@testitem "convolve_series(chain, series): discrete chain convolves directly" begin
+    using Distributions
+    using ConvolvedDistributions: convolve_series
+
+    # A discrete observed total needs no discretisation step: the
+    # collapse-then-delegate lands directly on ConvolvedDistributions'
+    # discrete-delay method.
+    chain = Sequential(Poisson(3.0), Poisson(5.0))
+    series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
+    out = convolve_series(chain, series)
+    @test length(out) == length(series)
+    @test all(>=(0), out)
 end
 
 @testitem "convolve_series(chain, series; events): per-event series" begin
@@ -44,21 +60,41 @@ end
         :death_report => g3)
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
-    # An interim event's series is the series convolved through the cumulative
-    # delay of the prefix leading to it (collapse the prefix by hand).
-    admit = convolve_series(chain, series; events = :admit)
-    @test admit ==
-          convolve_series(discretise_pmf(g1, length(series) - 1), series)
-    death = convolve_series(chain, series; events = :death)
-    @test death == convolve_series(
+    # An interim cumulative delay is typically continuous too (#226): the
+    # events-selecting form is rejected on the same terms as the endpoint.
+    @test_throws ArgumentError convolve_series(chain, series; events = :admit)
+    @test_throws ArgumentError convolve_series(
+        chain, series; events = (:admit, :report))
+
+    # Discretising each prefix's cumulative delay by hand and convolving
+    # directly still works exactly as before.
+    admit = convolve_series(discretise_pmf(g1, length(series) - 1), series)
+    death = convolve_series(
         discretise_pmf(convolved([g1, g2]), length(series) - 1), series)
+    report = convolve_series(
+        discretise_pmf(convolved([g1, g2, g3]), length(series) - 1), series)
+    @test length(admit) == length(death) == length(report) == length(series)
+end
+
+@testitem "convolve_series(chain, series; events): per-event, discrete chain" begin
+    using Distributions
+    using ConvolvedDistributions: convolve_series
+
+    # A discrete chain's events-selected form needs no discretisation step,
+    # exactly like the endpoint form.
+    p1 = Poisson(2.0)
+    p2 = Poisson(3.0)
+    chain = sequential(:onset_admit => p1, :admit_death => p2)
+    series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
+
+    admit = convolve_series(chain, series; events = :admit)
+    death = convolve_series(chain, series; events = :death)
+    @test length(admit) == length(death) == length(series)
 
     # A tuple of names returns a NamedTuple keyed by the names; a vector too.
-    nt = convolve_series(chain, series; events = (:admit, :report))
-    @test nt isa NamedTuple{(:admit, :report)}
-    @test nt.admit == admit
-    @test nt.report == convolve_series(
-        discretise_pmf(convolved([g1, g2, g3]), length(series) - 1), series)
+    nt = convolve_series(chain, series; events = (:admit, :death))
+    @test nt isa NamedTuple{(:admit, :death)}
+    @test nt.admit == admit && nt.death == death
     vt = convolve_series(chain, series; events = [:admit, :death])
     @test vt.admit == admit && vt.death == death
 end
@@ -67,15 +103,18 @@ end
     using Distributions
     using ConvolvedDistributions: convolve_series
 
-    chain = sequential(:onset_admit => Gamma(2.0, 1.0),
-        :admit_death => LogNormal(0.5, 0.4))
+    # A discrete chain, so both sides of the comparison convolve directly
+    # rather than both throwing the same continuous-delay error (#226) --
+    # this test is about the events-selection structure, not discretisation.
+    chain = sequential(:onset_admit => Poisson(2.0),
+        :admit_death => Poisson(3.0))
     series = [0.0, 1.0, 3.0, 6.0, 8.0, 5.0, 2.0]
 
     # Selecting the terminal event reproduces the plain whole-chain result.
     @test convolve_series(chain, series; events = :death) ==
           convolve_series(chain, series)
     # A positional-default chain names its events :event_i; the endpoint matches.
-    pos = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
+    pos = Sequential(Poisson(2.0), Poisson(3.0))
     @test convolve_series(pos, series; events = event_names(pos)[end]) ==
           convolve_series(pos, series)
 end
@@ -115,16 +154,16 @@ end
     using Distributions
     using ConvolvedDistributions: convolve_series, discretise_pmf
 
-    # A Resolve / Compete marginal is a continuous univariate delay. The base
-    # ConvolvedDistributions 0.2 `convolve_series` is discrete-only, so the
-    # one_of bridge discretises the marginal for it; the result matches
-    # discretising and convolving that marginal delay directly.
+    # A Resolve / Compete marginal is a continuous univariate delay, so the
+    # one_of bridge rejects it exactly like a chain's continuous total (#226);
+    # discretise the marginal explicitly first and convolve that PMF directly.
     r = resolve(:recover => (Gamma(2.0, 1.0), 0.7),
         :die => (Gamma(1.5, 2.0), 0.3))
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
-    @test convolve_series(r, series) == convolve_series(
+    @test_throws ArgumentError convolve_series(r, series)
+    out = convolve_series(
         discretise_pmf(observed_distribution(r), length(series) - 1), series)
-    @test length(convolve_series(r, series)) == length(series)
+    @test length(out) == length(series)
 end
 
 @testitem "convolve_series: Compete marginal drives a series" begin
@@ -133,13 +172,14 @@ end
 
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
 
-    # A Compete's observed quantity is its marginal any-event (first-event) time,
-    # a continuous univariate delay, so the one_of bridge discretises it before
-    # convolving; `observed_distribution` returns it unchanged.
+    # A Compete's observed quantity is its marginal any-event (first-event)
+    # time, a continuous univariate delay, so the one_of bridge rejects it
+    # unless discretised first (#226); `observed_distribution` returns it
+    # unchanged.
     c = Compete(:recover => Gamma(2.0, 1.0), :die => Gamma(1.5, 2.0))
-    out = convolve_series(c, series)
     @test observed_distribution(c) === c
-    @test out == convolve_series(
+    @test_throws ArgumentError convolve_series(c, series)
+    out = convolve_series(
         discretise_pmf(observed_distribution(c), length(series) - 1), series)
     @test length(out) == length(series)
     @test all(>=(0), out)
@@ -155,8 +195,7 @@ end
     # revises; if that changes these outputs, reconcile at the update-branch.
     cf = Compete(:recover => truncated(Gamma(2.0, 1.0); lower = 1.0),
         :die => truncated(Gamma(1.5, 2.0); lower = 2.0))
-    outf = convolve_series(cf, series)
-    @test outf == convolve_series(
+    outf = convolve_series(
         discretise_pmf(observed_distribution(cf), length(series) - 1), series)
     @test length(outf) == length(series)
     @test all(>=(0), outf)
