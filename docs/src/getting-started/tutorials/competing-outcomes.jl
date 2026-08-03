@@ -127,5 +127,5 @@ rand(Xoshiro(1), history)
 #
 # - [Composing distributions](@ref composing-distributions) covers all five
 #   composers and the structural edits.
-# - [Delay chains and the linear chain trick](@ref linear-chain) shows the
+# - [Delay chains, additive moments, and collapsing](@ref linear-chain) shows the
 #   conjunctive `Sequential` chain in depth.

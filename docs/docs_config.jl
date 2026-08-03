@@ -30,7 +30,7 @@ const TUTORIALS_SUBDIR = joinpath("getting-started", "tutorials")
 const TUTORIAL_STUBS = [
     "composing-distributions.md" => "# [Composing distributions](@id composing-distributions)",
     "competing-outcomes.md" => "# [Competing outcomes: resolve versus compete](@id competing-outcomes)",
-    "linear-chain.md" => "# [Delay chains and the linear chain trick](@id linear-chain)",
+    "linear-chain.md" => "# [Delay chains, additive moments, and collapsing](@id linear-chain)",
     "strata-uncertainty.md" => "# [Multi-strata trees and parameter uncertainty](@id strata-uncertainty)",
     "event-skeletons.md" => "# [Event skeletons: reusable topologies with `@events`](@id event-skeletons)"
 ]

@@ -18,7 +18,7 @@ pages = [
         "Tutorials" => [
             "Composing distributions" => "getting-started/tutorials/composing-distributions.md",
             "Competing outcomes" => "getting-started/tutorials/competing-outcomes.md",
-            "Delay chains and the linear chain trick" => "getting-started/tutorials/linear-chain.md",
+            "Delay chains, additive moments, and collapsing" => "getting-started/tutorials/linear-chain.md",
             "Multi-strata trees and parameter uncertainty" => "getting-started/tutorials/strata-uncertainty.md",
             "Event skeletons: reusable topologies with @events" => "getting-started/tutorials/event-skeletons.md"
         ],

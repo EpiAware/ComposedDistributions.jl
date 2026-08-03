@@ -40,7 +40,7 @@ Prefer the `NamedTuple` form in new code.
 
 A [`Sequential`](@ref) chain models each step separately; to collapse it to the single distribution of its origin-to-final gap, use [`observed_distribution`](@ref), which convolves the steps into one delay.
 For two standalone delays that are not part of a tree, ConvolvedDistributions.jl's `convolved` gives their sum `X + Y` directly.
-See [Delay chains and the linear chain trick](@ref linear-chain) for a worked example.
+See [Delay chains, additive moments, and collapsing](@ref linear-chain) for a worked example.
 
 ## How do I fix a parameter across branches?
 
