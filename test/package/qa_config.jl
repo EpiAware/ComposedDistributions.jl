@@ -13,6 +13,9 @@ const QA_CONFIG = (
     # Path to the isolated JET environment (see test/jet/Project.toml).
     jet_env = joinpath(@__DIR__, "..", "jet"),
 
+    # Path to the isolated formatter environment (pinned JuliaFormatter).
+    formatter_env = joinpath(@__DIR__, "..", "formatter"),
+
     # Per-check Aqua relaxations, e.g. (; ambiguities = false). Empty = all on.
     aqua = (;), ei_ignore = (:CentredPoolPrior, :_population_template),
 
