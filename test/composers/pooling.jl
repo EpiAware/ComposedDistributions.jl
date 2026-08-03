@@ -188,6 +188,54 @@ end
     @test params(event(collapsed, :b))[1] ≈ 1.5
 end
 
+@testitem "pool: centred rows and their population prior term" begin
+    using Distributions
+    using ComposedDistributions: centred_pool_rows, pool_centred_logprior,
+                                 unflatten
+
+    # A centred pooled parameter's prior is parameter-dependent (the population
+    # is reconstructed at the current hyperparameters), so it is not in the
+    # fixed per-row prior vector. These two are how DistributionsInference.jl
+    # scores it: `centred_pool_rows` once at construction, then
+    # `pool_centred_logprior` per draw.
+    pop = uncertain(Gamma(2.0, 1.0);
+        shape = truncated(Normal(2.0, 1.0); lower = 0),
+        scale = truncated(Normal(1.0, 1.0); lower = 0))
+    model = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, pop)),
+        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, pop))))
+
+    rows = centred_pool_rows(model)
+    @test length(rows) == 2
+    @test [r[1] for r in rows] == [(:a,), (:b,)]
+    @test [r[2] for r in rows] == [:shape, :shape]
+    @test all(r -> r[3] == pool(:g, pop), rows)
+
+    # pop shape, pop scale, theta_a, theta_b: each member's latent IS its
+    # shape, scored against the population at the drawn hyperparameters.
+    nt = unflatten(model, [2.5, 1.2, 3.0, 1.5])
+    @test pool_centred_logprior(rows, nt) ≈
+          logpdf(Gamma(2.5, 1.2), 3.0) + logpdf(Gamma(2.5, 1.2), 1.5)
+
+    # A fixed population needs no hyperparameters and is scored as-is.
+    fixed = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Beta(2.0, 3.0))),
+        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Beta(2.0, 3.0)))))
+    fixed_rows = centred_pool_rows(fixed)
+    fixed_nt = unflatten(fixed, [0.4, 0.7])
+    @test pool_centred_logprior(fixed_rows, fixed_nt) ≈
+          logpdf(Beta(2.0, 3.0), 0.4) + logpdf(Beta(2.0, 3.0), 0.7)
+
+    # A non-centred (location-scale) population contributes no rows and no
+    # term: its latents are ordinary `Normal(0, 1)` per-row priors.
+    noncentred = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
+        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0)))))
+    @test isempty(centred_pool_rows(noncentred))
+    @test pool_centred_logprior(centred_pool_rows(noncentred),
+        unflatten(noncentred, [0.1, 0.2])) == 0.0
+end
+
 @testitem "pool: rejects a hand-built update missing the population entry" begin
     using ComposedDistributions: update
     using Distributions
@@ -199,6 +247,34 @@ end
     @test_throws ArgumentError update(model,
         (a = (shape = (z = 0.1,), scale = 1.0),
             b = (shape = (z = 0.2,), scale = 1.0)))
+end
+
+@testitem "pool: rejects an inconsistent group" begin
+    using Distributions
+    using ComposedDistributions: _validate_pool_groups
+
+    # Every member of a group is one population, so two members declaring
+    # different populations under the same group name are rejected. The guard
+    # runs once at construction time in DistributionsInference.jl's fit
+    # protocol, so drive it directly here.
+    bad = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
+        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Normal(0.0, 1.0)))))
+    @test_throws ArgumentError _validate_pool_groups(bad)
+
+    # A mismatched parameterisation on one shared population is the same
+    # error: centred and non-centred members cannot share a group.
+    mixed = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
+        b = uncertain(Gamma(2.0, 1.0);
+            shape = pool(:g, LogNormal(0.0, 1.0); noncentred = false))))
+    @test_throws ArgumentError _validate_pool_groups(mixed)
+
+    # A consistent group passes and returns the tree.
+    good = compose((
+        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
+        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0)))))
+    @test _validate_pool_groups(good) === good
 end
 
 @testitem "pool/shared: rejects a name shared across roles" begin
@@ -295,8 +371,9 @@ end
 
     # Draw the joint prior-predictive by sampling the flat priors (the pooled
     # population is shared across strata within each draw) and reconstructing.
-    # `default = _ -> nothing` keeps only the attached (spec'd) priors; `flatten`
-    # only ever reads the spec'd rows, so a fixed row's placeholder is unused.
+    # `default = _ -> nothing` gives every unspec'd row a `nothing` placeholder
+    # instead of a default prior; `flatten` only ever reads the spec'd rows, so
+    # a fixed row's placeholder is unused.
     function within_draw_spread(tree, rng, n)
         priors = build_priors(params_table(tree); default = _ -> nothing)
         fp = flatten(tree, priors)
