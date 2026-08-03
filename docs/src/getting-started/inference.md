@@ -5,7 +5,7 @@ The [`uncertain`](@ref) leaves mark which parameters are free, and everything el
 A bare tree with no uncertain leaves estimates nothing, so fitting always starts by saying what is uncertain.
 
 This page covers the codec this package owns, turning a tree's estimated parameters into a flat vector and back, and the log-density built on top.
-For sampling and reading a fit back, see DistributionsInference.jl's inference guide.
+For sampling and reading a fit back, see [DistributionsInference.jl's inference guide](https://distributionsinference.epiaware.org/stable/getting-started/inference).
 
 ## The log-density
 
@@ -38,7 +38,7 @@ Promote a fixed tree to estimate its free parameters with default priors through
 This package stops at the log-density.
 It does not sample and it does not read a fit back onto the tree.
 DistributionsInference.jl builds on the same codec (`flatten`/`unflatten`/`flat_dimension`/`params_table`) to wrap a tree as a `LogDensityProblems` problem or a `DynamicPPL` model, sample it with a gradient-based sampler or Turing, and read the fitted chain back onto the tree.
-See DistributionsInference.jl's inference guide for the full walkthrough, including transforms for constrained parameters.
+See [DistributionsInference.jl's inference guide](https://distributionsinference.epiaware.org/stable/getting-started/inference) for the full walkthrough, including transforms for constrained parameters.
 
 ## The tools
 
@@ -47,4 +47,4 @@ See DistributionsInference.jl's inference guide for the full walkthrough, includ
 | [`as_logdensity`](@ref) | the PPL-neutral log-density over the estimated parameters | base package |
 | [`logdensity`](@ref) / [`flat_dimension`](@ref) | evaluate the density, count the parameters | base package |
 | [`flatten`](@ref) / [`unflatten`](@ref) | the flat-vector codec between a tree and its estimated parameters | base package |
-| [`params_table`](@ref) | the estimated parameters as a `Tables.jl` table | base package |
+| [`params_table`](@ref) | every free parameter as a `Tables.jl` table, `prior` set for the estimated (uncertain) rows and `nothing` for the fixed ones | base package |
