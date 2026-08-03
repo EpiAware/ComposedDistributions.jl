@@ -8,7 +8,7 @@ This page shows the three ways to fit a tree, all built on one PPL-neutral log-d
 
 ## The log-density
 
-[`as_logdensity`](@ref) packages a tree and its data into a log-density over just the estimated parameters.
+`as_logdensity` packages a tree and its data into a log-density over just the estimated parameters.
 The estimated parameters are the uncertain rows of [`params_table`](@ref), in that order, and [`flat_dimension`](@ref) counts them.
 
 ```@example inference
@@ -19,16 +19,11 @@ tree = compose((
     admit_death = LogNormal(0.5, 0.4)))
 data = [[0.5, 2.0], [1.0, 3.0], [0.8, 2.5]]
 
-prob = ComposedDistributions.as_logdensity(tree, data)
 ComposedDistributions.flat_dimension(tree)
 ```
 
 The one free parameter here is `onset_admit`'s shape.
-[`logdensity`](@ref) scores a flat parameter vector, adding the priors' log-density to the data likelihood of the tree rebuilt at those values.
-
-```@example inference
-ComposedDistributions.logdensity(prob, [2.0])
-```
+`logdensity` scores a flat parameter vector, adding the priors' log-density to the data likelihood of the tree rebuilt at those values.
 
 Promote a fixed tree to estimate its free parameters with default priors through [`uncertain`](@ref)`(tree)` (equivalently `update(tree, param_priors(tree))`, the mechanism it is built on).
 
@@ -76,9 +71,8 @@ draws = DistributionsInference.readback_draws(tree, chain)   # every draw
 
 | Tool | What it gives | Loaded with |
 |---|---|---|
-| [`as_logdensity`](@ref) | the PPL-neutral log-density over the estimated parameters | base package |
-| [`logdensity`](@ref) / [`flat_dimension`](@ref) | evaluate the density, count the parameters | base package |
-| `DistributionsInference.as_logdensity` | the same core wrapped as a `LogDensityProblems` problem, generically | `DistributionsInference` |
+| [`flat_dimension`](@ref) | the estimated-parameter count | base package |
+| `DistributionsInference.as_logdensity` | the PPL-neutral log-density, wrapped as a `LogDensityProblems` problem, generically | `DistributionsInference` |
 | `DistributionsInference.to_constrained`-equivalent transform | the unconstrained transform and its log-Jacobian | `DistributionsInference` + `Bijectors` |
 | `DistributionsInference.as_turing` | a `DynamicPPL` model for `sample(...)` | `DistributionsInference` + `DynamicPPL` |
 | `DistributionsInference.readback` / `readback_draws` | read a fitted chain back onto the tree | `DistributionsInference` + `FlexiChains` |

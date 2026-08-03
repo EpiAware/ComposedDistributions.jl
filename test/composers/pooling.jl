@@ -2,8 +2,11 @@
 # parameter from a shared population distribution. Covers the non-centred
 # (location-scale) and centred (general population) paths, the pooling spectrum
 # (tie / independent / pool), the CD-aligned flat layout, the codec round-trip
-# and collapse, the logdensity decomposition, AD gradients, and a
-# prior-predictive shrinkage check. See issue #78.
+# and collapse, and a prior-predictive shrinkage check. See issue #78.
+#
+# The as_logdensity/logdensity-dependent scoring/gradient tests moved to
+# DistributionsInference.jl (EpiAware/DistributionsInference.jl#70) with the
+# rest of the inference layer (#185, #317).
 
 @testitem "pool: constructor and validation" begin
     using Distributions
@@ -89,9 +92,9 @@ end
     @test flat_dimension(partial) == 2 + 3
 end
 
-@testitem "pool: params_table rows and CD-aligned flat layout" begin
+@testitem "pool: params_table rows are the population hypers plus one latent per member" begin
     using Distributions
-    using ComposedDistributions: flat_dimension, _flat_layout
+    using ComposedDistributions: flat_dimension
 
     model = compose((
         north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
@@ -111,16 +114,7 @@ end
           [Symbol("north.shape"), Symbol("east.shape"), Symbol("south.shape")]
     @test all(tbl.prior[i] == Normal(0.0, 1.0) for i in z_rows)
 
-    # The estimated flat layout is exactly [mu, sigma, z_1, z_2, z_3] — the same
-    # vector a CensoredDistributions user hand-writes in a Turing @model
-    # (mu ~ ...; sigma ~ ...; z ~ filldist(Normal(0, 1), K)).
-    layout = _flat_layout(tbl)
-    @test layout == [
-        ((:district,), :mu),
-        ((:district,), :sigma),
-        ((:north, :shape), :z),
-        ((:east, :shape), :z),
-        ((:south, :shape), :z)]
+    # 2 hyperparameters plus one latent per member (3 strata) = 5.
     @test flat_dimension(model) == 5
 end
 
@@ -165,40 +159,10 @@ end
     @test params(event(rc, :b))[1] ≈ 0.2 + 0.4 * -1.0
 end
 
-@testitem "pool: non-centred logdensity is hyperprior + latents + likelihood" begin
-    using ComposedDistributions: update
-    using Distributions
-    using ComposedDistributions: as_logdensity, logdensity, unflatten
-
-    model = compose((
-        north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
-
-    # Per-stratum grouped likelihood (mirrors CD's batched_event_logpdf).
-    strata = (north = [1.0, 2.0], east = [1.5], south = [0.8, 1.2, 2.0])
-    grouped(d, data) = sum(logpdf(event(d, k), r) for k in keys(data)
-    for r in data[k])
-    prob = as_logdensity(model, strata; loglik = grouped)
-
-    x = [0.1, 0.5, 0.3, -0.2, 0.8]
-    ld = logdensity(prob, x)
-
-    # The hand-computed joint: the two hyperpriors, the three standard-normal
-    # latents, and the reconstructed-tree likelihood.
-    hyper = logpdf(Normal(0.0, 1.0), 0.1) +
-            logpdf(truncated(Normal(0.0, 1.0); lower = 0.0), 0.5)
-    latents = logpdf(Normal(0.0, 1.0), 0.3) + logpdf(Normal(0.0, 1.0), -0.2) +
-              logpdf(Normal(0.0, 1.0), 0.8)
-    lik = grouped(update(model, unflatten(model, x)), strata)
-    @test ld ≈ hyper + latents + lik
-end
-
 @testitem "pool: centred general population" begin
     using ComposedDistributions: update
     using Distributions
-    using ComposedDistributions: as_logdensity, logdensity, flatten, unflatten,
-                                 flat_dimension
+    using ComposedDistributions: flatten, unflatten, flat_dimension
 
     # A Gamma population (not location-scale) takes the centred path: each
     # member's shape IS its latent, scored directly against the population.
@@ -222,74 +186,11 @@ end
     collapsed = update(model, nt)
     @test params(event(collapsed, :a))[1] ≈ 3.0
     @test params(event(collapsed, :b))[1] ≈ 1.5
-
-    strata = (a = [1.0], b = [2.0])
-    grouped(d, data) = sum(logpdf(event(d, k), r) for k in keys(data)
-    for r in data[k])
-    prob = as_logdensity(model, strata; loglik = grouped)
-    ld = logdensity(prob, x)
-
-    # Joint: the two hyperpriors, each member's shape scored against the
-    # population Gamma(2.5, 1.2), and the likelihood.
-    hyper = logpdf(truncated(Normal(2.0, 1.0); lower = 0), 2.5) +
-            logpdf(truncated(Normal(1.0, 1.0); lower = 0), 1.2)
-    population = Gamma(2.5, 1.2)
-    linking = logpdf(population, 3.0) + logpdf(population, 1.5)
-    lik = grouped(collapsed, strata)
-    @test ld ≈ hyper + linking + lik
 end
 
-@testitem "pool: ForwardDiff gradient matches finite differences" begin
-    using Distributions
-    using ComposedDistributions: as_logdensity, logdensity, flat_dimension
-    using ForwardDiff
-
-    grouped(d, data) = sum(logpdf(event(d, k), r) for k in keys(data)
-    for r in data[k])
-
-    function check_gradient(model, x0, strata)
-        prob = as_logdensity(model, strata; loglik = grouped)
-        g = ForwardDiff.gradient(x -> logdensity(prob, x), x0)
-        @test all(isfinite, g)
-        h = 1e-6
-        for i in eachindex(x0)
-            e = [j == i ? h : 0.0 for j in eachindex(x0)]
-            fd = (logdensity(prob, x0 .+ e) - logdensity(prob, x0 .- e)) / (2h)
-            @test g[i] ≈ fd atol = 1e-4
-        end
-    end
-
-    # Non-centred (LogNormal population).
-    nc = compose((
-        north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
-    @test flat_dimension(nc) == 5
-    check_gradient(nc, [0.1, 0.5, 0.3, -0.2, 0.8],
-        (north = [1.0, 2.0], east = [1.5], south = [0.8, 1.2, 2.0]))
-
-    # Centred (Gamma population): the gradient flows through the population
-    # log-density at the estimated hyperparameters.
-    pop = uncertain(Gamma(2.0, 1.0);
-        shape = truncated(Normal(2.0, 1.0); lower = 0),
-        scale = truncated(Normal(1.0, 1.0); lower = 0))
-    ce = compose((
-        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, pop)),
-        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, pop))))
-    check_gradient(ce, [2.5, 1.2, 3.0, 1.5], (a = [1.0], b = [2.0]))
-end
-
-@testitem "pool: rejects an inconsistent group and a missing population" begin
+@testitem "pool: rejects a hand-built update missing the population entry" begin
     using ComposedDistributions: update
     using Distributions
-    using ComposedDistributions: as_logdensity
-
-    # Two members of one group with different populations is rejected at the
-    # log-density gate (one group is one population).
-    bad = compose((
-        a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
-        b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Normal(0.0, 1.0)))))
-    @test_throws ArgumentError as_logdensity(bad, [1.0])
 
     # A hand-built update missing the population entry errors clearly.
     model = compose((
@@ -298,66 +199,6 @@ end
     @test_throws ArgumentError update(model,
         (a = (shape = (z = 0.1,), scale = 1.0),
             b = (shape = (z = 0.2,), scale = 1.0)))
-end
-
-@testitem "pool/shared: rejects a name shared across roles" begin
-    using Distributions
-    using ComposedDistributions: as_logdensity
-
-    # A pool group and a shared tag with the same name silently clobber each
-    # other in the readback merge (#177); the log-density gate rejects it.
-    pool_vs_shared = compose((
-        a = shared(:g, Gamma(2.0, 1.0)),
-        b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
-    @test_throws ArgumentError as_logdensity(pool_vs_shared, [1.0])
-
-    # A pool group colliding with a sibling root-level edge name collides at
-    # the same root-lifted level (#178 risk list).
-    pool_vs_edge = compose((
-        g = Gamma(2.0, 1.0),
-        b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
-    @test_throws ArgumentError as_logdensity(pool_vs_edge, [1.0])
-
-    # A shared tag colliding with a sibling root-level edge name, same guard.
-    shared_vs_edge = compose((
-        g = Gamma(2.0, 1.0),
-        b = shared(:g, LogNormal(0.5, 0.4))))
-    @test_throws ArgumentError as_logdensity(shared_vs_edge, [1.0])
-end
-
-@testitem "pool/shared: legitimate tying is not a false positive" begin
-    using Distributions
-    using ComposedDistributions: as_logdensity
-
-    # The same shared tag tying a parameter across two branches is the
-    # intended feature, not a collision, so it must still compose and gate
-    # cleanly. The tag name (`:inc`) is distinct from both root edge names
-    # (`:a`, `:b`) and any pool group, so no guard fires.
-    inc = shared(:inc, Gamma(2.0, 1.0))
-    tied = compose((
-        a = inc,
-        b = compose((src = LogNormal(0.5, 0.4), inc = inc))))
-    prob = as_logdensity(tied, [1.0])
-    @test prob isa ComposedDistributions.ComposedLogDensity
-
-    # Two distinct pool groups and a distinct shared tag, none colliding with
-    # each other or with the root edge names, also gate cleanly.
-    clean = compose((
-        a = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        b = uncertain(Gamma(3.0, 1.0); shape = pool(:region)),
-        c = shared(:tag1, LogNormal(0.5, 0.4))))
-    prob2 = as_logdensity(clean, [1.0])
-    @test prob2 isa ComposedDistributions.ComposedLogDensity
-
-    # A pool group name equal to a NESTED (non-root) edge name is not a
-    # collision: the guard only checks the tree's own ROOT edge names
-    # (`:a`, `:branch` here), not `:g` two levels down inside `:branch`.
-    nested_reuse = compose((
-        a = Gamma(2.0, 1.0),
-        branch = compose((g = Gamma(2.0, 1.0),
-            b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))))
-    prob3 = as_logdensity(nested_reuse, [1.0])
-    @test prob3 isa ComposedDistributions.ComposedLogDensity
 end
 
 @testitem "pool: rand draws a single-parameter marginal" begin
@@ -397,8 +238,10 @@ end
 
     # Draw the joint prior-predictive by sampling the flat priors (the pooled
     # population is shared across strata within each draw) and reconstructing.
+    # `default = _ -> nothing` keeps only the attached (spec'd) priors; `flatten`
+    # only ever reads the spec'd rows, so a fixed row's placeholder is unused.
     function within_draw_spread(tree, rng, n)
-        priors = ComposedDistributions._spec_priors(tree)
+        priors = build_priors(params_table(tree); default = _ -> nothing)
         fp = flatten(tree, priors)
         spreads = Float64[]
         for _ in 1:n

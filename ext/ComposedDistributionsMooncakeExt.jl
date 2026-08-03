@@ -11,9 +11,9 @@ DynamicPPL leaf rebuild, issue #9) AD-safe under Mooncake reverse.
 Also shields `_split_edge` (the flat-vector codec's `Symbol` path-splitter,
 `unflatten`/`flatten`'s unconditional hot-path call) and the codec's
 `DimensionMismatch`-throwing helpers (`_throw_unflatten_dimmismatch`,
-`_throw_logdensity_dimmismatch`, `_throw_as_named_dimmismatch`,
-`_throw_logpdf_dimmismatch`) with `@zero_derivative` (both forward and
-reverse), fixing issue #146. `_split_edge` calls `Base.split`, which lowers
+`_throw_as_named_dimmismatch`, `_throw_logpdf_dimmismatch`) with
+`@zero_derivative` (both forward and reverse), fixing issue #146.
+`_split_edge` calls `Base.split`, which lowers
 to `findnext` over the `Symbol`'s string form; the `DimensionMismatch`
 helpers interpolate their arguments into an error message via `show`. Both
 recurse into Base's UTF-8 string-indexing continuation machinery, for which
@@ -56,7 +56,6 @@ module ComposedDistributionsMooncakeExt
 
 using ComposedDistributions: _ctor_has_check_args, _split_edge,
                              _throw_unflatten_dimmismatch,
-                             _throw_logdensity_dimmismatch,
                              _throw_as_named_dimmismatch,
                              _throw_logpdf_dimmismatch
 using LogExpFunctions: xlogy, xlog1py
@@ -69,8 +68,6 @@ Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{typeof(_split_edge), Symbol}
 
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_unflatten_dimmismatch), Any, Any, Any}
-Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
-    typeof(_throw_logdensity_dimmismatch), Any, Any, Any}
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_as_named_dimmismatch), Any, Any}
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{

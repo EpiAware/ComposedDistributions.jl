@@ -259,8 +259,9 @@ The centred latent's prior marker, carried on the `prior` column of a centred
 pooled parameter's row.
 
 It is not a fixed distribution (the population depends on the estimated
-hyperparameters), so [`logdensity`](@ref) scores it separately
-([`_pool_centred_logprior`](@ref)) and skips it in the fixed per-row prior sum.
+hyperparameters), so DistributionsInference.jl's `as_logdensity`/`logdensity`
+scores it separately ([`_pool_centred_logprior`](@ref)) and skips it in the
+fixed per-row prior sum.
 A non-`nothing` entry, so the row still counts as estimated.
 
 Reached by qualified name from outside this package — DistributionsInference.jl's

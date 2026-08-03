@@ -2,7 +2,7 @@
     ADFixtures
 
 Shared AD gradient scenarios and backend metadata for ComposedDistributions.
-Used by `test/ad/runtests.jl`. Two categories:
+Used by `test/ad/runtests.jl`. One category:
 
 `:marginal` covers the composed `logpdf` of a `Sequential` chain, a `Resolve`
 mixture marginal (differentiating through a covariate branch probability), a
@@ -14,15 +14,10 @@ reconstruction), a `Choose` scored at a selected alternative (differentiating
 through the picked branch's own `logpdf`), and a `Censored` leaf (`#215`,
 differentiating through Distributions.jl's censored `logpdf`/`logcdf`).
 
-`:latent` covers the full `as_logdensity`/`logdensity` codec path: an
-uncertain-leaf tree (differentiating the flat-vector -> nested-NamedTuple
-codec, `unflatten`/`update`, into the data likelihood), a centred pool
-(differentiating the `pool_centred_logprior` term against the population), a
-`Shared`-tagged uncertain leaf occurring twice (differentiating through the
-tag-dedup: one flat parameter, its gradient accumulated from both
-occurrences' likelihoods), and a `Truncated`-wrapped uncertain leaf (`#215`,
-exercising the `#216` leaf-wrapper registry's codec path — `free_leaf`/
-`rewrap_leaf` — under the generated `unflatten`/`update` walk).
+The full `as_logdensity`/`logdensity` codec-path scenarios (the former
+`:latent` category) moved to DistributionsInference.jl with the rest of the
+inference layer (#185, #317; rehoming tracked at
+EpiAware/DistributionsInference.jl#70).
 
 All scenarios run across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
 backend matrix. The reference is computed with `ForwardDiff` and matched by the
@@ -86,8 +81,9 @@ broken_scenario_names() = String[]
 # `xlogy`/`xlog1py` (already shipped by `LogExpFunctionsChainRulesCoreExt`) as
 # Mooncake primitives, so this scenario is no longer broken on Mooncake.
 #
-# The `:latent` "Uncertain-leaf logdensity codec" scenario differentiates the
-# full `as_logdensity`/`logdensity` path, whose `unflatten` rebuilds the nested
+# The former `:latent` "Uncertain-leaf logdensity codec" scenario (now moved to
+# DistributionsInference.jl, #185/#317) differentiated the full
+# `as_logdensity`/`logdensity` path, whose `unflatten` rebuilds the nested
 # `NamedTuple` `update` consumes. It used to be marked broken on Enzyme
 # reverse: the old Dict-based walk built a type-unstable, heap-boxed
 # `NamedTuple`, and Enzyme's cache-store type reasoning hit `Taking the type
@@ -133,8 +129,8 @@ backend_skip_scenarios() = Dict{String, Set{String}}()
 
 The AD gradient scenarios. Each is a `DIT.Scenario{:gradient, :out}` whose
 `res1` carries a ForwardDiff reference when `with_reference = true`. `category`
-selects the group: `:marginal` (default) returns the composed-`logpdf`
-scenarios; `:latent` returns the `logdensity` codec scenarios.
+selects the group: `:marginal` (the only category) returns the
+composed-`logpdf` scenarios.
 """
 function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     obs = [0.5, 1.2, 2.5, 3.8, 5.1]
@@ -151,88 +147,6 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
             DIT.Scenario{:gradient, :out}(
                 f, θ₀, contexts...;
                 res1 = res1, prep_args = prep_args, name = name))
-    end
-
-    # --- latent category: the full as_logdensity/logdensity codec path -------
-    if category == :latent
-        # Uncertain-leaf codec: differentiate `logdensity(prob, θ)` for a tree
-        # with an ordinary uncertain leaf, so the gradient flows through the
-        # flat-vector -> nested-NamedTuple codec (`unflatten`/`update`) into the
-        # data likelihood. This is the systematic (all-backend) companion to the
-        # bespoke Mooncake-only #146 item in `scenarios.jl`.
-        codec_tree = compose((
-            onset_admit = uncertain(Gamma(2.0, 1.0);
-                shape = LogNormal(log(2.0), 0.2)),
-            admit_death = LogNormal(0.5, 0.4)))
-        codec_prob = ComposedDistributions.as_logdensity(
-            codec_tree, [[0.5, 2.0], [1.0, 3.0]])
-        _push!("Uncertain-leaf logdensity codec",
-            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
-            [2.0], (Constant(codec_prob),))
-
-        # Centred pool: two members pool a `shape` centred against a fixed
-        # `Gamma` population, so the gradient flows through
-        # `pool_centred_logprior` (the population-scored latent term) as well as
-        # each member's own Gamma likelihood. The centred reconstruction is the
-        # identity (the latent IS the parameter), so this exercises the centred
-        # scoring path distinct from the non-centred reconstruction.
-        pool_tree = compose((
-            north = uncertain(Gamma(2.0, 1.0);
-                shape = pool(:district, Gamma(2.0, 1.0); noncentred = false)),
-            south = uncertain(Gamma(2.0, 1.0);
-                shape = pool(:district, Gamma(2.0, 1.0); noncentred = false))))
-        pool_prob = ComposedDistributions.as_logdensity(
-            pool_tree, [[0.5, 2.0], [1.0, 3.0]])
-        _push!("Pool centred logdensity",
-            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
-            [2.0, 3.0], (Constant(pool_prob),))
-
-        # Shared-tag codec: the same uncertain template occurs twice under one
-        # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to one
-        # flat parameter and `update` places the drawn value in both
-        # occurrences (mirrors `test/composers/logdensity.jl`'s "codec: shared
-        # spec round-trip"). The reverse-mode gradient of that one parameter
-        # must accumulate from both occurrences' data likelihoods, the
-        # AD-critical path for tag dedup that #96/#146 exercised for
-        # construction/unflatten but no scenario here has yet driven through
-        # the full logdensity codec.
-        shared_u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
-        shared_tree = compose((a = shared(:g, shared_u), b = shared(:g, shared_u)))
-        shared_prob = ComposedDistributions.as_logdensity(
-            shared_tree, [[0.5, 2.0], [1.0, 3.0]])
-        _push!("Shared-tag logdensity codec",
-            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
-            [2.0], (Constant(shared_prob),))
-
-        # Truncated-wrapped uncertain leaf: `truncated(uncertain(...); upper)`
-        # pushes the wrap inside the `Uncertain` template (`wrapped_leaves.jl`,
-        # #215), so the generated codec's leaf-wrapper registry (#216:
-        # `free_leaf`/`rewrap_leaf` dispatch on `Distributions.Truncated`) is
-        # what `unflatten`/`update` walk through to reach the wrapped leaf's
-        # `mu`. No AD scenario drove a wrapped leaf through
-        # `as_logdensity`/`logdensity` before this; #215/#216 landed with
-        # value-level tests only. Truncates a `LogNormal` (not `Gamma`):
-        # `Distributions.truncated`'s normalising constant calls the wrapped
-        # leaf's `logcdf`, and `Gamma`'s routes through `StatsFuns`'
-        # `_gammalogcdf`, which has concrete `Float64`/`Float32`/`Float16`
-        # methods only (no generic fallback) and so errors under ReverseDiff's
-        # tracked reals — an upstream Distributions.jl/StatsFuns gap, not a
-        # ComposedDistributions one (flagged separately on #223). `LogNormal`'s
-        # `logcdf` goes through `normlogcdf(μ::Real, σ::Real, x::Number)`,
-        # which is genuinely generic, so it isolates the registry/codec path
-        # this scenario targets from that unrelated gap.
-        trunc_tree = compose((
-            onset = truncated(
-                uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2));
-                upper = 8.0),
-            admit = Gamma(2.0, 1.0)))
-        trunc_prob = ComposedDistributions.as_logdensity(
-            trunc_tree, [[0.5, 2.0], [1.0, 3.0]])
-        _push!("Truncated uncertain-leaf logdensity codec",
-            (θ, prob) -> ComposedDistributions.logdensity(prob, θ),
-            [0.6], (Constant(trunc_prob),))
-
-        return out
     end
 
     # Sequential chain: the composed value `logpdf` is a sum over the flat leaf

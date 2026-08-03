@@ -858,7 +858,7 @@ end
 Rebuild a composed distribution straight from its estimated flat vector.
 
 `reconstruct(d, x)` is the flat-vector primary the per-gradient hot path
-([`logdensity`](@ref), DistributionsInference.jl's `as_turing`) routes
+(DistributionsInference.jl's `as_logdensity`/`as_turing`) routes
 through: it collapses `d` at the
 estimated parameters in `x` (each fixed parameter held at its template value),
 equivalent to `update(d, `[`unflatten`](@ref)`(d, x))` but naming the whole

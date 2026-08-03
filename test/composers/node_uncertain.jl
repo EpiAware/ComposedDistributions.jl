@@ -149,30 +149,6 @@ end
     @test tbl.prior[stick[1]] == Beta(1.0, 1.0)
 end
 
-@testitem "branch_probs: ForwardDiff gradient matches finite differences" begin
-    using ComposedDistributions: update
-    using Distributions
-    using ComposedDistributions: as_logdensity, logdensity, flat_dimension
-    using ForwardDiff
-
-    # A bare (univariate) Resolve whose branch-probability simplex is uncertain:
-    # the gradient flows through the stick-breaking reconstruction into the
-    # mixture marginal's AD-safe log-sum-exp.
-    r = update(resolve(:death => (Gamma(1.5, 1.0), 0.3),
-            :disch => (Gamma(2.0, 1.5), 0.7)),
-        (branch_probs = Dirichlet([2.0, 2.0]),))
-    prob = as_logdensity(r, [1.5, 0.8, 2.1, 3.2])
-
-    @test flat_dimension(r) == 1
-    x0 = [0.4]
-    g = ForwardDiff.gradient(x -> logdensity(prob, x), x0)
-    @test all(isfinite, g)
-
-    h = 1e-6
-    fd = (logdensity(prob, x0 .+ h) - logdensity(prob, x0 .- h)) / (2h)
-    @test g[1] ≈ fd atol = 1e-4
-end
-
 @testitem "Compete has no node-level free parameter" begin
     using ComposedDistributions: update
     using Distributions
