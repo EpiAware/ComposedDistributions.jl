@@ -89,6 +89,63 @@ end
     @test logpdf(tree, tbl) ≈ sum(logpdf(tree, r) for r in rows)
 end
 
+@testitem "rand(d, n): Choose batches from kind, or tags kind-less draws" begin
+    using ComposedDistributions: choose
+    using Distributions, Random
+
+    d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+
+    # With `kind`, the batch draws directly from that alternative — the
+    # alternative's own `rand(rng, dist, n)` — mirroring the single-draw
+    # committed-selection path (no selector tag needed).
+    xs = rand(Xoshiro(1), d, 5; kind = :short)
+    @test xs isa Vector{Float64}
+    @test length(xs) == 5
+    @test all(isfinite, logpdf(d, x; kind = :short) for x in xs)
+
+    # Without `kind`, each draw is its own self-describing tagged record
+    # (mirroring the single-draw forward-simulation path), and each
+    # round-trips through `logpdf` with no extra argument.
+    records = rand(Xoshiro(2), d, 6)
+    @test records isa Vector
+    @test length(records) == 6
+    @test all(r -> r.kind in (:short, :long), records)
+    @test all(r -> isfinite(logpdf(d, r)), records)
+
+    # The rng-less form threads the default RNG, both with and without `kind`.
+    Random.seed!(20260803)
+    a = rand(d, 4; kind = :long)
+    Random.seed!(20260803)
+    b = rand(d, 4; kind = :long)
+    @test a == b
+
+    Random.seed!(20260803)
+    c = rand(d, 4)
+    Random.seed!(20260803)
+    e = rand(d, 4)
+    @test c == e
+end
+
+@testitem "rand(p, n): Pool batches from the population" begin
+    using ComposedDistributions: pool
+    using Distributions, Random
+
+    p = pool(:district)
+    xs = rand(Xoshiro(3), p, 5)
+    @test xs isa Vector{Float64}
+    @test length(xs) == 5
+    @test all(x -> isfinite(logpdf(p.population, x)), xs)
+
+    # A fixed (non-uncertain) population batches too.
+    q = pool(:g, LogNormal(0.5, 0.3))
+    ys = rand(Xoshiro(4), q, 4)
+    @test length(ys) == 4
+    @test all(y -> isfinite(logpdf(q.population, y)), ys)
+
+    # Reproducible under a seeded rng.
+    @test rand(Xoshiro(5), p, 3) == rand(Xoshiro(5), p, 3)
+end
+
 @testitem "batch logpdf does not shadow the flat single-record method" begin
     using ComposedDistributions: sequential
     using Distributions
