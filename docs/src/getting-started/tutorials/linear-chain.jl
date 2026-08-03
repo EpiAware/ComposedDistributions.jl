@@ -1,4 +1,4 @@
-# # [Delay chains and the linear chain trick](@id linear-chain)
+# # [Delay chains, additive moments, and collapsing](@id linear-chain)
 #
 # ## Introduction
 #
@@ -7,9 +7,7 @@
 # [`Sequential`](@ref) composes the steps, and the chain is one distribution over
 # the whole origin-to-final gap.
 # When every step is an `Exponential` with the same rate, the total is an Erlang
-# (a `Gamma` with integer shape).
-# This is the linear chain trick, the identity behind representing a
-# Gamma-distributed delay as a series of exponential compartments.
+# (a `Gamma` with integer shape), the linear chain trick.
 #
 # This tutorial builds a chain, reads its structure and moments, and collapses it
 # to its total.
@@ -56,9 +54,8 @@ total = observed_distribution(chain)
 
 (chain_var = var(total), gamma_var = var(Gamma(4, theta)))
 
-# The linear chain trick is exactly this identity: a chain of `k` exponential
-# steps of mean `theta` is a `Gamma(k, theta)` delay, so a smooth delay can be
-# represented as a series of memoryless compartments and back again.
+# A chain of `k` exponential steps of mean `theta` is a `Gamma(k, theta)` delay,
+# the linear chain trick.
 
 # ## Reusing the chain
 #
@@ -84,3 +81,5 @@ event_names(tree)
 #   nodes.
 # - [Composing distributions](@ref composing-distributions) is the full
 #   walkthrough of every verb.
+# - LoweredDistributions.jl represents a chain like this as an explicit
+#   compartmental system for the CTMC-style algebra.
