@@ -47,3 +47,12 @@ end
 function logpdf(d::Parallel, x::AbstractVector{<:NamedTuple})
     return sum(logpdf(d, r) for r in x)
 end
+
+# Independent count draw of a standalone one_of node (`Resolve`/`Compete`): a
+# vector of records (the univariate count form Distributions cannot build,
+# since a record is a `NamedTuple`, not the scalar `eltype`). This is the
+# event-name-keyed batch convention (see the module note above), unlike the
+# `Sequential`/`Parallel` column table.
+function Base.rand(rng::AbstractRNG, c::AbstractOneOf, n::Int)
+    return [rand(rng, c) for _ in 1:n]
+end

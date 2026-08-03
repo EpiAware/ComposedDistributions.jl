@@ -339,6 +339,28 @@ function Base.rand(d::Choose; kind::Union{Symbol, Nothing} = nothing)
     rand(default_rng(), d; kind = kind)
 end
 
+@doc "
+
+Draw `n` independent [`Choose`](@ref) realisations.
+
+Mirrors the single-draw `rand(d; kind)` convention. With a `kind`, the batch
+draws directly from that alternative (`rand(rng, dist, n)`, the alternative's
+own multi-draw form) — the committed-selection path, no selector tag. Without
+a `kind`, each of the `n` draws is its own self-describing tagged record (a
+`Vector` of `NamedTuple`s, one per draw), the forward-simulation path, so each
+round-trips through [`logpdf`](@ref) with no extra argument.
+
+See also: [`rand`](@ref)`(::Choose)`, [`logpdf`](@ref)
+"
+function Base.rand(rng::AbstractRNG, d::Choose, n::Int;
+        kind::Union{Symbol, Nothing} = nothing)
+    kind === nothing || return rand(rng, _pick(d, kind), n)
+    return [rand(rng, d) for _ in 1:n]
+end
+function Base.rand(d::Choose, n::Int; kind::Union{Symbol, Nothing} = nothing)
+    return rand(default_rng(), d, n; kind = kind)
+end
+
 # Build the self-describing record of a bare `Choose` draw: the `selector`
 # field set to the drawn alternative's `name`, merged with that alternative's
 # labelled draw. A leaf alternative's scalar draw is labelled `:value`
