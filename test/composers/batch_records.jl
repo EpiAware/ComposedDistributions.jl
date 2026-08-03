@@ -144,6 +144,14 @@ end
 
     # Reproducible under a seeded rng.
     @test rand(Xoshiro(5), p, 3) == rand(Xoshiro(5), p, 3)
+
+    # The rng-less form threads the default RNG (mirrors Choose/Sequential/
+    # Parallel/Varying, all of which define both forms).
+    Random.seed!(20260803)
+    a = rand(p, 4)
+    Random.seed!(20260803)
+    b = rand(p, 4)
+    @test a == b
 end
 
 @testitem "batch logpdf does not shadow the flat single-record method" begin

@@ -670,6 +670,7 @@ not the joint prior-predictive of a whole pooled tree.
 See also: [`Pool`](@ref), [`pool`](@ref)
 "
 Base.rand(rng::AbstractRNG, p::Pool, n::Int) = rand(rng, p.population, n)
+Base.rand(p::Pool, n::Int) = rand(default_rng(), p, n)
 
 @doc "
 Print a [`Pool`](@ref) spec as its constructor form.
