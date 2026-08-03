@@ -81,5 +81,6 @@ event_names(tree)
 #   nodes.
 # - [Composing distributions](@ref composing-distributions) is the full
 #   walkthrough of every verb.
-# - LoweredDistributions.jl represents a chain like this as an explicit
-#   compartmental system for the CTMC-style algebra.
+# - [LoweredDistributions.jl](https://lowereddistributions.epiaware.org/dev/)
+#   represents a chain like this as an explicit compartmental system for the
+#   CTMC-style algebra.
