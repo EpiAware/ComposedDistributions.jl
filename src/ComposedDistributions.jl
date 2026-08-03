@@ -7,7 +7,7 @@ independent branches ([`Parallel`](@ref)), fixed-probability or racing one_of
 outcomes ([`Resolve`](@ref) / [`Compete`](@ref)) and data-selected disjunctions
 ([`Choose`](@ref)); the [`compose`](@ref) front-end lowers a NamedTuple, a
 Tables.jl table, or a nested matrix to the same stack. Read the structure with
-[`params_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), build priors
+[`composed_params`](@ref) / [`event_names`](@ref) / [`event`](@ref), build priors
 with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
 [`prune`](@ref) / [`splice`](@ref). Attach parameter uncertainty with
 [`uncertain`](@ref) (parameters that are themselves distributions, nestable):
@@ -26,7 +26,7 @@ using ComposedDistributions, Distributions
 
 # A two-step delay chain, then its parameter table.
 tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
-params_table(tree)
+composed_params(tree)
 ```
 """
 module ComposedDistributions
@@ -127,8 +127,10 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # the flat per-event name tuple; `event_tree` the nested tree of event names;
 # `event` fetches a child or descends a path. `param_priors` is the tree-level
 # front-door over `build_priors`; `inspect` is the opt-in detailed tree print.
-export params_table, event_names, event_tree, event, update, build_priors,
-       default_prior, param_priors, inspect
+# `params_table` is a deprecated alias for `composed_params` (#227), kept
+# exported for one release so the deprecation warning fires unqualified too.
+export composed_params, params_table, event_names, event_tree, event, update,
+       build_priors, default_prior, param_priors, inspect
 
 # Structural edits on a composed tree. `update` (the `path => new_node` method)
 # replaces a named node keeping the shape; `prune` drops a branch and `splice`
@@ -229,7 +231,7 @@ include("composers/wrapped_leaves.jl")
 # varying.jl (`has_varying`, for the `_reject_varying` guard).
 include("composers/codec_gen.jl")
 # The LogDensityProblems core codec (`ComposedLogDensity`/`as_logdensity`/
-# `logdensity`). After introspection (`params_table`/`build_priors`/`update`),
+# `logdensity`). After introspection (`composed_params`/`build_priors`/`update`),
 # Uncertain (an uncertain leaf's row is inventoried like any other) and
 # codec_gen.jl (the flat <-> nested codec it evaluates against).
 include("composers/logdensity.jl")
@@ -237,7 +239,7 @@ include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
 # ConvolvedDistributions interop (vector convolution, difference, composite
-# leaves): after observed.jl (the collapse), introspection.jl (the params_table
+# leaves): after observed.jl (the collapse), introspection.jl (the composed_params
 # / update walks it extends to see through a composite leaf) and Uncertain.jl
 # (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")

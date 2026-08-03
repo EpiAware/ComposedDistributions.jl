@@ -9,7 +9,7 @@
 # like any other tree; (d) a centred-pool tree is rejected with a clear
 # pointer to the codec path; and (e) a `shared(...)`-tagged parameter, tied
 # across two branches, reads back onto BOTH occurrences from the ONE sampled
-# site — the one test that exercises the params_table/codec ordering coupling
+# site — the one test that exercises the composed_params/codec ordering coupling
 # `ext/ComposedDistributionsDynamicPPLExt.jl` depends on (#192).
 
 @testitem "as_turing extension loads under DynamicPPL alone" begin
@@ -65,7 +65,7 @@ end
     using FlexiChains: FlexiChains, VNChain
     using Statistics: mean
 
-    # A parameter shared across two branches by tag: params_table and the
+    # A parameter shared across two branches by tag: composed_params and the
     # codec must both treat it as ONE estimated parameter (the first
     # occurrence the walk visits emits/reads it, the second is skipped), and
     # the one sampled site must read back onto BOTH occurrences identically —

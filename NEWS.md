@@ -58,8 +58,8 @@
   pattern), so an existing override such as
   `ComposedDistributions._param_names(::MyLeaf) = ...` keeps working.
 
-- **test:** added a guard against `params_table`/codec ordering drift (#192,
-  the #190 review follow-up): the runtime `params_table` walk and the
+- **test:** added a guard against `composed_params`/codec ordering drift (#192,
+  the #190 review follow-up): the runtime `composed_params` walk and the
   generated `unflatten`/`flatten` codec are two independent, hand-maintained
   implementations of the same walk-order and dedup rule, and
   `ext/ComposedDistributionsDynamicPPLExt.jl` assumes their orderings
@@ -429,7 +429,7 @@
   unchanged (it stays one scalar value slot, its marginal); a new
   `logpdf(node, ::NamedTuple)` scores a standalone record.
 
-- `params_table` is now a superset schema carrying both the uncertain-first
+- `composed_params` is now a superset schema carrying both the uncertain-first
   `prior` column and CensoredDistributions' `:thin` rows via the `_thin_factor`
   / `_set_thin_factor` hooks (no-op here, so no `:thin` row appears; the hooks
   let a thinning modifier layer plug in). `_leaf_detail_lines` becomes the
@@ -456,7 +456,7 @@
   estimated (#89). Attach a simplex-valued `Distributions.Dirichlet` prior with
   `update(node, (branch_probs = Dirichlet(α),))`. The `Dirichlet` is what you
   write; the node is estimated through its K-1 stick-breaking coordinates
-  (`:stick_1 … :stick_{K-1}`, each a `Beta` in (0, 1)), so `params_table`, the
+  (`:stick_1 … :stick_{K-1}`, each a `Beta` in (0, 1)), so `composed_params`, the
   uncertain-first codec (`flatten` / `unflatten` / `flat_dimension` /
   `as_logdensity`) and chain readback all carry the sticks, and the
   probabilities are recovered from any draw (they always sum to one and the
@@ -477,7 +477,7 @@
   thinning/branch-probability variants stay in CensoredDistributions.
 
 - See-through fitting of `Convolved` / `Difference` leaf component parameters,
-  replacing the previous fixed-composite treatment. `params_table` now
+  replacing the previous fixed-composite treatment. `composed_params` now
   inventories each component's scalar parameters under a `component_i` path
   segment (e.g. `total.component_1.shape`), and `update` rebuilds the composite
   from the updated components (preserving the solver method). A component may be
@@ -506,7 +506,7 @@
 - The generic composition algebra ported from CensoredDistributions.jl:
   `compose` and the five composers (`Sequential`, `Parallel`, `Resolve`,
   `Compete`, `Choose`), `shared`/`tie`, structural edits
-  (`update`/`prune`/`splice`), introspection (`params_table`,
+  (`update`/`prune`/`splice`), introspection (`composed_params`,
   `build_priors`, `event`/`event_names`/`event_tree`), moments, and the
   convolution bridge (`observed_distribution`, `convolved`).
 - Added `Varying` / `Context` / `instantiate`: leaves whose distribution
@@ -537,7 +537,7 @@
   (`uncertain(Gamma(2.0, 1.0); shape = LogNormal(...))`), a positional family
   form (`uncertain(Gamma, LogNormal(...), 1.0)`), or the keyword family form.
   `truncated(uncertain(...))` pushes inside the template (conditional
-  per-draw semantics). `params_table` gained a `prior` column carrying an
+  per-draw semantics). `composed_params` gained a `prior` column carrying an
   uncertain parameter's spec, which `build_priors` now uses ahead of its
   per-row default.
 
@@ -548,7 +548,7 @@
   difference of two chains' observed totals; a `Parallel` / `Choose` (no single
   observed delay) errors with guidance. A `Convolved` / `Difference` node used
   as a leaf inside a tree scores, samples, and reports moments as a plain
-  univariate leaf, and is treated as fixed structure by `params_table` /
+  univariate leaf, and is treated as fixed structure by `composed_params` /
   `build_priors` / `update` (fit its components by composing them as explicit
   chain steps).
 
@@ -573,7 +573,7 @@
   distribution in a parameter slot makes just that parameter uncertain (a
   partial update), and `update(tree, param_priors(tree))` promotes a whole tree
   to uncertainty over its free parameters with default priors (the explicit
-  estimate-everything path). `params_table` / `build_priors` are derived views
+  estimate-everything path). `composed_params` / `build_priors` are derived views
   over the object's specs; the readback verbs label exactly the spec'd
   parameters.
 

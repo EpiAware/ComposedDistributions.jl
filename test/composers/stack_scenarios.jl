@@ -55,8 +55,8 @@
     @test var(od) ≈ var(chain)
     @test cdf(od, 5.0) ≈ count(<=(5.0), total) / N atol = 0.01
 
-    # params_table row count and labels.
-    tbl = params_table(chain)
+    # composed_params row count and labels.
+    tbl = composed_params(chain)
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
     @test tbl.param == [:shape, :scale, :mu, :sigma]
 
@@ -124,9 +124,9 @@ end
     @test mean(notify) ≈ m.notify atol = 0.05  # m.notify == 1.5
     @test var(hosp) ≈ v.hosp rtol = 0.06
 
-    # params_table names each branch with a dotted edge path; build_priors gives
+    # composed_params names each branch with a dotted edge path; build_priors gives
     # a prior per free parameter.
-    tbl = params_table(par)
+    tbl = composed_params(par)
     @test tbl.edge == [Symbol("hosp.onset_admit"), Symbol("hosp.onset_admit"),
         Symbol("hosp.admit_disch"), Symbol("hosp.admit_disch"),
         :notify, :notify]
@@ -245,8 +245,8 @@ end
     @test mean(mins) ≈ mean(comp) atol = 0.1       # mean(comp) ≈ 3.926
     @test var(mins) ≈ var(comp) rtol = 0.06        # var(comp) ≈ 5.458
 
-    # params_table lists only the cause-delay parameters (no free simplex).
-    tbl = params_table(comp)
+    # composed_params lists only the cause-delay parameters (no free simplex).
+    tbl = composed_params(comp)
     @test tbl.edge == [:death, :death, :recover, :recover]
 
     # One ForwardDiff derivative of the marginal logpdf, finite.
@@ -286,9 +286,9 @@ end
     @test mean(total) ≈ mean(stack) atol = 0.08
     @test var(total) ≈ var(stack) rtol = 0.06
 
-    # params_table descends into the nested Resolve (delay params plus the
+    # composed_params descends into the nested Resolve (delay params plus the
     # branch-probability rows).
-    tbl = params_table(stack)
+    tbl = composed_params(stack)
     @test :onset_admit in tbl.edge
     @test Symbol("admit_out.death") in tbl.edge
     @test Symbol("admit_out.branch_probs") in tbl.edge
@@ -373,8 +373,8 @@ end
     @test isfinite(logpdf(deep, draw))
     @test logpdf(deep, draw) ≈ logpdf(deep, collect(values(draw)))
 
-    # params_table walks the full tree with dotted edge paths.
-    edges = params_table(deep).edge
+    # composed_params walks the full tree with dotted edge paths.
+    edges = composed_params(deep).edge
     @test :incubation in edges
     @test Symbol("branches.hosp.admit_disch") in edges
     @test Symbol("branches.fatal.death") in edges
@@ -427,8 +427,8 @@ end
     d = compose((primary = Gamma(2.0, 1.0), secondary = Gamma(2.0, 1.0)))
     tied = tie(d, :primary, :secondary; name = :incubation)
 
-    # params_table dedups the tied leaves to one row-group under the tag.
-    @test unique(params_table(tied).edge) == [:incubation]
+    # composed_params dedups the tied leaves to one row-group under the tag.
+    @test unique(composed_params(tied).edge) == [:incubation]
 
     # build_priors produces a single prior for the tied group.
     priors = param_priors(tied)

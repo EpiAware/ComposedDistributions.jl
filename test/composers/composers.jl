@@ -227,7 +227,7 @@ end
 
     # Mirrors Choose's existing "alternative names must be unique" guard:
     # every composer must reject a repeated name, since the whole
-    # name-keyed API (event, update, prune, splice, params_table, shared)
+    # name-keyed API (event, update, prune, splice, composed_params, shared)
     # can only ever reach the first branch with a duplicate name.
     # Each composer's own message is pinned, not just the exception type, so
     # a swapped guard or a reworded message is caught (the #217 lesson).
@@ -386,12 +386,12 @@ end
     @test logpdf(tree, draw) ≈ logpdf(tree, collect(values(draw)))
 end
 
-@testitem "Introspection: params_table, event_names, event_tree, event" begin
+@testitem "Introspection: composed_params, event_names, event_tree, event" begin
     using Distributions
 
     tree = compose((onset_admit = LogNormal(1.5, 0.4),
         admit_death = Gamma(2.0, 1.0)))
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
     @test tbl.param == [:mu, :sigma, :shape, :scale]
     @test event_names(tree) == (:onset, :admit, :death)
@@ -425,7 +425,7 @@ end
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     nested = build_priors(tbl)
     @test nested.onset_admit.shape isa Truncated
     @test nested.admit_death.mu isa Normal
@@ -440,17 +440,17 @@ end
     @test dp == Uniform(0, 1)
 end
 
-@testitem "param_priors is a thin front-door over build_priors(params_table(...))" begin
+@testitem "param_priors is a thin front-door over build_priors(composed_params(...))" begin
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
 
-    @test param_priors(tree) == build_priors(params_table(tree))
+    @test param_priors(tree) == build_priors(composed_params(tree))
     # The keyword surface is forwarded unchanged.
     shape_prior = Normal(2, 0.5)
     @test param_priors(tree; priors = Dict((:onset_admit, :shape) => shape_prior)) ==
-          build_priors(params_table(tree);
+          build_priors(composed_params(tree);
         priors = Dict((:onset_admit, :shape) => shape_prior))
 end
 
@@ -560,7 +560,7 @@ end
 
     # tie descends through the Compete to tag a leaf as shared.
     tied = tie(tree, (:path, :immediate), :other; name = :g)
-    @test :g in params_table(tied).edge
+    @test :g in composed_params(tied).edge
     @test logpdf(event(tied, :path, :immediate), 1.5) ≈
           logpdf(Gamma(2.0, 1.0), 1.5)
 end
@@ -645,12 +645,12 @@ end
     @test isfinite(logpdf(seq, draw))
 end
 
-@testitem "params_table is a 5-column superset with a thin hook (#96)" begin
+@testitem "composed_params is a 5-column superset with a thin hook (#96)" begin
     using Distributions
     import ComposedDistributions: extra_leaf_params, leaf_param_names
 
     d = compose((onset = Gamma(2.0, 1.0), report = LogNormal(0.5, 0.4)))
-    tbl = params_table(d)
+    tbl = composed_params(d)
     @test Tuple(propertynames(tbl)) == (:edge, :param, :value, :support, :prior)
     # No modifier owns an extra parameter here, so the extra-parameter hook is
     # empty and no `:thin` row appears (the table matches the plain per-param
@@ -730,7 +730,7 @@ end
     d = compose((a = Gamma(2.0, 1.0), b = Gamma(2.0, 1.0)))
     tied = tie(d, :a, :b; name = :g)
     # The tied leaves are inventoried once under the tag.
-    @test unique(params_table(tied).edge) == [:g]
+    @test unique(composed_params(tied).edge) == [:g]
 end
 
 @testitem "observed_distribution / convolve re-export" begin
@@ -816,8 +816,8 @@ end
     leaf = MomentLeaf{LogNormal}((8.0, 2.0))
     tree = sequential(:onset_admit => leaf, :admit_death => Gamma(2.0, 1.0))
 
-    # params_table reports the moments, not the LogNormal's native (mu, sigma).
-    tbl = params_table(tree)
+    # composed_params reports the moments, not the LogNormal's native (mu, sigma).
+    tbl = composed_params(tree)
     @test :mean in tbl.param
     @test :sd in tbl.param
     @test :mu ∉ tbl.param

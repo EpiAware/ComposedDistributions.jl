@@ -3,14 +3,14 @@
 # DistributionsInference-shaped (dotted-`name`) row table (CD#195/DI#20
 # design pass).
 
-@testitem "update(tree, table): params_table round-trips and edits" begin
+@testitem "update(tree, table): composed_params round-trips and edits" begin
     using Distributions, Tables
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
 
     # A no-op round trip: every `value` re-applied.
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     @test update(tree, tbl) == tree
 
     # Editing a `value` and bulk-writing it back is a concrete change.

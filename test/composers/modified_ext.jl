@@ -37,7 +37,7 @@
     @test get_dist(tagged) == inner
 end
 
-@testitem "Modified extension: params_table peels a modified leaf" begin
+@testitem "Modified extension: composed_params peels a modified leaf" begin
     using Distributions
     using ModifiedDistributions: affine, modify
 
@@ -45,13 +45,13 @@ end
     # delay's parameters (the affine scale/shift are fixed structure).
     tree = compose((onset_admit = affine(Gamma(2.0, 1.0); scale = 2.0),
         admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     @test tbl.param == [:shape, :scale, :mu, :sigma]
 
     # Likewise a hazard-modified leaf (the effect/link are fixed structure).
     mtree = compose((onset_admit = modify(Gamma(2.0, 1.0), 0.5),
         admit_death = LogNormal(0.5, 0.4)))
-    mtbl = params_table(mtree)
+    mtbl = composed_params(mtree)
     @test mtbl.param == [:shape, :scale, :mu, :sigma]
 end
 
@@ -64,7 +64,7 @@ end
     tree = compose((cases = thin(LogNormal(1.5, 0.4), 0.3),))
 
     # update re-routes a new thin weight into the ThinOp, keeping the inner
-    # delay params, and the new weight surfaces back through params_table.
+    # delay params, and the new weight surfaces back through composed_params.
     updated = update(tree, (cases = (mu = 1.0, sigma = 0.5, thin = 0.6),))
     leaf = event(updated, :cases)
     @test leaf isa ModifiedDistributions.Transformed
@@ -72,7 +72,7 @@ end
     @test leaf.op.factor == 0.6
     @test get_dist(leaf) == LogNormal(1.0, 0.5)
 
-    rt = params_table(updated)
+    rt = composed_params(updated)
     @test rt.value[findfirst(==(:thin), rt.param)] == 0.6
 
     # A thinned leaf wrapped in a fixed-structure modifier (affine) still
@@ -114,23 +114,23 @@ end
     # Sequential: the affine step's honoured moment adds into the chain total.
     seq = sequential(:onset_admit => aff, :admit_death => Gamma(3.0, 1.0))
     @test mean(seq) ≈ aff_mean + 3.0
-    @test params_table(seq).param == [:shape, :scale, :shape, :scale]
+    @test composed_params(seq).param == [:shape, :scale, :shape, :scale]
     @test all(isfinite, values(rand(Xoshiro(1), seq)))
 
     # Parallel: the affine branch's honoured moment is its endpoint moment.
     par = parallel(:admit => aff, :notif => Gamma(3.0, 1.0))
     @test mean(par).admit ≈ aff_mean
-    @test params_table(par).param == [:shape, :scale, :shape, :scale]
+    @test composed_params(par).param == [:shape, :scale, :shape, :scale]
 
     # Resolve: the affine outcome's honoured moment feeds the mixture moment.
     res = resolve(:recover => (aff, 0.6), :die => (Gamma(3.0, 1.0), 0.4))
     @test mean(res) ≈ 0.6 * aff_mean + 0.4 * 3.0
 
     # Compete: the racing-hazard marginal honours the affine through its own
-    # cdf; the moment is finite and the affine step peels in params_table.
+    # cdf; the moment is finite and the affine step peels in composed_params.
     cmp = compete(:recover => aff, :die => Gamma(3.0, 1.0))
     @test isfinite(mean(cmp))
-    @test params_table(cmp).param == [:shape, :scale, :shape, :scale]
+    @test composed_params(cmp).param == [:shape, :scale, :shape, :scale]
 
     # Choose: a whole-tree moment is ill-defined, so take the chosen
     # alternative's moment; it honours the affine.
@@ -224,7 +224,7 @@ end
 
     u = uncertain(th; shape = LogNormal(log(2.0), 0.2), scale = 1.5)
     @test extra_leaf_params(u) == (thin = (value = 0.3, support = (0.0, 1.0)),)
-    tbl = params_table(compose((cases = u,)))
+    tbl = composed_params(compose((cases = u,)))
     @test tbl.param == [:shape, :scale, :thin]
 
     tree = compose((cases = u,))

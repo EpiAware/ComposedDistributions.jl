@@ -11,7 +11,7 @@ The package has four layers, each building on the one before.
   A leaf can also resolve later: a [`Varying`](@ref) leaf maps an observed covariate to a distribution, and an [`Uncertain`](@ref) leaf carries distribution-valued parameters.
 - **Composers** wire named leaves into an event tree ([`compose`](@ref) and the five composers).
 - **Combination and lowering** join or collapse whole delays ([`convolved`](@ref), [`difference`](@ref), [`observed_distribution`](@ref)).
-- **Parameters and edits** read and reshape an assembled tree ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref), [`splice`](@ref)).
+- **Parameters and edits** read and reshape an assembled tree ([`composed_params`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref), [`splice`](@ref)).
 
 ## The verb map
 
@@ -46,10 +46,10 @@ The verbs fall into five families, listed here as verb, what it does, and what i
 
 | Verb | What it does | Returns |
 |---|---|---|
-| `params_table` | the flat free-parameter inventory | a Tables.jl table |
+| `composed_params` | the flat free-parameter inventory | a Tables.jl table |
 | `build_priors` | support-derived default priors from that table | a nested prior `NamedTuple` |
 | `default_prior` | the default prior for one parameter row | a `Distribution` |
-| `param_priors` | `params_table` + `build_priors` in one call, for `uncertain(tree)` (bare) | a nested prior `NamedTuple` |
+| `param_priors` | `composed_params` + `build_priors` in one call, for `uncertain(tree)` (bare) | a nested prior `NamedTuple` |
 | `uncertain(tree, ...)` | promote one or more free parameters of an existing tree; bare `uncertain(tree)` promotes all | a tree |
 
 See [Fitting a composed distribution](@ref inference) for how these feed the estimation pipeline.
@@ -96,7 +96,7 @@ The deferred-leaf verbs are worked through in [Multi-strata trees and parameter 
 | Difference of two delays | `difference` | [`Difference`](@ref) |
 | Mixture view of a one_of node | `as_mixture` | a `MixtureModel` |
 | Collapse a chain to its total | `observed_distribution` | the convolved marginal |
-| The free-parameter inventory | `params_table` | a Tables.jl table |
+| The free-parameter inventory | `composed_params` | a Tables.jl table |
 | Support-derived priors | `build_priors` | a nested prior `NamedTuple` |
 | Read a child or descend a path | `event` | a node or leaf |
 | Flat / nested event names | `event_names` / `event_tree` | the record key names |

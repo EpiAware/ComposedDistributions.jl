@@ -1,6 +1,6 @@
-# Prior introspection helpers (`params`, `params_table`, `event_names`,
+# Prior introspection helpers (`params`, `composed_params`, `event_names`,
 # `event`); see their docstrings below. Implementation note: the `show` and
-# `params`/`params_table` traversals are hand-rolled, type-stable recursion
+# `params`/`composed_params` traversals are hand-rolled, type-stable recursion
 # over the component tuples, not generic tree iterators (not type-stable for
 # the heterogeneous composer tree).
 
@@ -109,7 +109,7 @@ inspect(tree)
 
 # See also
 - [`event_tree`](@ref): the nested tree of event names
-- [`params_table`](@ref): the flat parameter inventory
+- [`composed_params`](@ref): the flat parameter inventory
 "
 function inspect(io::IO, d)
     if _is_composer_dist(d)
@@ -196,10 +196,10 @@ Returns a `NamedTuple` keyed by the node names, each value the `params` of that
 child (recursing into nested composers; a leaf delegates to its standard/
 extended `Distributions.params`). A `Resolve` node contributes a name-keyed
 NamedTuple of its outcomes plus a `branch_probs` entry. This nested form is for
-prior introspection via [`params_table`](@ref); a composed distribution
+prior introspection via [`composed_params`](@ref); a composed distribution
 reconstructs through [`compose`](@ref), not through `Distribution(params...)`.
 
-See also: [`params_table`](@ref), [`event_names`](@ref), [`event`](@ref)
+See also: [`composed_params`](@ref), [`event_names`](@ref), [`event`](@ref)
 "
 function _composed_params(d::Union{Sequential, Parallel})
     names = component_names(d)
@@ -250,7 +250,7 @@ end
 # positional tuple. Per-branch params are namespaced per alternative
 # (`index.…`/`sourced.…`); a tag shared across alternatives via `shared(:tag,...)`
 # still appears once per occurrence here and is inventoried/sampled once by
-# `params_table`/the prior model.
+# `composed_params`/the prior model.
 function _select_params(d::Choose)
     vals = map(_child_params, d.alternatives)
     return NamedTuple{component_names(d)}(vals)
@@ -265,7 +265,7 @@ end
 # parameters; only the inner delay's parameters (the `Gamma` shape/scale) are
 # free. `_free_leaf` peels the fixed censoring off to the inner free delay, and
 # `_rewrap_leaf` rebuilds the same censoring around a new inner delay. The
-# introspection (`params_table`, names) and reconstruction layers go through
+# introspection (`composed_params`, names) and reconstruction layers go through
 # these, so a censored leaf is transparent: its rows show only the inner free
 # params and it round-trips by re-censoring the rebuilt delay. A plain leaf is
 # the identity for both. The public `Distributions.params` is unchanged.
@@ -400,7 +400,7 @@ its own specs (see Uncertain.jl), and a leaf-wrapper type (censoring in
 CensoredDistributions, the modifiers in ModifiedDistributions) adds its own
 method dispatching on its own type and forwarding to its inner delay's specs,
 so an uncertain prior attached under a wrapper still reaches
-[`params_table`](@ref)'s `prior` column and [`build_priors`](@ref). Without a
+[`composed_params`](@ref)'s `prior` column and [`build_priors`](@ref). Without a
 forwarding method the attached prior is silently dropped and the parameter is
 treated as fixed.
 
@@ -440,7 +440,7 @@ untruncated inner delay. A modifier layer that owns a free parameter which is
 not one of the inner delay's native parameters plugs in by defining this on its
 own wrapper type. The thinning factor of `thin(d, p)` (ModifiedDistributions'
 `ThinOp`) is the first instance: it reports `(thin = (value = p, support =
-(0.0, 1.0)),)`, at which point [`params_table`](@ref) surfaces a `:thin` row and
+(0.0, 1.0)),)`, at which point [`composed_params`](@ref) surfaces a `:thin` row and
 [`update`](@ref) round-trips it.
 
 # Arguments
@@ -515,7 +515,7 @@ to `:param_1, :param_2, ...`.
 
 A leaf type whose free parameters are not the native family's overrides this, in
 step with [`leaf_ctor`](@ref): the two together fix the coordinates that
-`params_table`, `uncertain`, `build_priors` and the flat codec work in. A
+`composed_params`, `uncertain`, `build_priors` and the flat codec work in. A
 moment-parameterised wrapper naming a mean and a standard deviation, rather than
 a shape and a scale, is the motivating case.
 
@@ -555,7 +555,7 @@ then the names of any [`extra_leaf_params`](@ref) appended in order. A censored
 or modified leaf delegates to its free delay (`free_leaf`), so the fixed wrapper
 structure never appears, while a thinning modifier's `:thin` factor rides the
 trailing extra-parameter slot. These names are the coordinates
-[`params_table`](@ref), [`uncertain`](@ref) and [`build_priors`](@ref) key on.
+[`composed_params`](@ref), [`uncertain`](@ref) and [`build_priors`](@ref) key on.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution whose parameter names are
@@ -585,9 +585,9 @@ function leaf_param_names(leaf)
 end
 const _leaf_param_names = leaf_param_names
 
-# --- params_table (hand-rolled pre-order walk) -----------------------------
+# --- composed_params (hand-rolled pre-order walk) -----------------------------
 
-# A thin wrapper over the flat column table so `params_table(d)` prints as an
+# A thin wrapper over the flat column table so `composed_params(d)` prints as an
 # actual table (matching its name) rather than as a bare `NamedTuple` of vectors,
 # while staying a first-class Tables.jl source. It forwards the whole Tables.jl
 # column interface to the wrapped `NamedTuple`, so `Tables.istable`,
@@ -599,14 +599,14 @@ const _leaf_param_names = leaf_param_names
 
 A Tables.jl column table of a composed distribution's free parameters.
 
-The value [`params_table`](@ref) returns: a Tables.jl source (a column table)
+The value [`composed_params`](@ref) returns: a Tables.jl source (a column table)
 that prints as a padded `edge | param | value | support | prior` table. It is a thin
 wrapper over a `NamedTuple` of equal-length column vectors, forwarding the whole
 Tables.jl column interface and column access (`tbl.edge`, `tbl.param`, ...), so
 `Tables.istable`, `Tables.columns`, `Tables.getcolumn`, `DataFrame(tbl)` and
 [`build_priors`](@ref) all consume it unchanged; only its display is customised.
 
-See also: [`params_table`](@ref), [`build_priors`](@ref).
+See also: [`composed_params`](@ref), [`build_priors`](@ref).
 "
 struct ParamsTable{C <: NamedTuple}
     columns::C
@@ -640,14 +640,14 @@ function Base.show(io::IO, t::ParamsTable)
     return nothing
 end
 
-# A padded ASCII table for `text/plain` display, so `params_table(d)` renders as
+# A padded ASCII table for `text/plain` display, so `composed_params(d)` renders as
 # an actual table. Columns are `edge | param | value | support | prior`; each cell is the
 # `string` of the value, columns padded to their widest cell (header included).
 function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
     cols = getfield(t, :columns)
     names = collect(keys(cols))
     n = _nrows(t)
-    println(io, "params_table ($n rows)")
+    println(io, "composed_params ($n rows)")
     isempty(names) && return nothing
     # Stringify every cell (an absent entry, e.g. a row with no attached
     # prior, renders blank), then size each column to its widest entry.
@@ -674,9 +674,9 @@ _cell_string(x) = x === nothing ? "" : string(x)
 
 Flatten a composed distribution's parameters into a prior-definition table.
 
-`params_table(d)` returns a Tables.jl column table (a [`ParamsTable`](@ref)
+`composed_params(d)` returns a Tables.jl column table (a [`ParamsTable`](@ref)
 wrapping a `NamedTuple` of equal-length column vectors, so
-`Tables.istable(params_table(d))` is `true` and it prints as a padded table);
+`Tables.istable(composed_params(d))` is `true` and it prints as a padded table);
 wrap it in `DataFrame` for a DataFrame. It has one row per scalar free parameter
 of the composed distribution `d`, with columns:
 
@@ -708,7 +708,7 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = LogNormal(1.5, 0.4),
     admit_death = Gamma(2.0, 1.0)))
-tbl = params_table(tree)
+tbl = composed_params(tree)
 tbl.edge  # a column; wrap the table in `DataFrame(tbl)` for a DataFrame
 ```
 
@@ -716,7 +716,7 @@ tbl.edge  # a column; wrap the table in `DataFrame(tbl)` for a DataFrame
 - [`params`](@ref): the nested name-keyed values
 - [`event_names`](@ref), [`event`](@ref): name introspection
 "
-function params_table(
+function composed_params(
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
     edges = Symbol[]
     params_col = Symbol[]
@@ -728,6 +728,12 @@ function params_table(
     return ParamsTable((edge = edges, param = params_col,
         value = values, support = supports, prior = priors))
 end
+
+# Deprecated alias (#227): `params_table` read as extending `Distributions`'
+# `params`, which it does not (it is CD's own tree-shaped Tables.jl source,
+# not comparable to a plain `params` tuple), and the `_table` suffix repeated
+# what `composed_` already signals about the shape. Kept for one release.
+@deprecate params_table(d) composed_params(d)
 
 # Pre-order walk over the composer tree. `path` is the tuple of names from the
 # root to the current node. A composer recurses into its named children; a
@@ -861,7 +867,7 @@ end
 
 # Join a name path to a single dotted `Symbol` (e.g. `(:a, :b)` -> `:a.b`); a
 # single-element path keeps its bare name. This is the dotted ("." separator)
-# parameter-path namespace (params_table edges / priors), distinct from the
+# parameter-path namespace (composed_params edges / priors), distinct from the
 # underscored ("_" separator) event/value namespace (`_join_value_path`,
 # `_split_edge_name`).
 _join_path(path::Tuple) = Symbol(join(string.(path), "."))
@@ -911,7 +917,7 @@ For topology edits that change the tree SHAPE, use [`prune`](@ref) or
 `update(d, params)` returns a new distribution of the SAME structure as `d` with
 its parameters set from `params`, a nested NamedTuple mirroring the tree: a
 [`Sequential`](@ref)/[`Parallel`](@ref) is keyed by its edge names, a leaf by
-its parameter names (as in [`params_table`](@ref)'s `param` column), and a
+its parameter names (as in [`composed_params`](@ref)'s `param` column), and a
 [`Resolve`](@ref) by its outcome names plus an optional `branch_probs` entry. A
 censored leaf is transparent: supply only the inner delay's parameters and the
 censoring is carried through.
@@ -939,7 +945,7 @@ slot to make them uncertain,
 `update(node, (branch_probs = Dirichlet(ones(K)),))`. The `Dirichlet` is the
 prior you WRITE; the codec ESTIMATES the node through the `Dirichlet`'s K-1
 stick-breaking coordinates (labelled `:stick_1 … :stick_{K-1}` in
-[`params_table`](@ref) and a fitted chain), each a `Beta` in (0, 1), so every
+[`composed_params`](@ref) and a fitted chain), each a `Beta` in (0, 1), so every
 draw lands on the probability simplex and the gradient is well-defined. The
 probabilities are RECOVERED from any draw: a strict `update` from the stick
 coordinates (as read back from a chain) collapses the node to concrete
@@ -978,7 +984,7 @@ has_uncertain(est)
 SAME outer structure as `d` with the node addressed by each `path` replaced by
 `new_node`. A `path` is a `Symbol` (a top-level child), a dotted `Symbol`
 (`:admit_path.admit_resolution.death`, as in [`event`](@ref) /
-[`params_table`](@ref)), or a tuple of edge names from the root (e.g.
+[`composed_params`](@ref)), or a tuple of edge names from the root (e.g.
 `(:admit_path, :admit_resolution, :death)`); the same address [`event`](@ref)
 READS is the one this WRITES. `new_node` may be a leaf distribution or a nested
 composer. This shares the recursive reconstruction with the value-update form
@@ -1029,7 +1035,7 @@ parameters were sampled under (default `:d`).
 
 `update(d, x)` is a shorthand for `update(d, unflatten(d, x))`: rebuild the
 distribution with parameters read from the flat estimated vector `x`. Each
-estimated parameter (an [`uncertain`](@ref) spec in [`params_table`](@ref))
+estimated parameter (an [`uncertain`](@ref) spec in [`composed_params`](@ref))
 takes its value from the vector, each fixed parameter its template value. This
 collapses the tree at the draw and is commonly used to rebuild a distribution
 from a sampler output after reading it into the flat coordinate system.
@@ -1055,7 +1061,7 @@ event(result, :onset_admit)
 
 # `update(d, table)` — bulk-set from a Tables.jl table
 
-`update(d, table)` reads a [`params_table`](@ref)-shaped Tables.jl table (any
+`update(d, table)` reads a [`composed_params`](@ref)-shaped Tables.jl table (any
 `Tables.istable` source with `edge`/`param` columns) and folds every row into
 the tree in one call: a row's `prior` (when present and not `nothing`)
 promotes that parameter to [`uncertain`](@ref), otherwise its `value` sets it
@@ -1073,13 +1079,13 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
-update(tree, params_table(tree))   # a no-op round-trip here
+update(tree, composed_params(tree))   # a no-op round-trip here
 ```
 
 # See also
 - [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point built on
   the same merge-mode pipeline as this docstring's distribution-valued forms
-- [`params_table`](@ref): the flat inventory whose `param` names key the leaves
+- [`composed_params`](@ref): the flat inventory whose `param` names key the leaves
 - [`param_priors`](@ref): default priors for the promote path
 - [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
 - [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec
@@ -1125,14 +1131,14 @@ end
 
 Bulk-`update` a composed distribution from a Tables.jl table.
 
-`update(d, table)` reads a [`params_table`](@ref)-shaped Tables.jl table (any
-`Tables.istable` source with `edge`/`param` columns, e.g. `params_table(d)`
+`update(d, table)` reads a [`composed_params`](@ref)-shaped Tables.jl table (any
+`Tables.istable` source with `edge`/`param` columns, e.g. `composed_params(d)`
 itself, a `DataFrame`, or a hand-built `Vector{<:NamedTuple}`) and folds it
 into the same nested-`NamedTuple` [`update`](@ref) pipeline used everywhere
 else: a row's `prior` entry (when the table carries one and it is not
 `nothing`) promotes that parameter to [`uncertain`](@ref); otherwise its
 `value` entry sets it, so a plain four-column table (no `prior` column) is a
-purely concrete bulk write — the spreadsheet-style workflow `params_table`
+purely concrete bulk write — the spreadsheet-style workflow `composed_params`
 was built to round-trip. This is `update`'s table input format, not a
 separate verb: the result is identical to building the nested `NamedTuple` by
 hand and calling `update(d, nt)`.
@@ -1151,7 +1157,7 @@ is refused loudly rather than silently misread.
 # Arguments
 - `d`: the composed distribution to edit.
 - `table`: a Tables.jl table with `edge`/`param` columns and a `value` and/or
-  `prior` column (as in [`params_table`](@ref)).
+  `prior` column (as in [`composed_params`](@ref)).
 
 # Examples
 ```@example
@@ -1159,7 +1165,7 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
-tbl = params_table(tree)
+tbl = composed_params(tree)
 # A bulk concrete write: every `value` re-applied (a no-op read/write
 # round-trip here, but the same call works after editing `tbl.value` in
 # place or in a DataFrame).
@@ -1167,7 +1173,7 @@ update(tree, tbl)
 ```
 
 # See also
-- [`params_table`](@ref): the table shape this reads.
+- [`composed_params`](@ref): the table shape this reads.
 - [`update`](@ref)`(d, params::NamedTuple)`: the underlying pipeline.
 - [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point.
 "
@@ -1191,7 +1197,7 @@ _has_distribution_value(::Any) = false
 
 # `_update` is the recursive worker. The whole top-level `params` is threaded down
 # as the `shared` source: a shared-tagged leaf is keyed at the top level by its
-# tag (matching `params_table`'s tag edge), so every occurrence reads the one
+# tag (matching `composed_params`'s tag edge), so every occurrence reads the one
 # entry; per-node keys are validated against the per-occurrence params with the
 # shared tags excluded. `merge` carries the mode (see `_has_distribution_value`);
 # the composer recursion is mode-agnostic (it already tolerates absent children),
@@ -1413,7 +1419,7 @@ _node_children(d::Union{Sequential, Parallel}) = d.components
 _node_children(c::AbstractOneOf) = c.delays
 _node_children(d::Choose) = d.alternatives
 
-# --- build_priors: params_table + flat priors -> nested NamedTuple ----------
+# --- build_priors: composed_params + flat priors -> nested NamedTuple ----------
 
 # Split a dotted edge `Symbol` (`:a.b`) back into its name path (`(:a, :b)`).
 # The dotted ("." separator) parameter-path namespace (inverse of `_join_path`),
@@ -1445,7 +1451,7 @@ end
 
 # --- update(d, table): a Tables.jl table folded to a nested update NamedTuple
 
-# `update(d, table)`'s reader: a `params_table`-shaped Tables.jl table ->
+# `update(d, table)`'s reader: a `composed_params`-shaped Tables.jl table ->
 # the nested NamedTuple `update`/`_update` consume. Reuses the exact
 # `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `build_priors` uses,
 # so the table -> tree shape is identical; only the per-row value picked
@@ -1458,7 +1464,7 @@ end
 # that tells them apart.
 function _table_to_nested_updates(table)
     Tables.istable(table) || throw(ArgumentError(
-        "update(d, table) needs a Tables.jl table (params_table-shaped: " *
+        "update(d, table) needs a Tables.jl table (composed_params-shaped: " *
         "edge/param columns, plus value and/or prior); got $(typeof(table)). " *
         "Pass a NamedTuple for a single targeted edit, or an " *
         "AbstractVector{<:Real} for a flat parameter vector."))
@@ -1466,7 +1472,7 @@ function _table_to_nested_updates(table)
     colnames = Tables.columnnames(cols)
     (:edge in colnames && :param in colnames) || throw(ArgumentError(
         "update(d, table) needs `edge` and `param` columns (as produced by " *
-        "params_table); got columns $(collect(colnames))"))
+        "composed_params); got columns $(collect(colnames))"))
     edges = Tables.getcolumn(cols, :edge)
     params_col = Tables.getcolumn(cols, :param)
     has_value = :value in colnames
@@ -1521,7 +1527,7 @@ Pick a default prior for a parameter row, brms-style.
 
 `default_prior(row)` is the per-row default [`build_priors`](@ref) uses for rows
 the user does not override. `row` is a `(; edge, param, value, support)`
-NamedTuple (a [`params_table`](@ref) row); the prior family follows the
+NamedTuple (a [`composed_params`](@ref) row); the prior family follows the
 parameter's own natural domain (classified by name), not the leaf's variate
 support:
 
@@ -1541,7 +1547,7 @@ The spread `scale` defaults to `max(abs(value), 1)`, a weakly-informative width
 that scales with the parameter's magnitude.
 
 # Arguments
-- `row`: a [`params_table`](@ref) row `(; edge, param, value, support)`.
+- `row`: a [`composed_params`](@ref) row `(; edge, param, value, support)`.
 
 # Examples
 ```@example
@@ -1587,7 +1593,7 @@ end
 
 @doc "
 
-Assemble the nested prior `NamedTuple` from a [`params_table`](@ref) inventory.
+Assemble the nested prior `NamedTuple` from a [`composed_params`](@ref) inventory.
 
 `build_priors(table; priors, default)` turns the flat parameter table into the
 nested `NamedTuple` that a downstream `composed_parameters_model` (and
@@ -1602,7 +1608,7 @@ For each row the prior is chosen in order:
    unless a different `default` function is given).
 
 By default every row gets a sensible support-derived prior, so
-`build_priors(params_table(tree))` alone yields a complete prior NamedTuple. A
+`build_priors(composed_params(tree))` alone yields a complete prior NamedTuple. A
 user overrides only the parameters they care about (brms-style partial override)
 through `priors`.
 
@@ -1611,7 +1617,7 @@ for that row), so a custom `default` can pick a prior from the parameter's
 `support`.
 
 # Arguments
-- `table`: a [`params_table`](@ref) inventory (any Tables.jl column table with
+- `table`: a [`composed_params`](@ref) inventory (any Tables.jl column table with
   `edge`, `param`, `value`, `support` columns).
 
 # Keyword Arguments
@@ -1629,7 +1635,7 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
-tbl = params_table(tree)
+tbl = composed_params(tree)
 # Support-derived defaults everywhere, overriding only one parameter.
 nested = build_priors(tbl;
     priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),),))
@@ -1637,7 +1643,7 @@ nested.onset_admit.shape
 ```
 
 # See also
-- [`params_table`](@ref): the flat inventory keyed against.
+- [`composed_params`](@ref): the flat inventory keyed against.
 - [`default_prior`](@ref): the support-derived per-row default.
 - `composed_parameters_model` (downstream), [`update`](@ref): consume the result.
 "
@@ -1698,7 +1704,7 @@ end
 Build the nested prior `NamedTuple` straight from a composed distribution.
 
 `param_priors(tree; priors, default)` is a thin convenience over
-[`build_priors`](@ref)`(`[`params_table`](@ref)`(tree))`: it reads the
+[`build_priors`](@ref)`(`[`composed_params`](@ref)`(tree))`: it reads the
 parameter inventory of the composed distribution `tree` and assembles the
 nested prior `NamedTuple` in one call, forwarding the same keyword surface.
 It adds no prior logic of its own.
@@ -1732,10 +1738,10 @@ priors.onset_admit.shape
 
 # See also
 - [`build_priors`](@ref): the underlying table-based assembly.
-- [`params_table`](@ref): the parameter inventory read internally.
+- [`composed_params`](@ref): the parameter inventory read internally.
 "
 function param_priors(tree; kwargs...)
-    priors = build_priors(params_table(tree); kwargs...)
+    priors = build_priors(composed_params(tree); kwargs...)
     return _attach_branch_prob_priors(priors, tree)
 end
 
@@ -1812,7 +1818,7 @@ event_names(tree)
 # See also
 - [`event_tree`](@ref): the NESTED tree of event names
 - [`event`](@ref): fetch a child or subtree by name path
-- [`params_table`](@ref): the parameter table
+- [`composed_params`](@ref): the parameter table
 "
 function event_names(d::Union{Sequential, Parallel, AbstractOneOf})
     return _flat_event_names(d)
@@ -1916,7 +1922,7 @@ Fetch a composed distribution's child (event/edge), or descend a name path.
 single `Symbol` fetches a direct child (a branch of a [`Parallel`](@ref), a step
 of a [`Sequential`](@ref), an outcome delay of a [`Resolve`](@ref), or an
 alternative of a [`Choose`](@ref)); multiple `Symbol`s, or a single dotted-path
-`Symbol` (`:admit_path.admit_death`, as in [`params_table`](@ref)'s `edge`
+`Symbol` (`:admit_path.admit_death`, as in [`composed_params`](@ref)'s `edge`
 column), descend the tree one name per step. Throws an `ArgumentError` naming
 the valid children if a name along the path is not a child at that level
 (mirroring [`update`](@ref)/[`prune`](@ref)/[`splice`](@ref)).

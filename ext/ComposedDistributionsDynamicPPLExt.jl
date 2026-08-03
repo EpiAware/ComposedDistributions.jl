@@ -15,7 +15,7 @@ module ComposedDistributionsDynamicPPLExt
 
 using ComposedDistributions: ComposedDistributions,
                              AbstractComposedDistribution, ComposedLogDensity,
-                             as_logdensity, reconstruct, params_table
+                             as_logdensity, reconstruct, composed_params
 import ComposedDistributions: as_turing
 using DynamicPPL: DynamicPPL, @model, NamedDist, VarName
 
@@ -100,7 +100,7 @@ function as_turing(dist::AbstractComposedDistribution, data;
     prob = as_logdensity(dist, data; loglik = loglik)
     # The estimated rows' `(path, param)` keys, in the same table order as
     # `prob.flat_priors`, so `vns[i]` names the site scored by `fp[i]`.
-    layout = ComposedDistributions._flat_layout(params_table(dist))
+    layout = ComposedDistributions._flat_layout(composed_params(dist))
     vns = [_dotted_varname(prefix, (path..., param))
            for (path, param) in layout]
     return _composed_turing_model(prob, vns)

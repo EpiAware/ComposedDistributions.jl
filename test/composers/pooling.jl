@@ -88,7 +88,7 @@ end
     @test flat_dimension(partial) == 2 + 3
 end
 
-@testitem "pool: params_table rows and CD-aligned flat layout" begin
+@testitem "pool: composed_params rows and CD-aligned flat layout" begin
     using Distributions
     using ComposedDistributions: flat_dimension, _flat_layout
 
@@ -96,7 +96,7 @@ end
         north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
         east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
         south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
-    tbl = params_table(model)
+    tbl = composed_params(model)
 
     # The population's hyperparameters are inventoried once under the group edge.
     hyper = findall(==(:district), tbl.edge)
@@ -205,7 +205,7 @@ end
         a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, pop)),
         b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, pop))))
 
-    tbl = params_table(model)
+    tbl = composed_params(model)
     # Two hyperparameters under the group edge, then each member's own shape.
     @test tbl.param[findall(==(:g), tbl.edge)] == [:shape, :scale]
     @test flat_dimension(model) == 4   # 2 hypers + 2 member latents

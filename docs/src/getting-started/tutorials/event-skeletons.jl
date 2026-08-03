@@ -160,11 +160,11 @@ uncertain_tree = update(skeleton;
 
 has_uncertain(uncertain_tree)
 
-# [`params_table`](@ref) carries the attached prior on its `prior` column, same
+# [`composed_params`](@ref) carries the attached prior on its `prior` column, same
 # as any other uncertain leaf; nothing about `@events` changes how the
 # estimation surface reads it.
 
-params_table(uncertain_tree)
+composed_params(uncertain_tree)
 
 # ## Summary
 #

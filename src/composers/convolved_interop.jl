@@ -253,7 +253,7 @@ end
 #
 # A `Convolved` / `Difference` node used as a leaf is a pre-formed composite
 # delay whose parameters ARE its components' parameters. The prior/params
-# interface sees THROUGH it to the component leaves: `params_table` inventories
+# interface sees THROUGH it to the component leaves: `composed_params` inventories
 # each component's scalar parameters under a `component_i` path segment (so a
 # two-Gamma `Convolved` at edge `:total` lists `total.component_1.shape`,
 # `total.component_1.scale`, `total.component_2.shape`, ...), and `update`
@@ -284,7 +284,7 @@ _rebuild(d::Difference, comps::Tuple) = Difference(comps[1], comps[2];
 # mirroring the edge/param naming the composers use for their named children.
 _composite_component_names(n::Int) = ntuple(i -> Symbol(:component_, i), n)
 
-# params_table rows: recurse into each component under a `component_i` segment,
+# composed_params rows: recurse into each component under a `component_i` segment,
 # reusing the generic leaf walk for each component (so a plain, censored,
 # uncertain, or nested-composite component is inventoried exactly as it would be
 # as a standalone leaf, one row-group per component).

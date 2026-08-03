@@ -398,7 +398,7 @@ end
 
 # The centred pooled parameters' `(path, param, pool)` triples, in table order.
 function _centred_pool_rows(dist)
-    tbl = params_table(dist)
+    tbl = composed_params(dist)
     prcol = Tables.getcolumn(tbl, :prior)
     edges = Tables.getcolumn(tbl, :edge)
     params_col = Tables.getcolumn(tbl, :param)

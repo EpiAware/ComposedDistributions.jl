@@ -170,8 +170,8 @@ end
     built = tree.components[1]
     @test ComposedDistributions.free_leaf(built) == Gamma(2.0, 1.0)
     @test get_dist(built) == Gamma(2.0, 1.0)
-    # params_table sees through the modifier to the inner free parameters.
-    tbl = params_table(tree)
+    # composed_params sees through the modifier to the inner free parameters.
+    tbl = composed_params(tree)
     @test :shape in tbl.param
     @test :scale in tbl.param
 end

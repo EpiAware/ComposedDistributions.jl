@@ -4,7 +4,7 @@
 # shape the design review's migration gate lists -- nested shared tags at
 # different depths, non-centred AND centred pools, Resolve stick-breaking,
 # thin extras, and Choose/Compete. These are the correctness gate for
-# replacing the old Dict-based `unflatten`/`params_table` walk with the
+# replacing the old Dict-based `unflatten`/`composed_params` walk with the
 # generation-time layout walk in `codec_gen.jl`.
 
 @testitem "codec: property round-trip -- plain fixed tree (nothing estimated)" begin

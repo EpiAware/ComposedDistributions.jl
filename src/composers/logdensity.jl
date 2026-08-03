@@ -1,7 +1,7 @@
 # PPL-neutral assembled `ComposedLogDensity` spec, over the generated flat
 # <-> nested codec (`unflatten`/`flatten`/`flat_dimension`/`reconstruct`, now
 # in `codec_gen.jl`). Turing-free: no DynamicPPL/LogDensityProblems dependency
-# here, only `params_table`, the uncertain specs and `update`. A thin
+# here, only `composed_params`, the uncertain specs and `update`. A thin
 # `LogDensityProblems` weakdep extension (deferred; see the package tracker)
 # wraps `ComposedLogDensity` for AdvancedHMC/DynamicHMC/Pathfinder-style
 # samplers on top of this.
@@ -51,7 +51,7 @@ evaluate it on a flat vector with [`logdensity`](@ref).
 
 It is the spec a `LogDensityProblems` weakdep extension wraps as a standard
 problem (sampleable by AdvancedHMC / DynamicHMC / Pathfinder); the flat layout
-is [`params_table`](@ref)`(dist)`'s row order restricted to the estimated
+is [`composed_params`](@ref)`(dist)`'s row order restricted to the estimated
 (spec'd) parameters throughout.
 
 # Fields
@@ -88,11 +88,11 @@ end
 
 # The nested prior `NamedTuple` of a tree's uncertain specs, keyed like the
 # tree (spec'd parameters only). Under uncertain-first this is the estimated
-# subset's prior source, read straight off the object's `params_table` `prior`
+# subset's prior source, read straight off the object's `composed_params` `prior`
 # column, so a fixed leaf contributes neither a prior nor an estimated
 # dimension. A shared spec'd leaf rides its tag edge, matching the codec layout.
 function _spec_priors(dist::AbstractComposedDistribution)
-    table = params_table(dist)
+    table = composed_params(dist)
     edges = Tables.getcolumn(table, :edge)
     params_col = Tables.getcolumn(table, :param)
     priors = Tables.getcolumn(table, :prior)
@@ -176,7 +176,7 @@ end
 Evaluate a [`ComposedLogDensity`](@ref) on its estimated flat parameter vector.
 
 `logdensity(prob, x)` is the (unnormalised) log-posterior at the estimated flat
-vector `x` (the spec'd parameters, in [`params_table`](@ref)`(prob.dist)` row
+vector `x` (the spec'd parameters, in [`composed_params`](@ref)`(prob.dist)` row
 order): the sum of the specs' log-densities at `x` plus the data log-likelihood
 of the distribution reconstructed there (each uncertain leaf collapsed at its
 draw, fixed parameters held at the template). `x` is

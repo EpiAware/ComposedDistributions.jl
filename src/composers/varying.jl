@@ -146,7 +146,7 @@ convolve the concrete result.
     [`has_varying`](@ref).
 
 The varying map `f` is FIXED STRUCTURE (like a truncation bound or a censoring
-window), so the introspection interface ([`params_table`](@ref), [`update`](@ref))
+window), so the introspection interface ([`composed_params`](@ref), [`update`](@ref))
 treats the `reference`'s parameters as the free parameters and peels/rewraps
 through the wrapper; the coefficients of `f` are not (yet) inventoried (see the
 design note's open questions).
@@ -234,7 +234,7 @@ Base.rand(rng::AbstractRNG, d::Varying) = rand(rng, d.reference)
 Base.rand(d::Varying) = rand(default_rng(), d.reference)
 
 # The varying map is fixed structure; the reference carries the free parameters.
-# Peel/rewrap through the wrapper so `params_table` / `update` see the inner free
+# Peel/rewrap through the wrapper so `composed_params` / `update` see the inner free
 # delay and a parameter update rebuilds the same varying leaf around it.
 free_leaf(d::Varying) = free_leaf(d.reference)
 function rewrap_leaf(d::Varying, inner)

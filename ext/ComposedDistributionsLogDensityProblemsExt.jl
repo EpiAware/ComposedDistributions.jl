@@ -9,7 +9,7 @@ LogDensityProblems consumer (AdvancedHMC, DynamicHMC, Pathfinder, Turing's
 The density is the one `as_logdensity` assembles: the sum of the uncertain
 specs' log-densities plus the data log-likelihood of the tree reconstructed at
 the estimated parameters. It is evaluated on the constrained flat parameter
-vector, in `params_table` row order restricted to the estimated rows, so the
+vector, in `composed_params` row order restricted to the estimated rows, so the
 dimension is `flat_dimension(prob.dist)`. Sampling on the unconstrained scale
 composes `to_constrained` (the Bijectors extension) for the prior-driven
 transform, whose log-Jacobian is added to this density.

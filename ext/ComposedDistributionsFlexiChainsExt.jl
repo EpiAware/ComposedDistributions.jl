@@ -170,7 +170,7 @@ end
 #
 # A shared-tagged leaf (`shared(:tag, ...)`) is deduped in the chain: it is
 # sampled once under its tag (`<prefix>.<tag>.<param>`), not per occurrence,
-# matching `params_table`'s tag edge. So an occurrence reads its values at the
+# matching `composed_params`'s tag edge. So an occurrence reads its values at the
 # bare tag (ignoring its branch path); every occurrence then maps to the one
 # chain entry, and the nested NamedTuple keys the group once at the top level
 # under its tag (read back by `update`).

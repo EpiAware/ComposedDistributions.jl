@@ -22,7 +22,7 @@ end
     @test params(u.template)[2] == 1.0
 
     tree = compose((onset = u, admit = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     shape_idx = findfirst(
         i -> tbl.edge[i] == :onset &&
              tbl.param[i] == :shape, eachindex(tbl.edge))
@@ -51,7 +51,7 @@ end
 
     # onset uncertain (one estimated param), admit fully fixed.
     @test flat_dimension(tree) == 1
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     onset_shape = findfirst(
         i -> tbl.edge[i] == :onset &&
              tbl.param[i] == :shape, eachindex(tbl.edge))
@@ -85,9 +85,9 @@ end
     # uncertain leaf.
     @test free_leaf(aff) == Gamma(1.0, 1.0)
 
-    # params_table reports the inner shape as uncertain (its spec on the row).
+    # composed_params reports the inner shape as uncertain (its spec on the row).
     tree = compose((onset = aff, admit = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     shape_idx = findfirst(
         i -> tbl.edge[i] == :onset &&
              tbl.param[i] == :shape, eachindex(tbl.edge))

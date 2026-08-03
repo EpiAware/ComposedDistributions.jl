@@ -84,10 +84,10 @@ south_tied = instantiate(tied_template,
 (north_report = event(north_tied, :onset_report),
     south_report = event(south_tied, :onset_report))
 
-# [`params_table`](@ref) inventories the tied leaf once, under its tag, rather
+# [`composed_params`](@ref) inventories the tied leaf once, under its tag, rather
 # than once per stratum.
 
-unique(params_table(north_tied).edge)
+unique(composed_params(north_tied).edge)
 
 # ## Adding parameter uncertainty
 #
@@ -109,10 +109,10 @@ resolved = instantiate(est_template, Context(time = 5.0))
 
 (has_varying = has_varying(resolved), has_uncertain = has_uncertain(resolved))
 
-# [`params_table`](@ref) carries the uncertain parameter's prior on its `prior`
+# [`composed_params`](@ref) carries the uncertain parameter's prior on its `prior`
 # column, so [`build_priors`](@ref) picks it up with no separate override.
 
-tbl = params_table(resolved)
+tbl = composed_params(resolved)
 (edge = tbl.edge, param = tbl.param, prior = tbl.prior)
 
 # Only `rand` reports the marginal: it draws the uncertain parameter from its
@@ -186,7 +186,7 @@ pooled = compose((
 # `exp(mu + sigma*z_k)`.
 # So `K = 3` strata estimate `2 + 3 = 5` parameters.
 
-pooled_table = params_table(pooled)
+pooled_table = composed_params(pooled)
 (edge = pooled_table.edge, param = pooled_table.param)
 
 # The estimated flat vector is `[mu, sigma, z_north, z_east, z_south]` — the same
@@ -230,7 +230,7 @@ gamma_pool = compose((
 # - [`pool`](@ref) partially pools a parameter across the leaves of a group: each
 #   stratum's parameter is drawn from one shared, estimated population
 #   distribution, the middle of the pooling spectrum.
-# - An [`uncertain`](@ref) leaf carries a parameter's prior; [`params_table`](@ref)
+# - An [`uncertain`](@ref) leaf carries a parameter's prior; [`composed_params`](@ref)
 #   rides it on the `prior` column, `rand` draws the marginal, and
 #   [`update`](@ref) collapses it to a concrete leaf, guarded by
 #   [`has_uncertain`](@ref).

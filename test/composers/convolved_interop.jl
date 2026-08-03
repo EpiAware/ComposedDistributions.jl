@@ -239,14 +239,14 @@ end
     @test rewrap_leaf(conv, Gamma(3.0, 1.5)) == Gamma(3.0, 1.5)
 end
 
-@testitem "Convolved leaf: params_table sees through to component params" begin
+@testitem "Convolved leaf: composed_params sees through to component params" begin
     using Distributions
     using ComposedDistributions: Tables
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
-    tbl = params_table(seq)
+    tbl = composed_params(seq)
     rows = collect(Tables.rows(tbl))
     # One row per scalar component parameter (two Gammas) plus the LogNormal's.
     @test length(rows) == 6
@@ -269,14 +269,14 @@ end
     @test haskey(pr.total.component_2, :scale)
 end
 
-@testitem "Difference leaf: params_table sees through to (x, y) params" begin
+@testitem "Difference leaf: composed_params sees through to (x, y) params" begin
     using Distributions
     using ComposedDistributions: Tables
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
 
-    tbl = params_table(par)
+    tbl = composed_params(par)
     rows = collect(Tables.rows(tbl))
     comp_rows = filter(r -> r.edge != :other, rows)
     @test Set(r.edge for r in comp_rows) ==
@@ -437,7 +437,7 @@ end
     # values (see-through), unlike the old fixed-composite contract where the
     # composite had no key at all. (Read by field, not by NamedTuple equality:
     # `unflatten`'s generated, compile-time walk fixes its NamedTuple's key
-    # order from the tree's TYPE, not necessarily params_table's row order —
+    # order from the tree's TYPE, not necessarily composed_params's row order —
     # see #192 — so a field-by-field read is the order-agnostic check.)
     @test nt.total.component_1.shape == 2.0 && nt.total.component_1.scale == 1.0
     @test nt.total.component_2.shape == 1.0 && nt.total.component_2.scale == 1.0
@@ -489,7 +489,7 @@ end
     # Resolved, the Convolved leaf is seen through like a plain Convolved leaf:
     # its two components' four scalar params are inventoried (four rows) plus the
     # LogNormal's two, and none is spec'd, so the estimated dimension is zero.
-    tbl = params_table(resolved)
+    tbl = composed_params(resolved)
     @test length(collect(ComposedDistributions.Tables.rows(tbl))) == 6
     @test ComposedDistributions.flat_dimension(resolved) == 0
     x = [2.3, 0.9]

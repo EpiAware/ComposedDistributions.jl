@@ -253,18 +253,18 @@ end
     # It composes and samples as a leaf, and is inventoried once under its tag.
     p = parallel(:a => su, :b => LogNormal(0.5, 0.4))
     @test rand(Xoshiro(2), p) isa NamedTuple
-    tbl = params_table(p)
+    tbl = composed_params(p)
     idx = findfirst(==(:shape), tbl.param)
     @test tbl.edge[idx] == :inc
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
 end
 
-@testitem "params_table prior column and build_priors precedence" begin
+@testitem "composed_params prior column and build_priors precedence" begin
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
     tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_params(tree)
     @test :prior in propertynames(tbl)
 
     # The uncertain shape row carries its spec; fixed rows carry nothing.
@@ -341,7 +341,7 @@ end
 
     # Choose: it composes, and its prior column carries the spec.
     ch = choose(:index => u, :sourced => Gamma(2.0, 1.0))
-    tbl = params_table(ch)
+    tbl = composed_params(ch)
     idx = findfirst(i -> tbl.edge[i] == :index && tbl.param[i] == :shape,
         eachindex(tbl.edge))
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
@@ -440,7 +440,7 @@ end
 
     @test has_uncertain(promoted)
     # Every free parameter is now estimated (the escape hatch to estimate-all).
-    @test flat_dimension(promoted) == length(params_table(tree).edge)
+    @test flat_dimension(promoted) == length(composed_params(tree).edge)
     oa = event(promoted, :onset_admit)
     @test oa isa Uncertain
     @test keys(oa.specs) == (:shape, :scale)
