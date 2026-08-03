@@ -178,7 +178,7 @@ event(nested_tree, :death_or_discharge, :death)
 # When two branches share one delay parameter, fill both holes with a
 # [`shared`](@ref) leaf carrying the same tag.
 # The two occurrences are then treated as one free parameter:
-# [`params_table`](@ref) lists the `delay` group once rather than once per
+# [`composed_params`](@ref) lists the `delay` group once rather than once per
 # branch.
 
 tied = update(parallel_skeleton;
@@ -186,7 +186,7 @@ tied = update(parallel_skeleton;
     admission = shared(:delay, Gamma(1.0, 1.0)),
     notification = shared(:delay, Gamma(1.0, 1.0)))
 
-params_table(tied)
+composed_params(tied)
 
 # ## An uncertain fill
 #
@@ -203,11 +203,11 @@ uncertain_tree = update(skeleton;
 
 has_uncertain(uncertain_tree)
 
-# [`params_table`](@ref) carries the attached prior on its `prior` column, same
+# [`composed_params`](@ref) carries the attached prior on its `prior` column, same
 # as any other uncertain leaf; nothing about `@events` changes how the
 # estimation surface reads it.
 
-params_table(uncertain_tree)
+composed_params(uncertain_tree)
 
 # ## A region-varying fill
 #
@@ -276,13 +276,13 @@ probs(event(dropped, :death_or_discharge_or_transfer))
 
 # ## Bulk edits through the parameter table
 #
-# [`params_table`](@ref) is a Tables.jl table, and
+# [`composed_params`](@ref) is a Tables.jl table, and
 # [`update`](@ref)`(tree, table)` folds one back in, so the table is a
 # round-trip edit surface: read it, change a `value` (or a whole column, in a
 # `DataFrame` or a spreadsheet), and apply it in one call.
 # Re-applying the unchanged table is a no-op.
 
-tbl = params_table(pathogen_a)
+tbl = composed_params(pathogen_a)
 
 update(pathogen_a, tbl) == pathogen_a
 
@@ -310,7 +310,7 @@ event(bumped, :onset)
 #   subtree — so one skeleton reuses across pathogens, regions or scenarios by
 #   filling it differently each time.
 # - A filled skeleton is an ordinary composed tree, so [`splice`](@ref),
-#   [`prune`](@ref) and [`update`](@ref) edit it, and [`params_table`](@ref)
+#   [`prune`](@ref) and [`update`](@ref) edit it, and [`composed_params`](@ref)
 #   with `update(tree, table)` is a round-trip bulk-edit surface.
 # - A group's auto-name (`_or_` for one_of, `_and_` for parallel) is
 #   structural; a fill names only the branch holes, never the group.

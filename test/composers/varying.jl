@@ -169,7 +169,7 @@ end
     @test required_covariates(nested) == Dict(:time => [:death])
 
     # A data-selected `Choose` reads its own `selector` covariate, labelled
-    # with a `:selector` suffix (mirroring how `params_table` labels a
+    # with a `:selector` suffix (mirroring how `composed_params` labels a
     # `Resolve`'s own `branch_probs` row), in addition to whatever its
     # alternatives read.
     ch = choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(4.0, 1.5))
@@ -213,7 +213,7 @@ end
 @testitem "Varying: introspection is transparent to the reference" begin
     using Distributions
 
-    # The varying map is fixed structure; params_table shows the reference's
+    # The varying map is fixed structure; composed_params shows the reference's
     # free parameters and a Varying leaf peels/rewraps like any wrapper.
     inner = Gamma(2.0, 1.0)
     d = varying(t -> Gamma(2.0, 1.0 + 0.1 * t))
@@ -229,12 +229,12 @@ end
         reference = ComposedDistributions.shared(:inc, Gamma(2.0, 1.0)))
     @test ComposedDistributions._shared_tag(tagged) == :inc
 
-    # params_table over a tree with a varying leaf matches the same tree built
+    # composed_params over a tree with a varying leaf matches the same tree built
     # from the leaf's reference: the varying map is fixed structure, so only the
     # reference's free parameters are inventoried. Compare the columns (a
     # ParamsTable has no value-`==`), reached via the forwarded property access.
-    tbl = params_table(compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4))))
-    ref = params_table(compose((onset_admit = Gamma(2.0, 1.0),
+    tbl = composed_params(compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4))))
+    ref = composed_params(compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4))))
     @test tbl.edge == ref.edge
     @test tbl.param == ref.param

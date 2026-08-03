@@ -188,7 +188,7 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
             [2.0, 3.0], (Constant(pool_prob),))
 
         # Shared-tag codec: the same uncertain template occurs twice under one
-        # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to one
+        # `shared(:g, ...)` tag, so `composed_params`/`unflatten` dedup it to one
         # flat parameter and `update` places the drawn value in both
         # occurrences (mirrors `test/composers/logdensity.jl`'s "codec: shared
         # spec round-trip"). The reverse-mode gradient of that one parameter

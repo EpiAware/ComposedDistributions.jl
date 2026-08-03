@@ -45,7 +45,7 @@ See [Delay chains and the linear chain trick](@ref linear-chain) for a worked ex
 ## How do I fix a parameter across branches?
 
 Use [`shared`](@ref) or [`tie`](@ref) to make several leaves one free parameter: `shared` tags a leaf where it is built, `tie` walks an assembled tree to named leaves and ties them.
-Either way [`params_table`](@ref) then inventories the tied occurrences once under the shared tag rather than as separate parameters.
+Either way [`composed_params`](@ref) then inventories the tied occurrences once under the shared tag rather than as separate parameters.
 See [Composing distributions](@ref composing-distributions) for a worked example.
 
 ## Why is my `logpdf` `-Inf`?

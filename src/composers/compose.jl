@@ -68,7 +68,7 @@ function compose end
 # --- NamedTuple front-end --------------------------------------------------
 # A NamedTuple maps to a Parallel over its values, each value lowered by
 # `_compose_child`. The keys become the branch names, threaded into the
-# `Parallel` so `params`/`params_table`/`show` are name-keyed (Option A).
+# `Parallel` so `params`/`composed_params`/`show` are name-keyed (Option A).
 # Structurally this still matches the table and matrix forms (`==` ignores
 # names); only the labels differ.
 #

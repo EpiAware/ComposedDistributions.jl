@@ -30,7 +30,7 @@
     @test !has_uncertain(event(utree, :tail))
 end
 
-@testitem "branch_probs: params_table emits stick rows with Beta priors" begin
+@testitem "branch_probs: composed_params emits stick rows with Beta priors" begin
     using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
@@ -41,7 +41,7 @@ end
         :recover => Gamma(1.0, 1.0))
     ur = update(r, (branch_probs = Dirichlet([1.0, 1.0, 1.0]),))
 
-    tbl = params_table(ur)
+    tbl = composed_params(ur)
     stick = findall(==(:branch_probs), tbl.edge)
     @test length(stick) == 2
     @test tbl.param[stick] == [:stick_1, :stick_2]
@@ -60,7 +60,7 @@ end
 
     # A fixed Resolve contributes no estimated stick rows.
     @test flat_dimension(r) == 0
-    ptbl = params_table(r)
+    ptbl = composed_params(r)
     @test !any(==(:stick_1), ptbl.param)
 end
 
@@ -108,7 +108,7 @@ end
         :d => Gamma(1.0, 1.0))
     ur = update(r, (branch_probs = Dirichlet(alpha),))
 
-    tbl = params_table(ur)
+    tbl = composed_params(ur)
     stick = findall(==(:branch_probs), tbl.edge)
     betas = tbl.prior[stick]
 
@@ -142,7 +142,7 @@ end
     @test flat_dimension(promoted) == 5
 
     # The attached branch-prob prior is the flat Dirichlet.
-    tbl = params_table(promoted)
+    tbl = composed_params(promoted)
     stick = findall(i -> tbl.edge[i] == Symbol("resolution.branch_probs"),
         eachindex(tbl.edge))
     @test length(stick) == 1
@@ -182,7 +182,7 @@ end
     # not a free parameter, so it has no branch-probability row and promote adds
     # only the causes' own delay parameters.
     c = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
-    tbl = params_table(c)
+    tbl = composed_params(c)
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:stick_1), tbl.param)
 
@@ -200,7 +200,7 @@ end
     # node-level free weight parameter; only the alternatives' own params are
     # estimated.
     ch = choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(3.0, 1.5))
-    tbl = params_table(ch)
+    tbl = composed_params(ch)
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:weights), tbl.param)
 
@@ -232,7 +232,7 @@ end
 
     @test has_uncertain(promoted)
     @test has_uncertain(event(promoted, :resolution))
-    tbl = params_table(promoted)
+    tbl = composed_params(promoted)
     # The Resolve contributes exactly one stick coordinate (K = 2).
     @test count(==(Symbol("resolution.branch_probs")), tbl.edge) == 1
     # The composite's components are still inventoried and now estimated.

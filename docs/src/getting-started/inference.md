@@ -9,7 +9,7 @@ This page shows the three ways to fit a tree, all built on one PPL-neutral log-d
 ## The log-density
 
 [`as_logdensity`](@ref) packages a tree and its data into a log-density over just the estimated parameters.
-The estimated parameters are the uncertain rows of [`params_table`](@ref), in that order, and [`flat_dimension`](@ref) counts them.
+The estimated parameters are the uncertain rows of [`composed_params`](@ref), in that order, and [`flat_dimension`](@ref) counts them.
 
 ```@example inference
 using ComposedDistributions, Distributions

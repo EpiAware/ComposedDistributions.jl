@@ -411,7 +411,7 @@ end
 
 The centred pooled parameters' `(path, param, pool)` triples, in table order.
 
-Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
+Collected once per [`composed_params`](@ref) walk (typically at `as_logdensity`
 construction time), so a tree with only non-centred (or no) pooling adds no
 per-evaluation cost. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
@@ -434,7 +434,7 @@ ComposedDistributions.centred_pool_rows(tree)
 - [`CentredPoolPrior`](@ref), [`pool_centred_logprior`](@ref)
 "
 function centred_pool_rows(dist)
-    tbl = params_table(dist)
+    tbl = composed_params(dist)
     prcol = Tables.getcolumn(tbl, :prior)
     edges = Tables.getcolumn(tbl, :edge)
     params_col = Tables.getcolumn(tbl, :param)

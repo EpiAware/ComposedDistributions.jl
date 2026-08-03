@@ -73,7 +73,7 @@ also happens to be the prior's centre), and the death/discharge split shows
 up as its own `branch_probs` rows.
 
 ```@example overview
-params_table(admission)
+composed_params(admission)
 ```
 
 [`event`](@ref) fetches any node by its dotted path, so the death outcome's

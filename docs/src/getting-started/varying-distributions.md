@@ -96,7 +96,7 @@ instantiate(latent, ctx)
 This is the same generalisation as [`uncertain`](@ref), along a different index:
 
 - A `Varying` leaf keyed on a sampled parameter is the bare bridge, resolved once the sampler fills the slot.
-- [`Uncertain`](@ref) is the richer latent leaf: it also carries each parameter's **prior** (so [`params_table`](@ref) rides it on the `prior` column), draws the marginal with `rand`, and collapses via [`update`](@ref).
+- [`Uncertain`](@ref) is the richer latent leaf: it also carries each parameter's **prior** (so [`composed_params`](@ref) rides it on the `prior` column), draws the marginal with `rand`, and collapses via [`update`](@ref).
 - Both are deferred leaves resolved by one machinery, so a leaf keyed on an observed covariate whose per-level parameter is itself `uncertain` is both cases at once.
 
 ## Feeding a recurrent / renewal operator

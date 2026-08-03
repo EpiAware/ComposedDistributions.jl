@@ -37,7 +37,7 @@ Required methods a concrete subtype implements (the node interface):
 - `child_nleaves(c)`, `child_logpdf(c, x, offset, n)`,
   `child_rand!(out, offset, rng, c)` — walk the flat event vector;
 - `component_names(c)` — the child names;
-- `params(c)` and `params_table(c)`;
+- `params(c)` and `composed_params(c)`;
 - `event_names(c)` (flat) and `event_tree(c)` (nested);
 - `Base.show(io, c)`.
 

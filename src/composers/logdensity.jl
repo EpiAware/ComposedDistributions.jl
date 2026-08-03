@@ -1,7 +1,7 @@
 # PPL-neutral assembled `ComposedLogDensity` spec, over the generated flat
 # <-> nested codec (`unflatten`/`flatten`/`flat_dimension`/`reconstruct`, now
 # in `codec_gen.jl`). Turing-free: no DynamicPPL/LogDensityProblems dependency
-# here, only `params_table`, the uncertain specs and `update`.
+# here, only `composed_params`, the uncertain specs and `update`.
 # DistributionsInference.jl's `FitLogDensity`/`as_logdensity` (built on this
 # core via the fit protocol — `parameter_rows`/`reconstruct`) implements the
 # `LogDensityProblems` interface directly and hosts the DynamicPPL/`as_turing`
@@ -55,7 +55,7 @@ For a `LogDensityProblems`-conformant problem (sampleable by AdvancedHMC /
 DynamicHMC / Pathfinder) or a `DynamicPPL`/Turing model, use
 DistributionsInference.jl's own `as_logdensity`/`as_turing` instead — they are
 built on this same core (via the fit protocol) and need no glue extension in
-this package. The flat layout here is [`params_table`](@ref)`(dist)`'s row
+this package. The flat layout here is [`composed_params`](@ref)`(dist)`'s row
 order restricted to the estimated (spec'd) parameters throughout.
 
 # Fields
@@ -92,11 +92,11 @@ end
 
 # The nested prior `NamedTuple` of a tree's uncertain specs, keyed like the
 # tree (spec'd parameters only). Under uncertain-first this is the estimated
-# subset's prior source, read straight off the object's `params_table` `prior`
+# subset's prior source, read straight off the object's `composed_params` `prior`
 # column, so a fixed leaf contributes neither a prior nor an estimated
 # dimension. A shared spec'd leaf rides its tag edge, matching the codec layout.
 function _spec_priors(dist::AbstractComposedDistribution)
-    table = params_table(dist)
+    table = composed_params(dist)
     edges = Tables.getcolumn(table, :edge)
     params_col = Tables.getcolumn(table, :param)
     priors = Tables.getcolumn(table, :prior)
@@ -180,7 +180,7 @@ end
 Evaluate a [`ComposedLogDensity`](@ref) on its estimated flat parameter vector.
 
 `logdensity(prob, x)` is the (unnormalised) log-posterior at the estimated flat
-vector `x` (the spec'd parameters, in [`params_table`](@ref)`(prob.dist)` row
+vector `x` (the spec'd parameters, in [`composed_params`](@ref)`(prob.dist)` row
 order): the sum of the specs' log-densities at `x` plus the data log-likelihood
 of the distribution reconstructed there (each uncertain leaf collapsed at its
 draw, fixed parameters held at the template). `x` is

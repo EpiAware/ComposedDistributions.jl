@@ -220,7 +220,7 @@ end
 # backend) and needs only K-1 free dimensions (the simplex dimension).
 
 # The stick-coordinate parameter name for coordinate `k` (`:stick_k`), the label
-# a fitted chain and `params_table` carry for the estimated branch-prob simplex.
+# a fitted chain and `composed_params` carry for the estimated branch-prob simplex.
 _stick_name(k::Int) = Symbol(:stick_, k)
 
 # The K-1 stick-coordinate names for a `k`-outcome node.
