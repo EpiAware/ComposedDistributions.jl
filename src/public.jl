@@ -72,15 +72,13 @@ public AbstractComposedDistribution, AbstractMultiChild, AbstractOneOf
 public TestUtils
 
 # The Turing-free core codec: the flat-vector <-> nested-NamedTuple bijection
-# (`flat_dimension`/`flatten`/`unflatten`), the fused flat-vector ->
-# rebuilt-distribution primary (`reconstruct`, #178 PR 2), and the assembled
-# PPL-neutral log-density (`ComposedLogDensity`/`as_logdensity`/`logdensity`).
-# No LogDensityProblems/DynamicPPL dependency here or anywhere in this
+# (`flat_dimension`/`flatten`/`unflatten`), and the fused flat-vector ->
+# rebuilt-distribution primary (`reconstruct`, #178 PR 2). No
+# LogDensityProblems/DynamicPPL dependency here or anywhere in this
 # package (#220, #233): DistributionsInference.jl hosts the PPL-facing
-# extensions (its own `as_logdensity`/`as_turing`) generically over this
+# log-density/extensions (`as_logdensity`/`as_turing`) generically over this
 # core via the fit protocol (`parameter_rows`/`reconstruct`).
 public flat_dimension, flatten, unflatten, reconstruct
-public ComposedLogDensity, as_logdensity, logdensity
 
 # The load-order-independent leaf-wrapper registry (#189, #178 PR 4): a
 # leaf-wrapper package extension (censoring, modifiers) registers its type-level
@@ -88,9 +86,3 @@ public ComposedLogDensity, as_logdensity, logdensity
 # method to `_leaf_free_type`/`_extra_names_of`, which the generated codec's
 # `@generated` generator cannot see reliably once loaded after the fact.
 public register_leaf_wrapper!
-
-# The prior-driven unconstrained -> constrained transform (public but not
-# exported, like the rest of the codec): `to_constrained(prob, z)` has no
-# method until `Bijectors` is loaded, when `ComposedDistributionsBijectorsExt`
-# supplies it.
-public to_constrained

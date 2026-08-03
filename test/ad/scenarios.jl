@@ -22,24 +22,6 @@ end
     test_working_backend("Mooncake reverse")
 end
 
-# Latent scenario group: the full `as_logdensity`/`logdensity` codec path (an
-# uncertain-leaf tree and a centred pool), run across the same four backends.
-@testitem "ForwardDiff gradients (latent)" tags=[:ad, :forwarddiff] setup=[ADHelpers] begin
-    test_working_backend("ForwardDiff"; category = :latent)
-end
-
-@testitem "ReverseDiff gradients (latent)" tags=[:ad, :reversediff] setup=[ADHelpers] begin
-    test_working_backend("ReverseDiff (tape)"; category = :latent)
-end
-
-@testitem "Enzyme reverse gradients (latent)" tags=[:ad, :enzyme, :enzyme_reverse] setup=[ADHelpers] begin
-    test_working_backend("Enzyme reverse"; category = :latent)
-end
-
-@testitem "Mooncake reverse gradients (latent)" tags=[:ad, :mooncake, :mooncake_reverse] setup=[ADHelpers] begin
-    test_working_backend("Mooncake reverse"; category = :latent)
-end
-
 # `_ctor_has_check_args` (src/composers/introspection.jl) is not yet called
 # from any scored path in this package — it is dormant reflection for a
 # future leaf reconstruction (the DynamicPPL composer-half extension, issue
@@ -100,21 +82,23 @@ end
           gradient(fcompete, AutoForwardDiff(), θ0)
 end
 
-# `logdensity`/`unflatten` (`src/composers/logdensity.jl`) must differentiate
-# under Mooncake, both reverse and forward: `unflatten` calls `_split_edge`
-# unconditionally on every row, and `_split_edge`/the length guards'
-# `DimensionMismatch` messages both recurse into Base's UTF-8
-# string-indexing continuation machinery, for which Mooncake's whole-program
-# rule derivation has no rule (a `sub_ptr` intrinsic), fixing issue #146.
-# This tree has no shared/pooled parameters, so it does not touch the separate
-# Mooncake-reverse wrong-gradient issue on pooled reconstructions (#99).
-@testitem "Mooncake differentiates logdensity/unflatten past the length guard (#146)" tags=[
+# `unflatten` (`src/composers/codec_gen.jl`) must differentiate under Mooncake,
+# both reverse and forward: it calls `_split_edge` unconditionally on every
+# row, and `_split_edge`/the length guards' `DimensionMismatch` messages both
+# recurse into Base's UTF-8 string-indexing continuation machinery, for which
+# Mooncake's whole-program rule derivation has no rule (a `sub_ptr`
+# intrinsic), fixing issue #146. This tree has no shared/pooled parameters, so
+# it does not touch the separate Mooncake-reverse wrong-gradient issue on
+# pooled reconstructions (#99). Drives `unflatten`/`update` directly rather
+# than through the (now DistributionsInference-owned) `as_logdensity`/
+# `logdensity` log-density layer (#185, #317).
+@testitem "Mooncake differentiates unflatten/update past the length guard (#146)" tags=[
     :ad, :mooncake, :mooncake_reverse] begin
     using ADTypes: AutoMooncake, AutoMooncakeForward, AutoForwardDiff
     using ComposedDistributions
-    using ComposedDistributions: as_logdensity, logdensity
+    using ComposedDistributions: update, unflatten
     using DifferentiationInterface: gradient
-    using Distributions: Gamma, LogNormal
+    using Distributions: Gamma, LogNormal, logpdf
     using ForwardDiff, Mooncake
 
     tree = compose((
@@ -122,8 +106,11 @@ end
             shape = LogNormal(log(2.0), 0.2)),
         admit_death = LogNormal(0.5, 0.4)))
     data = [[0.5, 2.0], [1.0, 3.0]]
-    prob = as_logdensity(tree, data)
-    f(x) = logdensity(prob, x)
+    function f(x)
+        d = update(tree, unflatten(tree, x))
+        return logpdf(LogNormal(log(2.0), 0.2), x[1]) +
+               sum(record -> logpdf(d, record), data)
+    end
     θ0 = [2.0]
 
     gref = gradient(f, AutoForwardDiff(), θ0)

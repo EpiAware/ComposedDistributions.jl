@@ -27,8 +27,7 @@
 
 # --- shared guards -----------------------------------------------------------
 #
-# Moved here from logdensity.jl (the codec's home before this file existed):
-# used by the generated `unflatten`/`flatten`/`flat_dimension` below.
+# Used by the generated `unflatten`/`flatten`/`flat_dimension` below.
 
 # Refuse eagerly when `d` still carries a `Varying` leaf: unlike `Uncertain`,
 # whose row already tracks concrete template values, a `Varying` leaf's row
@@ -43,7 +42,7 @@ end
 
 # Hoisted into its own `@noinline` function (not inlined into `unflatten`'s
 # body) for the same Mooncake `show`-in-a-differentiated-function reason the
-# rest of the package's dimension guards are: see `logdensity.jl`'s matching
+# rest of the package's dimension guards are: see `nesting.jl`'s matching
 # note. `est` is any object whose `length` is the estimated-row count (a
 # `UnitRange` here, since the generated caller has only the count, not the
 # table).
@@ -857,18 +856,15 @@ end
 
 Rebuild a composed distribution straight from its estimated flat vector.
 
-`reconstruct(d, x)` is the flat-vector primary the per-gradient hot path
-([`logdensity`](@ref), DistributionsInference.jl's `as_turing`) routes
-through: it collapses `d` at the
-estimated parameters in `x` (each fixed parameter held at its template value),
-equivalent to `update(d, `[`unflatten`](@ref)`(d, x))` but naming the whole
-operation as one verb. `reconstruct` itself is `update ∘ unflatten`, not a
-single generated function, so it is not independently shown `@inferred`-
-concrete here — that guarantee is [`unflatten`](@ref)'s own (see its
-docstring): the intermediate nested `NamedTuple` it produces is generated
-(concretely typed, no `Dict`), which is what lets Enzyme reverse differentiate
-through the codec at all (#162). `update`'s own inferrability is inherited,
-not re-derived, by this composition.
+`reconstruct(d, x)` collapses `d` at the estimated parameters in `x`, holding
+each fixed parameter at its template value. It is
+`update(d, `[`unflatten`](@ref)`(d, x))` named as one verb, and is the
+flat-vector primary a per-gradient hot path routes through
+(DistributionsInference.jl's `as_logdensity`/`as_turing`).
+
+Being that composition rather than a generated function of its own,
+`reconstruct` is not independently shown `@inferred`-concrete; the guarantee
+is [`unflatten`](@ref)'s, and `update`'s inferrability is inherited from it.
 
 # Arguments
 - `d`: the composed distribution to rebuild.

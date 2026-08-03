@@ -1,7 +1,7 @@
 name = "ComposedDistributions"
 uuid = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
 authors = ["Sam Abbott", "EpiAware contributors"]
-version = "0.1.1"
+version = "0.2.0"
 
 [deps]
 ConvolvedDistributions = "f5b942c9-bc5b-4664-8486-7f531bb06742"
@@ -15,15 +15,12 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [weakdeps]
-Bijectors = "76274a88-744f-5084-9051-94815aaf08c4"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [extensions]
-ComposedDistributionsBijectorsExt = "Bijectors"
 ComposedDistributionsMooncakeExt = "Mooncake"
 
 [compat]
-Bijectors = "0.13, 0.14, 0.15, 0.16"
 ConvolvedDistributions = "0.2, 0.3, 1"
 Distributions = "0.25"
 DocStringExtensions = "0.9"

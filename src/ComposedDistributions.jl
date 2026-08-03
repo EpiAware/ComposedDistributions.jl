@@ -209,13 +209,6 @@ include("composers/wrapped_leaves.jl")
 # type (Sequential/Parallel/Choose/Resolve/Compete/Uncertain/Shared/Pool) and
 # varying.jl (`has_varying`, for the `_reject_varying` guard).
 include("composers/codec_gen.jl")
-# The Turing-free `ComposedLogDensity`/`as_logdensity`/`logdensity` core (no
-# LogDensityProblems/DynamicPPL dependency; DistributionsInference.jl hosts the
-# PPL-facing extensions on top of this via the fit protocol). After
-# introspection (`params_table`/`build_priors`/`update`), Uncertain (an
-# uncertain leaf's row is inventoried like any other) and codec_gen.jl (the
-# flat <-> nested codec it evaluates against).
-include("composers/logdensity.jl")
 include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")

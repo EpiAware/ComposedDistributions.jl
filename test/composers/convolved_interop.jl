@@ -555,8 +555,7 @@ end
                                   Convolved, AnalyticalSolver, NumericSolver,
                                   GaussLegendre, integrate, gl_integrate,
                                   AbstractSolverMethod
-    using ComposedDistributions: flat_dimension, flatten, unflatten,
-                                 as_logdensity, logdensity
+    using ComposedDistributions: flat_dimension, flatten, unflatten
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
     u = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2))
@@ -585,12 +584,6 @@ end
     collapsed = update(seq, nt)
     @test event(collapsed, :total) == conv
     @test !has_uncertain(collapsed)
-
-    data = [[2.3, 0.9], [1.8, 1.1]]
-    prob = as_logdensity(seq, data)
-    expected = logpdf(Normal(0.5, 0.2), 0.9) +
-               sum(record -> logpdf(collapsed, record), data)
-    @test logdensity(prob, [0.9]) ≈ expected
 end
 
 @testitem "uncertain(...) wrapping a Convolved/Difference template errors informatively" begin

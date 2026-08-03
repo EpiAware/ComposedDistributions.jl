@@ -34,9 +34,9 @@
 #   - a *general* population takes the *centred* path: the member's latent *is*
 #     its parameter, scored directly against the population distribution
 #     reconstructed at the current hyperparameters. The population prior is
-#     parameter-dependent, so it is added in `logdensity` rather than sitting in
-#     the fixed per-row prior vector; the hyperparameters stay ordinary fixed
-#     per-row priors.
+#     parameter-dependent, so it is scored separately by
+#     `pool_centred_logprior` rather than sitting in the fixed per-row prior
+#     vector; the hyperparameters stay ordinary fixed per-row priors.
 #
 # The shared hyperparameters live at the top level under the group key and are
 # threaded to every member exactly like a `shared` tag's value (see `_update`).
@@ -259,8 +259,9 @@ The centred latent's prior marker, carried on the `prior` column of a centred
 pooled parameter's row.
 
 It is not a fixed distribution (the population depends on the estimated
-hyperparameters), so [`logdensity`](@ref) scores it separately
-([`_pool_centred_logprior`](@ref)) and skips it in the fixed per-row prior sum.
+hyperparameters), so DistributionsInference.jl's `as_logdensity`/`logdensity`
+scores it separately ([`_pool_centred_logprior`](@ref)) and skips it in the
+fixed per-row prior sum.
 A non-`nothing` entry, so the row still counts as estimated.
 
 Reached by qualified name from outside this package — DistributionsInference.jl's
@@ -349,8 +350,9 @@ end
 # `link(loc + scale*z)` from the population's hyperparameters (read from the
 # top-level group entry, threaded like a `shared` tag) and the member's latent;
 # a centred pooled parameter *is* its latent directly (its population prior is
-# added in `logdensity`). A non-pooled parameter takes its supplied value (or
-# the template's). Then rebuild the concrete leaf, collapsing the uncertainty.
+# scored by `pool_centred_logprior`). A non-pooled parameter takes its supplied
+# value (or the template's). Then rebuild the concrete leaf, collapsing the
+# uncertainty.
 function _reconstruct_pooled_leaf(leaf, leaf_params, shared, pooled, pnames)
     tvals = params(free_leaf(leaf))
     newvals = ntuple(length(pnames)) do i
@@ -401,11 +403,12 @@ end
 #
 # For a centred pooled parameter the member's latent *is* its parameter, scored
 # directly against the population reconstructed at the current hyperparameters.
-# That prior is parameter-dependent, so it is added in `logdensity` (from the
-# reconstructed nested `NamedTuple`) rather than in the fixed per-row prior
-# vector. The `(path, param, pool)` rows are collected once at `as_logdensity`
-# (`centred_pool_rows`), so a tree with only non-centred (or no) pooling adds
-# no per-evaluation cost.
+# That prior is parameter-dependent, so `pool_centred_logprior` scores it from
+# the reconstructed nested `NamedTuple` rather than the fixed per-row prior
+# vector. The `(path, param, pool)` rows are collected once
+# (`centred_pool_rows`, at DistributionsInference.jl's `as_logdensity`
+# construction), so a tree with only non-centred (or no) pooling adds no
+# per-evaluation cost.
 
 @doc raw"
 
@@ -550,8 +553,8 @@ const _pool_centred_logprior = pool_centred_logprior
 # Every leaf of a pooling group must declare the same population and
 # parameterisation (they are one population); the params-table walk emits the
 # group's hyperparameters from the first member it meets. `_validate_pool_groups`
-# (called once at `as_logdensity`, not per gradient evaluation) rejects a
-# mismatch eagerly.
+# (called once at DistributionsInference.jl's `as_logdensity` construction, not
+# per gradient evaluation) rejects a mismatch eagerly.
 function _validate_pool_groups(d)
     acc = Dict{Symbol, Pool}()
     _collect_pools!(acc, d)

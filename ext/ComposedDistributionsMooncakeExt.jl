@@ -6,16 +6,16 @@ Shields `_ctor_has_check_args` with a Mooncake `@zero_adjoint`. Its
 Mooncake reverse has no rule for; the result is a `Bool` constant with
 respect to the differentiated parameters, so a zero-adjoint primitive is
 sound and keeps any reconstruction built on top of it (e.g. a future
-DynamicPPL leaf rebuild, issue #9) AD-safe under Mooncake reverse.
+DynamicPPL leaf rebuild) AD-safe under Mooncake reverse.
 
 Also shields `_split_edge` (the flat-vector codec's `Symbol` path-splitter,
 `unflatten`/`flatten`'s unconditional hot-path call) and the codec's
 `DimensionMismatch`-throwing helpers (`_throw_unflatten_dimmismatch`,
-`_throw_logdensity_dimmismatch`, `_throw_as_named_dimmismatch`,
-`_throw_logpdf_dimmismatch`) with `@zero_derivative` (both forward and
-reverse), fixing issue #146. `_split_edge` calls `Base.split`, which lowers
-to `findnext` over the `Symbol`'s string form; the `DimensionMismatch`
-helpers interpolate their arguments into an error message via `show`. Both
+`_throw_as_named_dimmismatch`, `_throw_logpdf_dimmismatch`) with
+`@zero_derivative`, both forward and reverse. `_split_edge` calls
+`Base.split`, which lowers to `findnext` over the `Symbol`'s string form; the
+`DimensionMismatch` helpers interpolate their arguments into an error message
+via `show`. Both
 recurse into Base's UTF-8 string-indexing continuation machinery, for which
 Mooncake's whole-program rule derivation has no rule (a `sub_ptr`
 pointer-arithmetic intrinsic): `_split_edge` unconditionally, on every
@@ -27,8 +27,8 @@ always throw (a constant `Union{}` result), so a zero-derivative primitive
 is sound for each.
 
 Also imports Mooncake primitives for `LogExpFunctions.xlogy`/`xlog1py` on
-`Base.IEEEFloat` arguments, fixing issue #99. Mooncake has no rule for
-either function, so it derives one from the primal implementation
+`Base.IEEEFloat` arguments. Mooncake has no rule for either function, so it
+derives one from the primal implementation
 
     xlogy(x, y) = iszero(x) && !isnan(y) ? zero(x * log(y)) : x * log(y)
 
@@ -44,38 +44,39 @@ population-level draw can land a stratum's reconstructed shape on exactly
 `@from_chainrules` imports them directly (both AD directions) rather than
 re-deriving the maths. Importing via `@from_chainrules` rather than
 `@from_rrule` also closes the forward-mode gap: `@from_rrule` alone leaves
-Mooncake forward deriving the same wrong `0` gradient at `shape == 1` (#214).
+Mooncake forward deriving the same wrong `0` gradient at `shape == 1`.
 
 This is intentional, narrowly-scoped type piracy on functions this package
 does not own, matching the workflow Mooncake's own `@from_rrule`/
 `@from_chainrules` documentation endorses for closing such gaps from a
 downstream package. It should be removed once Mooncake ships its own rule
-(reported upstream, see #99).
+(reported upstream).
 """
 module ComposedDistributionsMooncakeExt
 
 using ComposedDistributions: _ctor_has_check_args, _split_edge,
                              _throw_unflatten_dimmismatch,
-                             _throw_logdensity_dimmismatch,
                              _throw_as_named_dimmismatch,
                              _throw_logpdf_dimmismatch
 using LogExpFunctions: xlogy, xlog1py
 using Mooncake: Mooncake
 
+# Ahead of the DynamicPPL leaf rebuild that will call it (#9).
 Mooncake.@zero_adjoint Mooncake.DefaultCtx Tuple{
     typeof(_ctor_has_check_args), Any, Tuple}
 
+# The codec's string-machinery shields, fixing #146.
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{typeof(_split_edge), Symbol}
 
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_unflatten_dimmismatch), Any, Any, Any}
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
-    typeof(_throw_logdensity_dimmismatch), Any, Any, Any}
-Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_as_named_dimmismatch), Any, Any}
 Mooncake.@zero_derivative Mooncake.DefaultCtx Tuple{
     typeof(_throw_logpdf_dimmismatch), Any, Any, Any}
 
+# Fixes #99, reported upstream on that issue. `@from_chainrules` rather than
+# `@from_rrule` also closes the forward-mode half (#214).
 Mooncake.@from_chainrules Mooncake.DefaultCtx Tuple{
     typeof(xlogy), Base.IEEEFloat, Base.IEEEFloat}
 Mooncake.@from_chainrules Mooncake.DefaultCtx Tuple{
