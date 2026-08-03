@@ -23,7 +23,6 @@ pages = [
             "Event skeletons: reusable topologies with @events" => "getting-started/tutorials/event-skeletons.md"
         ],
         "Time- and covariate-varying distributions" => "getting-started/varying-distributions.md",
-        "Fitting a composed distribution" => "getting-started/inference.md",
         "FAQ" => "getting-started/faq.md"
     ],
     # Developer reference: the contracts a type must satisfy to take part in

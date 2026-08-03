@@ -101,8 +101,9 @@ mean(total)
 ```
 
 Fitting `admission` itself — estimating the uncertain leaf from data rather
-than pinning it by hand — is one call away; see
-[Fitting a composed distribution](@ref inference) for the full walkthrough.
+than pinning it by hand — is DistributionsInference.jl's job; see its
+[inference guide](https://distributionsinference.epiaware.org/dev/getting-started/inference)
+for the full walkthrough.
 
 ## Uncertain distributions
 
