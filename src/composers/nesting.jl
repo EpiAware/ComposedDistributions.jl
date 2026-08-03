@@ -243,7 +243,7 @@ end
 # `d` into the message would be safe today (only its `length` is read), but
 # hoisting the message construction into its own `@noinline` function keeps
 # the guard consistent with the codec's `DimensionMismatch` helpers
-# (`logdensity.jl`, `named_outputs.jl`), which do need this to stay
+# (`codec_gen.jl`, `named_outputs.jl`), which do need this to stay
 # Mooncake-safe, and shields any future message change here from the same
 # `show`-in-a-differentiated-function trap.
 @noinline function _throw_logpdf_dimmismatch(d, x, kind::String)

@@ -34,7 +34,7 @@ end
 # even though it is never taken on the passing path; interpolating
 # `collect(names)` recurses into Base's `show`/string-indexing machinery,
 # which it has no rule for. Hoisted into its own `@noinline` function (see
-# `logdensity.jl`'s analogous helpers) and shielded from Mooncake in the
+# `codec_gen.jl`'s analogous helpers) and shielded from Mooncake in the
 # `ComposedDistributionsMooncakeExt` extension.
 @noinline function _throw_as_named_dimmismatch(names, v)
     throw(DimensionMismatch(

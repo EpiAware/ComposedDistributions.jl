@@ -27,8 +27,7 @@
 
 # --- shared guards -----------------------------------------------------------
 #
-# Moved here from logdensity.jl (the codec's home before this file existed):
-# used by the generated `unflatten`/`flatten`/`flat_dimension` below.
+# Used by the generated `unflatten`/`flatten`/`flat_dimension` below.
 
 # Refuse eagerly when `d` still carries a `Varying` leaf: unlike `Uncertain`,
 # whose row already tracks concrete template values, a `Varying` leaf's row
@@ -43,7 +42,7 @@ end
 
 # Hoisted into its own `@noinline` function (not inlined into `unflatten`'s
 # body) for the same Mooncake `show`-in-a-differentiated-function reason the
-# rest of the package's dimension guards are: see `logdensity.jl`'s matching
+# rest of the package's dimension guards are: see `nesting.jl`'s matching
 # note. `est` is any object whose `length` is the estimated-row count (a
 # `UnitRange` here, since the generated caller has only the count, not the
 # table).
