@@ -20,9 +20,9 @@
 # can only hold if table order and codec order are the same bijection onto
 # the tree's estimated parameters. A silent divergence (a reordering, a skip
 # that disagrees between the two walks) breaks this immediately. Pool's
-# ordering is deliberately not re-covered here: `test/composers/turing_ext.jl`'s
-# non-centred pooled round-trip already exercises it end-to-end through real
-# NUTS sampling and readback.
+# ordering is deliberately not re-covered here: DistributionsInference.jl's
+# `test/composed_ext.jl` non-centred pooled round-trip already exercises it
+# end to end through real NUTS sampling and readback.
 #
 # `param_names` (introspection.jl) and `_param_names_of` (codec_gen.jl) were
 # the other duplicated piece the issue names. Unlike the two walks, these are
@@ -86,8 +86,8 @@ end
     # in what the table's rows MEAN (not just their values), which the
     # same-row-count comparison this helper relies on cannot express. That
     # ordering is already covered end to end, through real NUTS sampling and
-    # readback, by "as_turing round-trip: uncertain branch_probs stick
-    # coordinate" in turing_ext.jl.
+    # readback, by DistributionsInference.jl's "as_turing round-trip:
+    # Dirichlet branch_probs stick coordinate" (test/composed_ext.jl).
     fixed = resolve(:a => (uncertain(Gamma(2.0, 1.0);
                 shape = LogNormal(0.0, 0.3)), 0.4),
         :b => (uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)), 0.6))

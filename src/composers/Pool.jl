@@ -469,7 +469,7 @@ end
 #
 # `pool` groups, `shared` tags, and a tree's own top-level (root) edge names
 # all end up as sibling entries in the SAME root-lifted NamedTuple at readback
-# (`chain_to_params` in the FlexiChains extension merges each family's
+# (DistributionsInference.jl's generic readback merges each family's
 # top-level entry alongside the tree's own names). A pool group and a shared
 # tag sharing a name silently clobber each other in that merge, and so does
 # either family sharing a name with a root edge (see #177 and the #178 risk
@@ -504,7 +504,7 @@ function _validate_tree_names(d)
 end
 
 # The direct child names at the root of a composer tree, the level the
-# readback merge (`chain_to_params`) lifts pool/shared entries onto. Every
+# readback merge lifts pool/shared entries onto. Every
 # `AbstractComposedDistribution` subtype implements `component_names`.
 _root_edge_names(d) = component_names(d)
 

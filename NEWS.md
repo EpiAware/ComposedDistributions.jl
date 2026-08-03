@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **breaking:** removed `ext/ComposedDistributionsFlexiChainsExt.jl` and the
+  `chain_to_params`/`param_draws`/`strip_prefix`/`update(tree, chain)`
+  surface it hosted (#221). DistributionsInference.jl's `readback`/
+  `readback_draws` already cover this generically over the fit protocol —
+  verified against every case this package's own extension carried
+  (plain/pooled/centred-pooled/shared-tag/two-distinct-pool-groups/pooled-
+  inside-shared trees), with the coverage ported to DistributionsInference's
+  own test suite before this removal so it doesn't thin. Use
+  `DistributionsInference.readback`/`readback_draws` instead; the `FlexiChains`
+  weakdep is dropped from this package entirely.
+
 - **test:** three new AD gradient scenarios close coverage gaps in the
   `ADFixtures` registry (`test/ADFixtures/src/ADFixtures.jl`): a
   `Shared`-tagged uncertain leaf driven through the full `logdensity` codec

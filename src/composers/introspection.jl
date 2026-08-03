@@ -946,11 +946,10 @@ coordinates (as read back from a chain) collapses the node to concrete
 probabilities summing to one (read them with `Distributions.probs`). Promote
 attaches a flat `Dirichlet(ones(K))` per `Resolve`.
 
-Pair with [`chain_to_params`](@ref) to read posterior means or a single draw
-from a fitted chain into the right NamedTuple, so `update(template, means)`
-returns a ready-to-`rand`/inspect distribution — or call
-`update(template, chain)` directly (below) once `DynamicPPL` and `FlexiChains`
-are loaded.
+Read a fitted chain's posterior means or a single draw into the right
+NamedTuple with DistributionsInference.jl's `readback`/`readback_draws`
+(generic over the fit protocol, #221), then `update(template, means)` returns
+a ready-to-`rand`/inspect distribution.
 
 ## Arguments
 - `d`: the composed distribution (or bare leaf) to update.
@@ -998,32 +997,6 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 tree2 = update(tree, :admit_death => Gamma(3.0, 1.5))
 event(tree2, :admit_death)
 ```
-
-# `update(template, chain)` — read from a fitted chain
-
-Available only when both `DynamicPPL` and `FlexiChains` are loaded. Reads
-`chain` (sampled through a `~ to_submodel(...)`-based parameters model) into
-the nested NamedTuple and rebuilds `template` with those values, so the
-workflow is one call instead of `update(template, chain_to_params(template,
-chain))`. By default it reduces each parameter's draws with `mean`; pass any
-`summary` reduction, restrict to a subset of draws with `draws` (a range /
-index vector, or a predicate over the iteration index), or pass `draw=i` for a
-single iteration. The `prefix` keyword names the submodel variable the
-parameters were sampled under (default `:d`).
-
-## Arguments
-- `template`: the composed distribution the chain's parameters were sampled
-  against.
-- `chain`: the fitted `FlexiChains` chain to read parameter values from.
-
-## Keyword Arguments
-- `prefix`: the submodel variable name the parameters were sampled under
-  (default `:d`).
-- `summary`: the reduction `AbstractVector -> scalar` applied to each
-  parameter's draws (default `mean`).
-- `draws`: a subset of iterations to reduce over (a range / index vector, or a
-  predicate over the iteration index); `nothing` uses every draw.
-- `draw`: a single iteration index to read (overrides `summary`/`draws`).
 
 # `update(d, x::AbstractVector)` — set from flat vector
 
@@ -1081,7 +1054,8 @@ update(tree, params_table(tree))   # a no-op round-trip here
   the same merge-mode pipeline as this docstring's distribution-valued forms
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
 - [`param_priors`](@ref): default priors for the promote path
-- [`chain_to_params`](@ref): build the NamedTuple from a fitted chain
+- DistributionsInference.jl's `readback`/`readback_draws`: build the
+  NamedTuple from a fitted chain, generically over the fit protocol
 - [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "

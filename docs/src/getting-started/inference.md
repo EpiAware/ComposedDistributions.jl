@@ -63,14 +63,14 @@ chain = sample(as_turing(tree, data), NUTS(), 1000)
 ## Reading the fit back
 
 The site names match the readback, so a fitted chain reduces straight back onto the template.
-[`chain_to_params`](@ref) reduces the draws to a nested parameter `NamedTuple`, and [`update`](@ref) rebuilds the tree at those values, collapsing every uncertain leaf.
+DistributionsInference.jl's `readback` reduces the draws to a fitted tree directly, and `readback_draws` keeps every draw (#221 — this package no longer carries its own `chain_to_params`/`param_draws`/`update(tree, chain)`, which duplicated this same generic machinery).
 
 ```julia
-using FlexiChains
+using DistributionsInference
 
-fit = update(tree, chain)                        # the fitted tree
-event(fit, :onset_admit)                         # a concrete Gamma
-draws = param_draws(tree, chain)                 # every draw, for a posterior summary
+fit = DistributionsInference.readback(tree, chain)   # the fitted tree
+event(fit, :onset_admit)                             # a concrete Gamma
+draws = DistributionsInference.readback_draws(tree, chain)   # every draw, for a posterior summary
 ```
 
 ## The tools
@@ -82,4 +82,4 @@ draws = param_draws(tree, chain)                 # every draw, for a posterior s
 | `LogDensityProblems` interface | `dimension` / `logdensity` / `capabilities` for any HMC consumer | `LogDensityProblems` |
 | [`to_constrained`](@ref) | the unconstrained transform and its log-Jacobian | `Bijectors` |
 | [`as_turing`](@ref) | a `DynamicPPL` model for `sample(...)` | `DynamicPPL` |
-| [`chain_to_params`](@ref) / [`update`](@ref) | read a fitted chain back onto the tree | `DynamicPPL` and `FlexiChains` |
+| `DistributionsInference.readback` / `readback_draws` | read a fitted chain back onto the tree | `DistributionsInference` |

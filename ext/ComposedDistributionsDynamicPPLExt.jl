@@ -10,8 +10,8 @@ module ComposedDistributionsDynamicPPLExt
 # reconstruction, so the model's total log-density equals
 # `logdensity(prob, x)` by construction. The `~` site names match the
 # FlexiChains readback's dotted `<prefix>.<edge...>.<param>` names exactly, so a
-# fitted chain reads back through `chain_to_params` / `update(dist, chain)`
-# unchanged.
+# fitted chain reads back through DistributionsInference.jl's `readback`/
+# `readback_draws` unchanged.
 
 using ComposedDistributions: ComposedDistributions,
                              AbstractComposedDistribution, ComposedLogDensity,

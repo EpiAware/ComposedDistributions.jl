@@ -21,14 +21,12 @@ const QA_CONFIG = (
     # reuses and extends, so it needs no ignore. The published leaf protocol —
     # `uncertain_specs`, `leaf_detail_lines`, `shared_tag`, `leaf_param_names`,
     # `leaf_mean`, `leaf_var`, `extra_leaf_params`, `set_extra_leaf_params` — is
-    # `public` (#170), so the ModifiedDistributions and FlexiChains extensions
-    # that extend or reuse it need no ignore.) `_collect_shared` is the internal
-    # shared-group lookup the FlexiChains extension reuses to read a fitted chain
-    # back onto a composed tree; `CentredPoolPrior` and `_population_template`
+    # `public` (#170), so the ModifiedDistributions extension that extends or
+    # reuses it needs no ignore.) `CentredPoolPrior` and `_population_template`
     # are the internal pooling marker type and population-family lookup the
     # Bijectors extension reuses to read a centred-pooled row's constraint off
     # its population instead of a fixed prior.
-    ei_ignore = (:_collect_shared, :CentredPoolPrior, :_population_template),
+    ei_ignore = (:CentredPoolPrior, :_population_template),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`. Distributions functions plus the censoring / PPL surface

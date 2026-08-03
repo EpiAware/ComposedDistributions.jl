@@ -135,14 +135,6 @@ export params_table, event_names, event_tree, event, update, build_priors,
 # inserts a step (topology edits).
 export prune, splice
 
-# Inference-readback verbs: read a fitted chain's parameters back onto a
-# composed-distribution template. `chain_to_params` reduces a chain to the
-# nested NamedTuple `update` consumes; `param_draws` keeps every draw;
-# `strip_prefix` drops the outer submodel prefix from a chain's parameter
-# names. No method until both `DynamicPPL` and `FlexiChains` are loaded; the
-# methods live in `ext/ComposedDistributionsFlexiChainsExt.jl`.
-export chain_to_params, param_draws, strip_prefix
-
 # A DynamicPPL model over a composed distribution's estimated parameters, built
 # as a light wrapper on the `as_logdensity` codec. No method until `DynamicPPL`
 # is loaded; the model lives in `ext/ComposedDistributionsDynamicPPLExt.jl`.
@@ -175,11 +167,6 @@ include("composers/nesting.jl")
 include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
-# Inference-readback verb stubs (`chain_to_params` / `param_draws` /
-# `strip_prefix`): declared here with no method (see
-# `ext/ComposedDistributionsFlexiChainsExt.jl`), so this package stays
-# Turing-free until that extension is triggered.
-include("composers/readback.jl")
 # `as_turing` stub: a DynamicPPL model over a tree's estimated parameters,
 # built on the `as_logdensity` codec. No method until `DynamicPPL` is loaded
 # (see `ext/ComposedDistributionsDynamicPPLExt.jl`), so the core stays

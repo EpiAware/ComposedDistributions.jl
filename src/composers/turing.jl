@@ -29,7 +29,7 @@ under its tag, and a non-centred pooled parameter (see [`pool`](@ref)) is
 sampled as its own `<prefix>.<edge...>.<param>.z` latent alongside the
 population's hyperparameters `<prefix>.<group>.<hyperparam>`. So a chain from
 `sample(as_turing(dist, data), ...)` reads back through
-[`chain_to_params`](@ref) / [`update`](@ref)`(dist, chain)` unchanged.
+DistributionsInference.jl's `readback`/`readback_draws` unchanged.
 
 Supports estimated rows with a concrete prior: ordinary uncertain leaves,
 stick-breaking node branch probabilities, and non-centred pooled parameters.
@@ -62,12 +62,13 @@ tree = compose((
 data = [[0.5, 2.0], [1.0, 3.0]]
 
 chain = sample(as_turing(tree, data), NUTS(), 200)
-fit = update(tree, chain)
+# `DistributionsInference.readback(tree, chain)` reads the fit back onto tree.
 ```
 
 # See also
 - [`as_logdensity`](@ref): the PPL-neutral log-density this wraps.
-- [`chain_to_params`](@ref) / [`update`](@ref): read the fitted chain back.
+- DistributionsInference.jl's `readback`/`readback_draws`: read the fitted
+  chain back.
 - [`flatten`](@ref) / [`unflatten`](@ref): the flat <-> nested codec.
 "
 function as_turing end
