@@ -126,6 +126,46 @@ end
     @test c == e
 end
 
+@testitem "rand(d, n): Choose batches round-trip through logpdf" begin
+    using ComposedDistributions: choose, sequential
+    using Distributions, Random
+
+    s = sequential(:a => Gamma(2.0, 1.0), :b => Gamma(3.0, 1.0))
+    d = choose(:leaf => Gamma(2.0, 1.0), :nested => s)
+
+    # Kind-less: a Vector of self-describing records scores as one batch,
+    # equal to summing the per-record scores.
+    records = rand(Xoshiro(8), d, 4)
+    @test logpdf(d, records) isa Real
+    @test logpdf(d, records) ≈ sum(logpdf(d, r) for r in records)
+
+    # Kind = leaf alternative: a Vector of scalars is the batch, so the score
+    # is the summed scalar, not the element-wise vector the flat single-record
+    # method would give.
+    xs = rand(Xoshiro(1), d, 5; kind = :leaf)
+    @test xs isa Vector{Float64}
+    @test logpdf(d, xs; kind = :leaf) isa Real
+    @test logpdf(d, xs; kind = :leaf) ≈
+          sum(logpdf(Gamma(2.0, 1.0), x) for x in xs)
+
+    # Kind = composer alternative: the column table scores through that
+    # alternative's own batch logpdf.
+    tbl = rand(Xoshiro(7), d, 3; kind = :nested)
+    @test logpdf(d, tbl; kind = :nested) ≈ logpdf(s, tbl)
+    # a Vector of that alternative's records takes the same route
+    rows = [(a = 1.0, b = 2.0), (a = 1.5, b = 2.5)]
+    @test logpdf(d, rows; kind = :nested) ≈ logpdf(s, rows)
+
+    # A flat vector under a composer alternative is still ONE record, not a
+    # batch — the batch reading applies only to univariate alternatives.
+    @test logpdf(d, [1.0, 2.0]; kind = :nested) ≈ logpdf(s, [1.0, 2.0])
+    @test logpdf(d, (a = 1.0, b = 2.0); kind = :nested) ≈
+          logpdf(s, [1.0, 2.0])
+
+    # A bare value still needs a kind.
+    @test_throws ArgumentError logpdf(d, [1.0, 2.0])
+end
+
 @testitem "rand(p, n): Pool batches from the population" begin
     using ComposedDistributions: pool
     using Distributions, Random

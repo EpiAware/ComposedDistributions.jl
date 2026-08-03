@@ -206,12 +206,27 @@ Log probability density of the selected alternative at `x`.
 alternative through the `kind` keyword; there is no default. The selection walk
 is type-stable and the score is the selected alternative's own `logpdf`.
 
+A vector `x` means one of two things, resolved by the named alternative rather
+than by the vector itself. Under a univariate alternative a realisation is a
+scalar, so the vector can only be a batch of draws (as `rand(d, n; kind)`
+returns) and the summed score is returned. Under any other alternative a
+realisation is itself a flat vector, so the vector is one record and scores as
+one. Either way the result is a scalar.
+
+# Arguments
+- `d`: the [`Choose`](@ref) node to score under.
+- `x`: a scalar realisation, a flat vector (one record or a batch, see above),
+  a self-describing record, or a column table of records.
+- `kind`: name of the active alternative. Required for a bare value; optional
+  for a self-describing record, which carries its own selector field.
+
 # Examples
 ```@example
-using ComposedDistributions, Distributions
+using ComposedDistributions, Distributions, Random
 
 d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
 logpdf(d, 3.0; kind = :short)
+logpdf(d, rand(Xoshiro(1), d, 5; kind = :short); kind = :short)
 ```
 
 See also: [`Choose`](@ref)
@@ -228,14 +243,30 @@ function logpdf(
 end
 function logpdf(d::Choose, x::AbstractVector{<:Real};
         kind::Union{Symbol, Nothing} = nothing)
-    return _select_logpdf(d, x, kind)
+    kind === nothing && throw(_no_kind_error())
+    return _alternative_vector_logpdf(_pick(d, kind), x)
 end
 
 function _select_logpdf(d::Choose, x, kind)
-    kind === nothing && throw(ArgumentError(
-        "logpdf(::Choose, x) needs a `kind` choose the alternative"))
+    kind === nothing && throw(_no_kind_error())
     return logpdf(_pick(d, kind), x)
 end
+
+function _no_kind_error()
+    ArgumentError(
+        "logpdf(::Choose, x) needs a `kind` choose the alternative")
+end
+
+# Resolve what a flat vector means under the named alternative. A univariate
+# alternative realises a scalar, so the vector is a batch of independent draws
+# and the batch score is their sum — without this it would forward whole to the
+# leaf's element-wise `logpdf` and return a vector, not a density. Every other
+# alternative realises a flat vector, so the vector is a single record.
+# Dispatching on the picked alternative keeps this inferable.
+function _alternative_vector_logpdf(alt::UnivariateDistribution, x)
+    return sum(logpdf(alt, xi) for xi in x)
+end
+_alternative_vector_logpdf(alt, x) = logpdf(alt, x)
 
 @doc "
 
@@ -250,9 +281,33 @@ alternative's own `logpdf`. A leaf alternative's value rides in the `:value`
 field; a composer alternative is scored on its own labelled record fields. A
 column table of such records is summed per row.
 
+Passing `kind` names the alternative instead of reading a selector field, which
+is how a committed-selection draw from a composer alternative scores: both the
+single labelled record and the column table `rand(d, n; kind)` returns are
+handed to that alternative's own `logpdf`, which already sums a table per row.
+
+# Arguments
+- `d`: the [`Choose`](@ref) node to score under.
+- `x`: a self-describing record, or a column table of them.
+- `kind`: name of the active alternative, for records drawn with an explicit
+  selection (so carrying no selector field). Defaults to reading the selector.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions, Random
+
+d = choose(:leaf => Gamma(2.0, 1.0),
+    :path => sequential(:a => Gamma(2.0, 1.0), :b => Gamma(3.0, 1.0)))
+logpdf(d, rand(Xoshiro(1), d, 4; kind = :path); kind = :path)
+```
+
 See also: [`Choose`](@ref), [`rand`](@ref)
 "
-function logpdf(d::Choose, x::NamedTuple)
+function logpdf(d::Choose, x::NamedTuple;
+        kind::Union{Symbol, Nothing} = nothing)
+    # An explicit selection scores under that alternative directly, before the
+    # table branch below: the alternative owns both record shapes it draws.
+    kind === nothing || return logpdf(_pick(d, kind), x)
     # A column table (a `NamedTuple` of vectors) is a multi-record source: sum
     # the per-record scorer over its rows. A single tagged record scores below.
     Tables.istable(x) &&
@@ -349,6 +404,26 @@ own multi-draw form) — the committed-selection path, no selector tag. Without
 a `kind`, each of the `n` draws is its own self-describing tagged record (a
 `Vector` of `NamedTuple`s, one per draw), the forward-simulation path, so each
 round-trips through [`logpdf`](@ref) with no extra argument.
+
+Either shape scores as a batch in one call, `logpdf(d, rand(d, n; kind))`,
+passing back the same `kind` the draw used. The result is the summed log
+density, matching the single-record scorer applied row by row.
+
+# Arguments
+- `rng`: random number generator. Defaults to the global one.
+- `d`: the [`Choose`](@ref) node to draw from.
+- `n`: number of independent realisations.
+- `kind`: name of the alternative to draw from. Defaults to sampling an
+  alternative uniformly per draw and tagging each record with it.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions, Random
+
+d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+xs = rand(Xoshiro(1), d, 5; kind = :short)
+logpdf(d, xs; kind = :short)
+```
 
 See also: [`rand`](@ref)`(::Choose)`, [`logpdf`](@ref)
 "
