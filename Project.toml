@@ -16,9 +16,12 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [weakdeps]
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
+Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
+OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"
 
 [extensions]
 ComposedDistributionsMooncakeExt = "Mooncake"
+ComposedDistributionsOptimizationExt = ["Optimization", "OptimizationOptimJL"]
 
 [compat]
 ConvolvedDistributions = "0.2, 0.3, 1"
@@ -27,11 +30,22 @@ DocStringExtensions = "0.9"
 EpiAwareADTools = "0.1"
 LogExpFunctions = "0.3, 1"
 Mooncake = "0.5"
+Optimization = "4, 5"
+OptimizationOptimJL = "0.4.3"
 Random = "1"
 Statistics = "1"
 Tables = "1"
 Test = "1"
 julia = "1.11, 1.12"
+
+# TEMPORARY: `ConvolvedDistributions.quantile_by_optimization` (adopted here,
+# #337) only exists on ConvolvedDistributions main, not yet in a registered
+# release (the registry still has 0.3.1). It is a direct dependency, so in the
+# test/docs workspace the pin must live here in the root Project.toml (a
+# workspace member's `[sources]` is not honoured for a root-level dep). Drop
+# once the release carrying #112 registers.
+[sources]
+ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
 
 [workspace]
 projects = ["test", "docs"]
