@@ -561,6 +561,36 @@ param_names(::Any) = ()
 const _param_names = param_names
 
 @doc raw"
+
+The scalar parameter domains of a leaf distribution, matched positionally to
+`params(leaf)` (and to [`param_names`](@ref)`(leaf)`).
+
+A parameter's own domain is not the leaf's variate support: a `Beta`'s shape
+parameters live on `(0, Inf)` even though the variate itself lives on
+`(0, 1)`, and an `InverseGaussian`'s `mu` is positive even though it names a
+location-sounding role. `LEAF_PARAM_SPECS` maps this out explicitly for the
+whole univariate library; an unmapped family returns `()`, and the walk that
+consumes this (`_walk_rows!`) falls back to the leaf's own variate support,
+`(minimum(leaf), maximum(leaf))`, applied to every native parameter (a
+coarser guess, the package's pre-#332 behaviour).
+
+# Arguments
+- the leaf distribution whose parameter supports are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.param_supports(Beta(2.0, 3.0))
+```
+
+# See also
+- [`param_names`](@ref): the matching parameter names.
+- [`default_prior`](@ref): the per-row prior derived from this support.
+"
+param_supports(::Any) = ()
+
+@doc raw"
 The estimable parameter names of a (possibly wrapped) leaf.
 
 The inner free delay's `param_names`, padding with positional fallbacks
@@ -863,7 +893,21 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
             "not supported as composed leaves"))
     end
     vals = (native..., map(e -> e.value, extras)...)
-    sups = (ntuple(_ -> sup, length(native))...,
+    # A native parameter's own domain (`param_supports`) takes priority over
+    # the leaf's variate support: a `Beta`'s shape parameters live on
+    # `(0, Inf)` even though the variate lives on `(0, 1)`. An unmapped
+    # family returns `()` and every native parameter falls back to `sup`, the
+    # pre-#332 behaviour; a partial return (neither `0` nor `length(native)`
+    # entries) is a downstream `param_supports` bug, not a silent mismatch.
+    native_sups = param_supports(inner)
+    length(native_sups) in (0, length(native)) || throw(ArgumentError(
+        "param_supports($(typeof(inner))) returned $(length(native_sups)) " *
+        "supports for $(length(native)) native parameters; a leaf's " *
+        "param_supports must cover either none of its native parameters " *
+        "(falling back to the variate support) or every one of them"))
+    sups = (ntuple(length(native)) do i
+            i <= length(native_sups) ? native_sups[i] : sup
+        end...,
         map(e -> e.support, extras)...)
     edge = tag === nothing ? _join_path(path) : tag
     tag === nothing || push!(seen, tag)
@@ -1523,11 +1567,25 @@ end
 
 # --- parameter-derived default priors (brms-style family defaults) ----------
 #
-# The default prior is classified from the parameter's own natural domain, not
-# the leaf's variate support: a location-family delay (`Normal`, `Affine(Normal)`)
-# has unbounded variate support, but its scale parameter still lives on the
-# positive half-line, so a `minimum(dist)`/`maximum(dist)` rule would wrongly
-# give it an unconstrained prior with mass on negative scale.
+# The default prior is classified from `row.support`, the parameter's own
+# natural domain (`param_supports`, #332), not the leaf's variate support: a
+# location-family delay (`Normal`, `Affine(Normal)`) has unbounded variate
+# support, but its scale parameter still lives on the positive half-line, so a
+# `minimum(dist)`/`maximum(dist)` rule would wrongly give it an unconstrained
+# prior with mass on negative scale.
+#
+# The support is checked FIRST, ahead of the name heuristics below: a
+# parameter name spells different domains in different families (a `shape` is
+# positive for `Gamma`/`Weibull`/`Frechet`, but signed for
+# `GeneralizedExtremeValue`/`GeneralizedPareto`/`SkewNormal`; a `beta` is
+# positive for `Beta`'s second shape but signed for
+# `NormalInverseGaussian`'s asymmetry parameter), so a name-first check
+# silently overrides a correct, family-specific support with the wrong
+# classification for whichever family the name guesses wrong. The name
+# heuristics stay as belt-and-braces for a leaf type with no `param_supports`
+# entry at all, where `row.support` is still the coarser variate-derived
+# guess (#332) and may not by itself disambiguate a positive parameter from
+# an unconstrained one.
 
 # Location parameters live on the whole line (a `Normal`/`LogNormal` `mu`, a
 # `Uniform` bound), so they get an unconstrained default.
@@ -1553,20 +1611,21 @@ Pick a default prior for a parameter row, brms-style.
 `default_prior(row)` is the per-row default [`build_priors`](@ref) uses for rows
 the user does not override. `row` is a `(; edge, param, value, support)`
 NamedTuple (a [`params_table`](@ref) row); the prior family follows the
-parameter's own natural domain (classified by name), not the leaf's variate
-support:
+parameter's own natural domain, `row.support` (the parameter's own domain,
+[`param_supports`](@ref), not the leaf's variate support), checked ahead of
+the parameter's name:
 
-- a probability parameter, support `[0, 1]` (a `branch_probs` row) ->
+- support `[0, 1]` (a probability parameter, e.g. a `branch_probs` row) ->
   `Uniform(0, 1)`.
-- a scale/shape/rate-type parameter (`:sigma`, `:scale`, `:shape`, `:rate`, ...)
-  -> `truncated(Normal(value, scale); lower = 0)`, positive by construction even
-  for a location-family delay (a `Normal`/`Affine(Normal)` `sigma`).
-- a location parameter (`:mu`, `:location`, a `Uniform` bound) ->
-  `Normal(value, scale)`, unconstrained since the location lives on the whole
-  line even for a positive-support delay.
-- otherwise, an unmapped name falls back to the variate support: a non-negative
-  support -> `truncated(Normal(value, scale); lower = 0)`, else
-  `Normal(value, scale)`.
+- a non-negative, unbounded-above support -> `truncated(Normal(value, scale);
+  lower = 0)`, positive by construction even for a location-family delay (a
+  `Normal`/`Affine(Normal)` `sigma`).
+- an unbounded-both-ways support -> `Normal(value, scale)`, unconstrained.
+- otherwise (a leaf type with no [`param_supports`](@ref) entry, so `support`
+  is the coarser variate-derived guess), fall back to the parameter's name: a
+  scale/shape/rate-type name (`:sigma`, `:scale`, `:shape`, `:rate`, ...) ->
+  positive-truncated; a location-type name (`:mu`, `:location`, a `Uniform`
+  bound) -> unconstrained; any other name -> unconstrained.
 
 The spread `scale` defaults to `max(abs(value), 1)`, a weakly-informative width
 that scales with the parameter's magnitude.
@@ -1603,14 +1662,16 @@ function default_prior(row)
     scale = max(abs(float(row.value)), one(float(row.value)))
     if lo == 0 && hi == 1
         return Distributions.Uniform(0, 1)
+    elseif lo >= 0 && isinf(hi)
+        return Distributions.truncated(
+            Distributions.Normal(row.value, scale); lower = 0)
+    elseif isinf(lo) && lo < 0 && isinf(hi)
+        return Distributions.Normal(row.value, scale)
     elseif _is_positive_param(row.param)
         return Distributions.truncated(
             Distributions.Normal(row.value, scale); lower = 0)
     elseif _is_location_param(row.param)
         return Distributions.Normal(row.value, scale)
-    elseif lo >= 0 && isinf(hi)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
     else
         return Distributions.Normal(row.value, scale)
     end

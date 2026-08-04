@@ -1,18 +1,25 @@
 # The single leaf-parameter table (#332): one source of truth for a native
-# Distributions.jl family's scalar parameter names, generating both the
-# instance-level (`param_names`) and type-level (`_param_names_of`,
-# `_params_arity_of`) dispatch tables so they cannot drift apart (the two were
-# previously hand-maintained in step, in introspection.jl and codec_gen.jl
-# respectively, with nothing enforcing agreement).
+# Distributions.jl family's scalar parameter names, generating the
+# instance-level `param_names`/`param_supports` dispatch tables so a family
+# cannot name a parameter in one without the other.
 #
-# Included before both introspection.jl and codec_gen.jl: the `@eval` loop at
-# the bottom of this file adds methods to `param_names`/`_param_names_of`/
-# `_params_arity_of` before either file defines those functions' `::Any`/
-# `::Type` fallback methods. Julia does not require a generic function to
-# exist before a method is added to it -- the fallback methods defined later
-# simply extend the same generic functions -- so definition order across the
-# two files does not matter, only that every method is in place before the
-# module finishes loading (well before any tree is built).
+# This table also covers codec_gen.jl's type-level dispatch
+# (`_param_names_of`/`_params_arity_of`), but that half is deliberately NOT
+# generated here: those two functions are being deleted outright by the
+# staged codec work (feat/codec-s2-leaf-swap / feat/codec-s3-*), which this
+# branch must not conflict with, so codec_gen.jl stays untouched and keeps
+# its original hand-written six-family table until one of those branches
+# lands. Once it does, the type-level half of this table becomes dead weight
+# and should be dropped from `LeafParamSpec`'s consumers (not from the table
+# itself -- `names`/`supports` are still the instance-level source of truth).
+#
+# Included before introspection.jl: the `@eval` loop at the bottom of this
+# file adds methods to `param_names`/`param_supports` before that file
+# defines their `::Any` fallback methods. Julia does not require a generic
+# function to exist before a method is added to it -- the fallback method
+# defined later simply extends the same generic function -- so definition
+# order across the two files does not matter, only that every method is in
+# place before the module finishes loading (well before any tree is built).
 
 # One family's native scalar-parameter names and each parameter's own domain
 # (the value the parameter itself may range over, not the variate's support --
@@ -143,10 +150,13 @@ const LEAF_PARAM_SPECS = Pair{Type, LeafParamSpec}[
     Distributions.NoncentralT => LeafParamSpec((:df, :lambda),
         ((0.0, Inf), (-Inf, Inf))),
     # Cached-field exception: `fieldcount` is 3 (`η, λ, μ`, the last a derived
-    # mean cached from the other two) against `length(params(d)) == 2`. The
-    # generated `_params_arity_of` method below reads its arity off this
-    # spec's `names`, not `fieldcount`, so the mismatch never reaches the
-    # codec.
+    # mean cached from the other two) against `length(params(d)) == 2`. This
+    # table's `names`/`param_supports` are unaffected (instance-level, read
+    # off `params(d)` directly); the type-level codec still reads arity off
+    # `fieldcount` (codec_gen.jl, untouched on this branch) and so still gets
+    # this wrong until the staged codec work replaces it -- see the file
+    # header and the `leaf_params: cached-field arity is still fieldcount`
+    # test.
     Distributions.NormalCanon => LeafParamSpec((:eta, :lambda),
         ((-Inf, Inf), (0.0, Inf))),
     Distributions.NormalInverseGaussian => LeafParamSpec(
@@ -181,7 +191,8 @@ const LEAF_PARAM_SPECS = Pair{Type, LeafParamSpec}[
         ((-Inf, Inf), (0.0, Inf))),
     # Cached-field exception: `fieldcount` is 3 (`μ, κ, I0κx`, the last a
     # cached Bessel-function normaliser) against `length(params(d)) == 2`.
-    # Same fix as `NormalCanon` above.
+    # Same as `NormalCanon` above: fixed here at the instance level, still
+    # broken at the type level pending the staged codec work.
     Distributions.VonMises => LeafParamSpec((:mu, :kappa),
         ((-Inf, Inf), (0.0, Inf))),
     Distributions.WalleniusNoncentralHypergeometric => LeafParamSpec(
@@ -189,23 +200,19 @@ const LEAF_PARAM_SPECS = Pair{Type, LeafParamSpec}[
         ((0.0, Inf), (0.0, Inf), (0.0, Inf), (0.0, Inf)))
 ]
 
-# Generate both dispatch tables (instance-level `param_names`, type-level
-# `_param_names_of`/`_params_arity_of`) from the one table above, so they
-# cannot drift apart the way the two hand-maintained versions did (#332).
-# `param_supports` is generated too, ready for the walk to consume once it
-# reads parameter (not variate) domains.
+# Generate the instance-level dispatch tables (`param_names`,
+# `param_supports`) from the one table above, so a family cannot name a
+# parameter in one without the other.
 #
-# Two more families than the design review's own scan flagged
-# (`DiscreteUniform`, whose `pv` normalising field is cached, and
-# `NormalInverseGaussian`, whose `γ` field is a cached
-# `sqrt(α² - β²)`) turned out to have the same cached-derived-field arity
-# mismatch as `VonMises`/`NormalCanon` above. No special-casing was needed for
-# them: every entry in `LEAF_PARAM_SPECS` gets an explicit `_params_arity_of`
-# method here, so `fieldcount` is never consulted for a registered family --
-# only for a leaf type with no entry in this table at all.
+# The type-level tables (`_param_names_of`/`_params_arity_of`, codec_gen.jl)
+# are NOT generated from this table on this branch -- see the file header.
+# `DiscreteUniform` and `NormalInverseGaussian` turned out to have the same
+# cached-derived-field arity mismatch as `VonMises`/`NormalCanon` above
+# (found live during this table's construction); at the instance level this
+# needs no special-casing (`params(d)` is always read directly, never off
+# `fieldcount`), but at the type level all four families still read their
+# arity off `fieldcount` until the staged codec work lands.
 for (T, spec) in LEAF_PARAM_SPECS
     @eval param_names(::$T) = $(spec.names)
-    @eval _param_names_of(::Type{<:$T}) = $(spec.names)
-    @eval _params_arity_of(::Type{<:$T}) = $(length(spec.names))
     @eval param_supports(::$T) = $(spec.supports)
 end

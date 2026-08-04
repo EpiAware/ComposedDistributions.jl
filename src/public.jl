@@ -57,8 +57,9 @@ public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
 # leaf that reports different parameters — a moment-parameterised wrapper naming
 # a mean and a standard deviation rather than a shape and a scale — overrides
 # both, so a prior lands on the moment rather than on the native parameter that
-# only implies it.
-public param_names, leaf_ctor
+# only implies it. `param_supports` names each parameter's own domain (not the
+# leaf's variate support), consumed by `params_table`/`default_prior`.
+public param_names, leaf_ctor, param_supports
 
 # The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
 # root the composer nodes subtype; `AbstractMultiChild` groups the positional
