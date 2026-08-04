@@ -103,6 +103,95 @@ end
     @test event(collapsed, :fixed) == LogNormal(0.5, 0.4)
 end
 
+@testitem "codec: pooled parameter that is not the leaf's first native parameter" begin
+    using ComposedDistributions: update, params_table
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    # Gamma's native order is (shape, scale); `scale` is pooled here, so a
+    # codec walk that (wrongly) hoists the pool group's hyperparameter slots
+    # before the WHOLE leaf's own block -- rather than at `scale`'s own
+    # native-order position, after `shape` -- disagrees with `params_table`.
+    tree = compose((
+        a = uncertain(Gamma(2.0, 3.0);
+            shape = LogNormal(0.0, 0.3), scale = pool(:g)),
+        b = uncertain(Gamma(4.0, 5.0);
+            shape = LogNormal(0.0, 0.3), scale = pool(:g))))
+
+    table = params_table(tree)
+    @test collect(table.edge) ==
+          [:a, :g, :g, Symbol("a.scale"), :b, Symbol("b.scale")]
+    @test collect(table.param) == [:shape, :mu, :sigma, :z, :shape, :z]
+
+    x = [2.0, 0.0, 1.0, 0.0, 4.0, 0.0]
+    nt = unflatten(tree, x)
+    @test nt.a.shape == 2.0
+    @test nt.g == (mu = 0.0, sigma = 1.0)
+    @test nt.a.scale == (z = 0.0,)
+    @test nt.b.shape == 4.0
+    @test nt.b.scale == (z = 0.0,)
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+end
+
+@testitem "codec: a leaf naming two different pool groups" begin
+    using ComposedDistributions: update, params_table
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    tree = compose((
+        a = uncertain(Gamma(2.0, 3.0); shape = pool(:g1), scale = pool(:g2)),
+        b = uncertain(Gamma(4.0, 5.0); shape = pool(:g1)),
+        c = uncertain(Gamma(6.0, 7.0); scale = pool(:g2))))
+
+    table = params_table(tree)
+    @test collect(table.edge) == [:g1, :g1, Symbol("a.shape"), :g2, :g2,
+        Symbol("a.scale"), Symbol("b.shape"), :b, :c, Symbol("c.scale")]
+    @test flat_dimension(tree) == 8
+
+    x = [10.0, 11.0, 20.0, 30.0, 31.0, 40.0, 50.0, 60.0]
+    nt = unflatten(tree, x)
+    @test nt.g1 == (mu = 10.0, sigma = 11.0)
+    @test nt.a.shape == (z = 20.0,)
+    @test nt.g2 == (mu = 30.0, sigma = 31.0)
+    @test nt.a.scale == (z = 40.0,)
+    @test nt.b.shape == (z = 50.0,)
+    @test nt.c.scale == (z = 60.0,)
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+end
+
+@testitem "codec: pool population whose uncertain kwargs are out of native order" begin
+    using ComposedDistributions: update, params_table
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    # `pop` writes `scale` before `shape`, the reverse of Gamma's native
+    # (shape, scale) order; the group hyperparameter rows must still land in
+    # NATIVE order (`params_table` walks `leaf_param_names`, not a
+    # population's kwargs order).
+    pop = uncertain(Gamma(2.0, 3.0);
+        scale = LogNormal(0.0, 0.3), shape = LogNormal(0.0, 0.3))
+    tree = compose((
+        a = uncertain(Gamma(2.0, 3.0); shape = pool(:g, pop)),
+        b = uncertain(Gamma(4.0, 5.0); shape = pool(:g, pop))))
+
+    table = params_table(tree)
+    @test collect(table.param)[1:2] == [:shape, :scale]
+
+    x = [2.0, 3.0, 2.0, 3.0]
+    nt = unflatten(tree, x)
+    @test nt.g == (shape = 2.0, scale = 3.0)
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+end
+
 @testitem "codec: property round-trip -- Resolve stick-breaking nested in a tree" begin
     using ComposedDistributions: update
     using Distributions

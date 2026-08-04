@@ -217,20 +217,21 @@ end
 # `_leaf_flatten_values`, so the two stay in lockstep without either knowing
 # the order at generation time.
 #
-# `speckeys`/`specvaltypes` (from the `Uncertain` node's own type parameters)
-# are still walked directly here, though, for the two things that do NOT
-# depend on `leaf_param_names` order: (1) registering a `Pool` group's
-# hyperparameters once per group (`ctx.seen_groups` dedup only cares which
-# groups have been seen across the tree, not this leaf's internal name
-# order), and (2) collecting which spec'd names are `Pool`-noncentred, so
-# their slot can be `z`-wrapped -- by NAME, not position, applied AFTER
-# `_leaf_entry` returns via `_wrap_pool_entries` (introspection.jl), so this
-# too needs no compile-time name<->position mapping. Both are done in a first
-# pass over `speckeys` so every group this leaf touches is registered (and its
-# hyperparameters' `x` slots allocated) BEFORE this leaf's own `k` slots are,
-# keeping this leaf's own slots one contiguous block even when it names two
-# DIFFERENT pool groups -- `flatten`'s `_leaf_flatten_reads!` mirrors this
-# same two-pass shape so the two stay in lockstep.
+# A `Pool` spec needs more than that, though: `_walk_rows!`/`_pool_rows!`
+# (introspection.jl/Pool.jl) insert a first-seen group's hyperparameter rows
+# at the POOLED PARAMETER'S OWN native-order position within this leaf's row
+# sequence -- not hoisted before this leaf's other params (which native-order
+# ignorance would otherwise force). `speckeys`/`specvaltypes` are still walked
+# directly here to decide WHICH groups this leaf-visit must materialise
+# (`ctx.seen_groups` dedup, order-independent) and WHICH spec'd names are
+# `Pool`-noncentred (order-independent, by name), and to size the `x` block
+# (`_pool_hyper_count`, a population's spec'd-parameter COUNT, not its order --
+# generation-time-safe). The actual per-name interleaving -- this leaf's own
+# `leaf_param_names` order AND each materialising population's own native
+# order -- is resolved from the real instances at RUNTIME, exactly
+# `_leaf_entry`'s trick, by `_leaf_entry_grouped` (Pool.jl), so a leaf
+# touching no first-seen group keeps using the plain `_leaf_entry` seam above
+# unchanged.
 function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
     if L <: Shared
         tag = L.parameters[1]::Symbol
@@ -252,55 +253,66 @@ function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
         speckeys = ()
         specvaltypes = ()
     end
+    pool_names, materialize, materialize_groups, extra_slots = _leaf_pool_layout!(
+        ctx, speckeys, specvaltypes)
+    slot_exprs = Any[]
+    for _ in 1:(length(speckeys) + extra_slots)
+        ctx.idx += 1
+        push!(slot_exprs, :(x[$(ctx.idx)]))
+    end
+
+    if isempty(materialize)
+        entry_expr = :(ComposedDistributions._leaf_entry(
+            $access, Val($speckeys), ($(slot_exprs...),)))
+        isempty(pool_names) && return entry_expr
+        return :(ComposedDistributions._wrap_pool_entries(
+            $entry_expr, Val($(Tuple(pool_names)))))
+    end
+
+    call_expr = :(ComposedDistributions._leaf_entry_grouped(
+        $access, Val($speckeys), Val($(Tuple(pool_names))),
+        Val($(Tuple(materialize))), ($(slot_exprs...),)))
+    for group in materialize_groups
+        push!(ctx.group_keys, group)
+        push!(ctx.group_vals, :(last($call_expr).$group))
+    end
+    return :(first($call_expr))
+end
+
+# Shared by `_leaf_unflatten_expr`/`_leaf_flatten_reads!`: walks a leaf's
+# `speckeys`/`specvaltypes` once to decide (1) `pool_names`, the spec'd names
+# that are `Pool`-noncentred (order-independent, by name -- unchanged from
+# before this function existed), (2) `materialize`/`materialize_groups`, the
+# subset of `speckeys` (and, paired 1:1, their group names) whose pool group
+# is first-seen ACROSS THE WHOLE TREE (`ctx.seen_groups` dedup, mutated here
+# so a later leaf naming the same group sees it already registered -- kept as
+# a SEPARATE parallel vector, not re-derived from `speckeys`/`specvaltypes`
+# with `findfirst`, since a `findfirst` result JET cannot prove non-`nothing`
+# would poison the caller's indexing), and (3) `extra_slots`, the total
+# `x`-slot count every materialising group's population contributes
+# (`_pool_hyper_count`, a count only -- see `_leaf_unflatten_expr`'s comment
+# for why no order is needed here). `unflatten` and `flatten` call this
+# identically so `ctx.seen_groups` advances in lockstep between the two
+# generated walks.
+function _leaf_pool_layout!(
+        ctx::_CodecCtx, speckeys::Tuple, specvaltypes::Tuple)
     pool_names = Symbol[]
+    materialize = Symbol[]
+    materialize_groups = Symbol[]
+    extra_slots = 0
     for (pname, specT) in zip(speckeys, specvaltypes)
         specT <: Pool || continue
         group = specT.parameters[1]::Symbol
         noncentred = specT.parameters[2]::Bool
         if !(group in ctx.seen_groups)
             push!(ctx.seen_groups, group)
-            hyper_expr = _pool_hyper_unflatten_expr(specT, ctx)
-            push!(ctx.group_keys, group)
-            push!(ctx.group_vals, hyper_expr)
+            push!(materialize, pname)
+            push!(materialize_groups, group)
+            extra_slots += _pool_hyper_count(specT)
         end
         noncentred && push!(pool_names, pname)
     end
-    slot_exprs = Any[]
-    for _pname in speckeys
-        ctx.idx += 1
-        push!(slot_exprs, :(x[$(ctx.idx)]))
-    end
-    entry_expr = :(ComposedDistributions._leaf_entry(
-        $access, Val($speckeys), ($(slot_exprs...),)))
-    isempty(pool_names) && return entry_expr
-    return :(ComposedDistributions._wrap_pool_entries(
-        $entry_expr, Val($(Tuple(pool_names)))))
-end
-
-# A pooling group's hyperparameter entry (root-lifted, emitted once at the
-# group's first member): the population's own spec'd parameter names, each
-# consuming one `x` slot. A population with no uncertain specs (fully fixed)
-# contributes an empty NamedTuple, mirroring `_pool_hyper_rows!`. Every entry
-# here is already spec'd (a fixed population hyperparameter contributes no row
-# at all, per `_pool_hyper_rows!`), so unlike `_leaf_unflatten_expr` above
-# there is no fixed-value fallback to delegate to `_leaf_entry` for, and no
-# `leaf_param_names` order to reproduce either: `keys_out[i]`/`vals_out[i]`
-# are built in lockstep from `speckeys` directly, so the resulting
-# `NamedTuple{keys_out}` is correct regardless of iteration order (its fields
-# are read by name everywhere downstream: `_read_path`, `_pool_hyper`).
-function _pool_hyper_unflatten_expr(specT::Type{<:Pool}, ctx::_CodecCtx)
-    P = specT.parameters[3]
-    P <: Uncertain || return :(NamedTuple())
-    PS = P.parameters[3]
-    speckeys = PS.parameters[1]::Tuple
-    keys_out = Symbol[]
-    vals_out = Any[]
-    for pname in speckeys
-        ctx.idx += 1
-        push!(keys_out, pname)
-        push!(vals_out, :(x[$(ctx.idx)]))
-    end
-    return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
+    return pool_names, materialize, materialize_groups, extra_slots
 end
 
 # Merge the root node's own NamedTuple with the root-lifted tag/group entries
@@ -516,12 +528,17 @@ end
 # on the actual leaf instance, not the generator, so no world-age concern) to
 # resolve the same name<->slot correspondence `unflatten`'s `_leaf_entry` used,
 # and unwraps a `Pool`-noncentred slot's `z` field the same way
-# `_wrap_pool_entries` wrapped it. `speckeys`/`specvaltypes` are walked in the
-# same two-pass shape (`_leaf_unflatten_expr`'s comment above explains why:
-# register every group this leaf touches first, so its own `k`-value block
-# stays contiguous) so `ctx.idx`'s allocation sequence -- and hence the
-# ABSOLUTE `x` positions this leaf's block occupies -- lines up with
-# `unflatten`'s exactly.
+# `_wrap_pool_entries` wrapped it.
+#
+# A leaf that materialises a pool group (mirroring `_leaf_unflatten_expr`'s
+# `_leaf_entry_grouped` branch exactly, including reusing `_leaf_pool_layout!`
+# so `ctx.seen_groups` advances identically to `unflatten`'s walk) is instead
+# routed through `_leaf_flatten_grouped` (Pool.jl), the read-direction
+# counterpart: it reads each materialising group's hyper `NamedTuple` off the
+# literal root `nt.<group>` (exactly where `unflatten` root-lifts it) and
+# interleaves those values with this leaf's own, in `leaf_param_names`
+# native order, so the flat sequence this leaf-visit contributes lines up
+# `_leaf_entry_grouped`'s consumption order value-for-value.
 function _leaf_flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{L},
         ctx::_CodecCtx) where {L}
     if L <: Shared
@@ -542,40 +559,20 @@ function _leaf_flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{L},
         specvaltypes = ()
     end
     isempty(speckeys) && return nothing
-    pool_names = Symbol[]
-    for (pname, specT) in zip(speckeys, specvaltypes)
-        specT <: Pool || continue
-        group = specT.parameters[1]::Symbol
-        noncentred = specT.parameters[2]::Bool
-        if !(group in ctx.seen_groups)
-            push!(ctx.seen_groups, group)
-            _pool_hyper_flatten_reads!(exprs, group, specT, ctx)
-        end
-        noncentred && push!(pool_names, pname)
-    end
-    ctx.idx += length(speckeys)
-    push!(exprs,
-        :(ComposedDistributions._leaf_flatten_values(
-            $d_access, Val($speckeys), Val($(Tuple(pool_names))), $nt_access)...))
-    return nothing
-end
+    pool_names, materialize, _, extra_slots = _leaf_pool_layout!(
+        ctx, speckeys, specvaltypes)
+    ctx.idx += length(speckeys) + extra_slots
 
-# A pooling group's hyperparameters, read off the literal root `nt.<group>`
-# (exactly where `unflatten` root-lifts them), each read directly BY NAME
-# (`nt.$group.$pname`), so -- like `_pool_hyper_unflatten_expr`'s matching
-# simplification -- this needs no `leaf_param_names` order at all: walking the
-# population's own `speckeys` (`PS.parameters[1]`) directly names exactly the
-# hyperparameters `_pool_hyper_unflatten_expr` wrote, and a NamedTuple field
-# read by name does not care what order they were written in.
-function _pool_hyper_flatten_reads!(
-        exprs::Vector, group::Symbol, specT::Type{<:Pool}, ctx::_CodecCtx)
-    P = specT.parameters[3]
-    P <: Uncertain || return nothing
-    PS = P.parameters[3]
-    speckeys = PS.parameters[1]::Tuple
-    for pname in speckeys
-        ctx.idx += 1
-        push!(exprs, :(nt.$group.$pname))
+    if isempty(materialize)
+        push!(exprs,
+            :(ComposedDistributions._leaf_flatten_values(
+                $d_access, Val($speckeys), Val($(Tuple(pool_names))),
+                $nt_access)...))
+    else
+        push!(exprs,
+            :(ComposedDistributions._leaf_flatten_grouped(
+                $d_access, Val($speckeys), Val($(Tuple(pool_names))),
+                Val($(Tuple(materialize))), $nt_access, nt)...))
     end
     return nothing
 end
