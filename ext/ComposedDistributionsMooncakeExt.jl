@@ -30,6 +30,12 @@ The `LogExpFunctions.xlogy`/`xlog1py` Mooncake primitives that used to live
 here (#99, extended to forward mode in #214) now come from EpiAwareADTools'
 `EpiAwareADToolsLogExpFunctionsMooncakeExt`; this package's hard dependencies
 on EpiAwareADTools and LogExpFunctions trigger it as soon as Mooncake loads.
+They were hoisted to avoid the duplicate registration clash with
+DistributionsInference (DistributionsInference#73), and are deleted once
+Mooncake ships its own rule (chalk-lab/Mooncake.jl#1241). The trigger this
+package supplies is the non-centred `pool`, whose reconstruction can land a
+stratum's shape on exactly `1.0`, where Mooncake's derived rule returns the
+wrong gradient.
 """
 module ComposedDistributionsMooncakeExt
 
