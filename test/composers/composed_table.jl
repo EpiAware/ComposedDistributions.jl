@@ -1,5 +1,5 @@
-# `composed_to_table` / `params_table` projection parity and structural
-# recovery (#227 slice 1, commit A: walk + sinks + projection).
+# `composed_to_table` / `params_table` projection parity, structural recovery,
+# Tables.jl forwarding from the tree, and role-aware `update` (#227 slice 1).
 
 @testitem "composed_to_table / params_table: golden projection parity" begin
     using ComposedDistributions: update
@@ -246,4 +246,81 @@ end
     oparams = [ofull.param[i] for i in eachindex(ofull.edge)
                if ofull.role[i] == :param]
     @test Set(oparams) == Set((:shape, :scale))
+end
+
+@testitem "composed_to_table: Tables interface on the tree" begin
+    using ComposedDistributions: update
+    using Distributions, Tables
+
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    other = compose((onset_admit = Gamma(3.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    @test Tables.istable(tree)
+    @test Tables.columnnames(tree) ==
+          (:edge, :param, :node, :role, :value, :support, :prior)
+    @test Tables.schema(tree) !== nothing
+    @test length(Tables.rowtable(tree)) == length(composed_to_table(tree).edge)
+
+    @test_throws ArgumentError update(tree, other)
+end
+
+@testitem "update: role-aware filtering ignores non-param rows" begin
+    using ComposedDistributions: update
+    using Distributions, Tables
+
+    inc = shared(:inc, Gamma(2.0, 1.0))
+    fixtures = [
+        sequential(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4)),
+        parallel(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4)),
+        resolve(:death => (Gamma(2.0, 3.5), 0.3),
+            :discharge => (Gamma(1.0, 8.0), 0.7)),
+        choose(:index => inc,
+            :sourced => compose((src = LogNormal(0.5, 0.4), inc = inc))),
+        compose((onset = truncated(Gamma(2.0, 1.0); upper = 10.0),))
+    ]
+
+    for tree in fixtures
+        # `update(tree, composed_to_table(tree))` is a no-op round trip: the
+        # `:node`/`:attribute` rows are filtered out, leaving the exact same
+        # concrete bulk write `update(tree, params_table(tree))` already did.
+        @test update(tree, composed_to_table(tree)) == tree
+    end
+
+    # An edited full table (change one `:param` row's value) writes exactly
+    # that parameter, leaving the node/attribute rows inert.
+    tree = compose((onset_admit = Gamma(2.0, 1.0),
+        admit_death = LogNormal(0.5, 0.4)))
+    full = composed_to_table(tree)
+    rows = Tables.rowtable(full)
+    edited = map(rows) do row
+        row.role == :param && row.edge == :onset_admit && row.param == :shape ?
+        merge(row, (; value = 5.0)) : row
+    end
+    written = update(tree, edited)
+    @test event(written, :onset_admit) == Gamma(5.0, 1.0)
+
+    # A role-less table (the existing `params_table` shape) is unaffected —
+    # every `test/composers/table_update.jl` case keeps passing unchanged.
+    plain = params_table(tree)
+    @test update(tree, plain) == tree
+end
+
+@testitem "update(tree, table): a role column alone does not make a DI-shaped table acceptable" begin
+    using ComposedDistributions: update
+    using Distributions
+
+    tree = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)),
+        admit_death = LogNormal(0.5, 0.4)))
+
+    # DistributionsInference's dotted-`name` row convention (DI#20), now with
+    # a `role` column too: it must still be refused for lacking `edge`/`param`,
+    # not silently accepted because `role` happens to be present.
+    di_shaped_rows = [(name = :onset_admit_shape, value = 2.0,
+        prior = LogNormal(log(2.0), 0.2), support = (0.0, Inf),
+        role = "param")]
+    @test_throws r"(?=.*edge)(?=.*param)" update(tree, di_shaped_rows)
 end

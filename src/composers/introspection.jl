@@ -1028,6 +1028,32 @@ function composed_to_table(
         role = s.role, value = s.value, support = s.support, prior = s.prior))
 end
 
+# --- a composed distribution as a Tables.jl source (#227 slice 1) -----------
+#
+# A composed tree forwards the whole Tables.jl column interface to its FULL
+# table ([`composed_to_table`](@ref), not the parameter-only projection), so
+# `DataFrame(tree)` yields the full node/attribute/param table; use
+# `DataFrame(params_table(tree))` for the parameter-only one. Deliberately no
+# `Base.getproperty`/`Base.propertynames` override here (unlike
+# [`ParamsTable`](@ref)): a composed distribution's own fields (`.components`,
+# `.delays`, ...) must keep working, so only the explicit Tables.jl generic
+# functions are forwarded.
+Tables.istable(::Type{<:AbstractComposedDistribution}) = true
+Tables.columnaccess(::Type{<:AbstractComposedDistribution}) = true
+Tables.rowaccess(::Type{<:AbstractComposedDistribution}) = true
+Tables.columns(d::AbstractComposedDistribution) = Tables.columns(composed_to_table(d))
+function Tables.columnnames(d::AbstractComposedDistribution)
+    return Tables.columnnames(composed_to_table(d))
+end
+function Tables.getcolumn(d::AbstractComposedDistribution, i::Int)
+    return Tables.getcolumn(composed_to_table(d), i)
+end
+function Tables.getcolumn(d::AbstractComposedDistribution, nm::Symbol)
+    return Tables.getcolumn(composed_to_table(d), nm)
+end
+Tables.schema(d::AbstractComposedDistribution) = Tables.schema(composed_to_table(d))
+Tables.rows(d::AbstractComposedDistribution) = Tables.rows(composed_to_table(d))
+
 # Pre-order walk over the composer tree. `path` is the tuple of names from the
 # root to the current node (the empty tuple at the root, so `_join_path(())`
 # `== Symbol("")`; no child name can be empty, so this cannot collide, unlike
@@ -1435,6 +1461,15 @@ here). This logic requires `edge` and `param` columns and errors naming the
 columns it found otherwise, so a `DistributionsInference`-shaped row vector
 is refused loudly rather than silently misread.
 
+A [`composed_to_table`](@ref)-shaped table (a `role` column present, e.g. a
+`DataFrame(tree)` — a composed distribution is itself a Tables.jl source over
+its full table) is filtered to its `role == :param` rows first, so passing
+the whole tree straight to `update` (rather than `params_table(tree)`) still
+only writes parameters, never a `:node`/`:attribute` row. A composed
+distribution as the second argument itself (`update(a, b)`) is rejected with
+a clear error rather than silently reaching this table path — pass
+`composed_to_table(b)` or `params_table(b)` explicitly to copy `b`'s rows.
+
 # Arguments
 - `d`: the composed distribution to edit.
 - `table`: a Tables.jl table with `edge`/`param` columns and a `value` and/or
@@ -1460,6 +1495,20 @@ update(tree, tbl)
 "
 function update(d::AbstractComposedDistribution, table)
     return update(d, _table_to_nested_updates(table))
+end
+
+# A composed distribution is now a Tables.jl source in its own right (see
+# above), so `update(a, b)` with `b` a tree would otherwise silently reach the
+# table arm above and bulk-write `b`'s rows into `a` (both `edge` and `param`
+# are present on any composed distribution). Reject it with a clear error
+# naming the fix instead: `composed_to_table`/`params_table` make the intent
+# to copy rows explicit.
+function update(::AbstractComposedDistribution, other::AbstractComposedDistribution)
+    throw(ArgumentError(
+        "update(d, table): the second argument is a $(nameof(typeof(other))) " *
+        "(a composed distribution), not a table. Composed distributions are " *
+        "now Tables.jl sources, so pass composed_to_table(other) or " *
+        "params_table(other) explicitly if you meant to copy its rows."))
 end
 
 # Whether an `update` NamedTuple carries any distribution-valued parameter,
@@ -1803,7 +1852,13 @@ end
 # differently-shaped row table (e.g. DistributionsInference's dotted-`name`
 # `parameter_rows` convention, DI#20) is refused loudly rather than silently
 # misread — both shapes are `Tables.istable`, so this check is the only thing
-# that tells them apart.
+# that tells them apart. A `role` column (a `composed_to_table`-shaped table,
+# or a `DataFrame(tree)` of one) is filtered to its `:param` rows first, so a
+# `:node`/`:attribute` row (whose `value`/`prior` are both absent) never
+# reaches the "neither a usable prior nor value" error below; `Symbol(role)`
+# so a String `"param"` (a CSV/DataFrame round trip) still matches. A table
+# with no `role` column (the existing `params_table`/hand-built shape) is
+# unfiltered, exactly as before.
 function _table_to_nested_updates(table)
     Tables.istable(table) || throw(ArgumentError(
         "update(d, table) needs a Tables.jl table (params_table-shaped: " *
@@ -1817,12 +1872,15 @@ function _table_to_nested_updates(table)
         "params_table); got columns $(collect(colnames))"))
     edges = Tables.getcolumn(cols, :edge)
     params_col = Tables.getcolumn(cols, :param)
+    has_role = :role in colnames
+    role_col = has_role ? Tables.getcolumn(cols, :role) : nothing
     has_value = :value in colnames
     has_prior = :prior in colnames
     values_col = has_value ? Tables.getcolumn(cols, :value) : nothing
     prior_col = has_prior ? Tables.getcolumn(cols, :prior) : nothing
     tree = Dict{Symbol, Any}()
     for i in eachindex(edges)
+        has_role && Symbol(role_col[i]) !== :param && continue
         entry = if has_prior && prior_col[i] !== nothing
             prior_col[i]
         elseif has_value
