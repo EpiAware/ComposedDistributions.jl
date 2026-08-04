@@ -85,7 +85,7 @@ itself, so a core wrapper directly around a registered extension leaf (e.g.
 `truncated(thin(Gamma(...)))`) peels correctly too, not just the reverse
 nesting. A leaf-wrapper *package extension* (censoring, modifiers) must *not*
 add a direct dispatch method here -- see [`register_leaf_wrapper!`](@ref)
-below (#189) instead.
+below instead.
 " _leaf_free_type(::Type{L}) where {L} = L
 _leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_leaf_free_type(D)
 _leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_leaf_free_type(D)
@@ -112,7 +112,7 @@ own method here -- routed through [`_resolve_extra_names`](@ref) below rather
 than recursing into itself, for the same core-wraps-extension reason as
 `_leaf_free_type` above. A leaf-wrapper *package extension* (e.g.
 ModifiedDistributions' `thin(...)`) must *not* add a direct dispatch method
-here -- see [`register_leaf_wrapper!`](@ref) below (#189) instead.
+here -- see [`register_leaf_wrapper!`](@ref) below instead.
 " _extra_names_of(::Type) = ()
 _extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_extra_names(D)
 _extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_extra_names(D)
@@ -209,9 +209,12 @@ end
 
 const _LEAF_CODEC_REGISTRY = _LeafCodecEntry[]
 
+# The load-order-independent registry design (this hook, and the
+# `_leaf_free_type`/`_extra_names_of` dispatch above that a package
+# extension must not add a direct method to) was settled in issue #189.
 @doc "
 Register a leaf-wrapper case's type-level codec hooks with the generated
-codec's load-order-independent registry (#189).
+codec's load-order-independent registry.
 
 `register_leaf_wrapper!(pattern; free_index, extra_names = ())` tells the
 generated codec how to peel a leaf-wrapper type matching `pattern` (matched
@@ -587,7 +590,7 @@ holding the fixed parameters at the template.
 
 Generated once per distinct tree type from a compile-time layout walk (no
 `Dict`, no intermediate `Any`-typed accumulation), so the result is
-`@inferred`-concrete and the reverse-mode AD backends (including Enzyme, #162)
+`@inferred`-concrete and the reverse-mode AD backends (including Enzyme)
 differentiate through it.
 
 # Arguments

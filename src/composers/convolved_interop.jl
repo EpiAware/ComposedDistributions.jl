@@ -43,7 +43,7 @@ A chain's observed total is usually continuous (e.g. a `Convolved` sum of
 interval censoring, including double-interval-censored masses for a
 day-binned primary) as the way to build a PMF first, then
 `convolve_series(pmf, series)`. This method does not choose a scheme on the
-caller's behalf (#226) — it collapses the tree and delegates, nothing more.
+caller's behalf — it collapses the tree and delegates, nothing more.
 
 Pass `events` to convolve the series to a chosen interim event of the chain
 rather than its endpoint. A single event name returns the count series at that
