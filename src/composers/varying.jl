@@ -628,6 +628,10 @@ need from a [`Context`](@ref), this lists the parameters an [`uncertain`](@ref)
 leaf still needs a value for (every `:param` row whose `prior` is not
 `nothing`). A fully concrete (pinned) tree returns an empty vector.
 
+A bare leaf (`d` is not wrapped in a composer) has no name path, so its edge
+is the empty `Symbol` (`Symbol(\"\")`) — the same root-row convention
+[`composed_to_table`](@ref) uses for a leaf at the tree root.
+
 # Arguments
 - `d`: the composed distribution, node, or leaf to inspect.
 

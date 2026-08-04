@@ -951,35 +951,35 @@ unchanged; only its display is customised.
 
 See also: [`composed_to_table`](@ref), [`build_priors`](@ref).
 "
-struct ParamsTable{C <: NamedTuple}
+struct ComposedTable{C <: NamedTuple}
     columns::C
 end
 
 # Tables.jl source interface: a column table, delegating to the wrapped columns.
-Tables.istable(::Type{<:ParamsTable}) = true
-Tables.columnaccess(::Type{<:ParamsTable}) = true
-Tables.columns(t::ParamsTable) = getfield(t, :columns)
-Tables.columnnames(t::ParamsTable) = keys(getfield(t, :columns))
-Tables.getcolumn(t::ParamsTable, i::Int) = getfield(t, :columns)[i]
-Tables.getcolumn(t::ParamsTable, nm::Symbol) = getfield(t, :columns)[nm]
-Tables.schema(t::ParamsTable) = Tables.schema(getfield(t, :columns))
-Tables.rowaccess(::Type{<:ParamsTable}) = true
-Tables.rows(t::ParamsTable) = Tables.rows(getfield(t, :columns))
+Tables.istable(::Type{<:ComposedTable}) = true
+Tables.columnaccess(::Type{<:ComposedTable}) = true
+Tables.columns(t::ComposedTable) = getfield(t, :columns)
+Tables.columnnames(t::ComposedTable) = keys(getfield(t, :columns))
+Tables.getcolumn(t::ComposedTable, i::Int) = getfield(t, :columns)[i]
+Tables.getcolumn(t::ComposedTable, nm::Symbol) = getfield(t, :columns)[nm]
+Tables.schema(t::ComposedTable) = Tables.schema(getfield(t, :columns))
+Tables.rowaccess(::Type{<:ComposedTable}) = true
+Tables.rows(t::ComposedTable) = Tables.rows(getfield(t, :columns))
 
 # Forward column access (`tbl.edge`, `tbl.param`, ...) to the wrapped columns so
 # the table reads like the NamedTuple it wraps.
-Base.getproperty(t::ParamsTable, nm::Symbol) = getfield(t, :columns)[nm]
-Base.propertynames(t::ParamsTable) = keys(getfield(t, :columns))
+Base.getproperty(t::ComposedTable, nm::Symbol) = getfield(t, :columns)[nm]
+Base.propertynames(t::ComposedTable) = keys(getfield(t, :columns))
 
 # The number of rows (every column is equal length).
-function _nrows(t::ParamsTable)
+function _nrows(t::ComposedTable)
     cols = getfield(t, :columns)
     return isempty(cols) ? 0 : length(first(cols))
 end
 
 # A compact one-liner for inline / array display.
-function Base.show(io::IO, t::ParamsTable)
-    print(io, "ParamsTable($(_nrows(t)) rows)")
+function Base.show(io::IO, t::ComposedTable)
+    print(io, "ComposedTable($(_nrows(t)) rows)")
     return nothing
 end
 
@@ -987,7 +987,7 @@ end
 # renders as an actual table. Columns are `edge | param | node | role | value |
 # support | prior`; each cell is the `string` of the value, columns padded to
 # their widest cell (header included).
-function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
+function Base.show(io::IO, ::MIME"text/plain", t::ComposedTable)
     cols = getfield(t, :columns)
     names = collect(keys(cols))
     n = _nrows(t)
@@ -1019,7 +1019,7 @@ _cell_string(x) = x === nothing ? "" : string(x)
 Flatten a composed distribution's full structure into one node/attribute/
 parameter table.
 
-`composed_to_table(d)` returns a Tables.jl column table (a [`ParamsTable`](@ref)
+`composed_to_table(d)` returns a Tables.jl column table (a [`ComposedTable`](@ref)
 wrapping a `NamedTuple` of equal-length column vectors) with one row per
 composer node, per leaf (wrapper) layer, per fixed-structure attribute, and
 per scalar free parameter. Columns:
@@ -1065,6 +1065,9 @@ Only an in-memory (DataFrame) round trip is supported: a `Varying` leaf's
 `map` attribute and a `Convolved`/`Difference` composite's solver are live
 objects, not values a text format (CSV) can carry.
 
+# Arguments
+- `d`: the composed distribution to flatten.
+
 # Examples
 ```@example
 using ComposedDistributions, Distributions
@@ -1083,7 +1086,7 @@ function composed_to_table(
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
     s = _FullSink()
     _walk_rows!(s, Set{Symbol}(), d, ())
-    return ParamsTable((edge = s.edge, param = s.param, node = s.node,
+    return ComposedTable((edge = s.edge, param = s.param, node = s.node,
         role = s.role, value = s.value, support = s.support, prior = s.prior))
 end
 
@@ -1099,7 +1102,7 @@ end
 function _param_rows(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
     s = _ParamSink()
     _walk_rows!(s, Set{Symbol}(), d, ())
-    return ParamsTable((edge = s.edge, param = s.param,
+    return ComposedTable((edge = s.edge, param = s.param,
         value = s.value, support = s.support, prior = s.prior))
 end
 
@@ -1110,7 +1113,7 @@ end
 # `DataFrame(tree)` yields the full node/attribute/param table; filter its
 # `role` column to `:param` for the parameter-only one. Deliberately no
 # `Base.getproperty`/`Base.propertynames` override here (unlike
-# [`ParamsTable`](@ref)): a composed distribution's own fields (`.components`,
+# [`ComposedTable`](@ref)): a composed distribution's own fields (`.components`,
 # `.delays`, ...) must keep working, so only the explicit Tables.jl generic
 # functions are forwarded.
 Tables.istable(::Type{<:AbstractComposedDistribution}) = true
@@ -2129,8 +2132,15 @@ nested.onset_admit.shape
 "
 function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
         default = default_prior)
+    Tables.istable(table) || throw(ArgumentError(
+        "build_priors(table) needs a Tables.jl table (composed_to_table-" *
+        "shaped: edge/param columns, plus value and support); " *
+        "got $(typeof(table))."))
     cols = Tables.columns(table)
     colnames = Tables.columnnames(cols)
+    (:edge in colnames && :param in colnames) || throw(ArgumentError(
+        "build_priors(table) needs `edge` and `param` columns (as produced " *
+        "by composed_to_table); got columns $(collect(colnames))"))
     edges = Tables.getcolumn(cols, :edge)
     params_col = Tables.getcolumn(cols, :param)
     values = Tables.getcolumn(cols, :value)

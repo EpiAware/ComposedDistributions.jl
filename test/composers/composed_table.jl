@@ -154,15 +154,19 @@ end
 end
 
 @testitem "_ParamSink walk: leaf hot path never calls leaf_layers" begin
-    using ComposedDistributions: _param_rows
+    using ComposedDistributions: _param_rows, centred_pool_rows
     using Distributions
 
     # A leaf-wrapper that counts `leaf_layers` calls on itself, so the
-    # AD-hot-path anti-regression (the parameter-only `_ParamSink` walk, run
-    # by `centred_pool_rows`/`required_parameters`, must not build OR iterate
-    # a leaf's `leaf_layers` tuple, not merely discard the rows it would
-    # produce) is a directly observable assertion rather than an inferred
-    # absence of `:node`/`:attribute` rows.
+    # AD-hot-path anti-regression (the parameter-only `_ParamSink` walk must
+    # not build OR iterate a leaf's `leaf_layers` tuple, not merely discard
+    # the rows it would produce) is a directly observable assertion rather
+    # than an inferred absence of `:node`/`:attribute` rows. Every real
+    # `_ParamSink` caller is exercised directly here (`_param_rows`, and the
+    # two production hot paths `required_parameters` and
+    # `centred_pool_rows`), so a future reimplementation of `composed_to_table`
+    # that starts routing one of them back through the `_FullSink` walk fails
+    # this test.
     mutable struct CountingLeaf{D <: UnivariateDistribution} <:
                    ContinuousUnivariateDistribution
         dist::D
@@ -184,6 +188,12 @@ end
     tree = compose((onset = leaf,))
 
     _param_rows(tree)
+    @test leaf.calls == 0
+
+    required_parameters(tree)
+    @test leaf.calls == 0
+
+    centred_pool_rows(tree)
     @test leaf.calls == 0
 
     composed_to_table(tree)

@@ -608,6 +608,11 @@ package — DistributionsInference.jl's fit-protocol extension calls this
 directly to find the rows [`pool_centred_logprior`](@ref) needs to score
 (#212).
 
+A bare pooled leaf (no enclosing composer) has no name path, so its row's
+`path` is the single empty-`Symbol` component `(Symbol(\"\"),)` — the same
+root-row convention [`composed_to_table`](@ref) uses for a leaf at the tree
+root.
+
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
 
