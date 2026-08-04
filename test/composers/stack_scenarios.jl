@@ -419,8 +419,11 @@ end
     # The chain's observed total is continuous, and ConvolvedDistributions is
     # discrete-only: convolving through the chain directly delegates to
     # ConvolvedDistributions' own "discretise first" error (#226) rather than
-    # CD picking a scheme silently.
-    @test_throws ArgumentError convolve_series(chain, infections)
+    # CD picking a scheme silently. Pinned to their main (unreleased, for
+    # #337): main's #130 dropped the dedicated error-gate method, so this
+    # now surfaces as plain dispatch's `MethodError`, not the 0.3.1
+    # `ArgumentError` — revisit once the pin moves to a release.
+    @test_throws MethodError convolve_series(chain, infections)
 
     # Discretise explicitly, then convolve: unchanged from the pre-#226 output.
     counts = convolve_series(
@@ -431,7 +434,7 @@ end
     # Selecting the chain's interim events collapses to that event's cumulative
     # delay, which is also continuous here, so it throws the same way (the
     # events dispatch routes through the same discretise-first-required path).
-    @test_throws ArgumentError convolve_series(
+    @test_throws MethodError convolve_series(
         chain, infections; events = (:admit, :death))
 
     # The prefix collapse itself is still correct: the terminal event's
