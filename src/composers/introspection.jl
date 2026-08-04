@@ -610,9 +610,9 @@ const _leaf_param_names = leaf_param_names
 # `leaf_param_names` appends their names. Built entirely from the generic,
 # instance-level hooks (`free_leaf`, `Distributions.params`,
 # `extra_leaf_params`), so it is correct for any leaf type an extension
-# defines those on, with no registration step -- the runtime seam that the
-# flat codec's leaf case (`unflatten`, `flatten`) reads from, in place of the
-# type-level table `codec_gen.jl` otherwise walks.
+# defines those on, with no registration step -- the seam the flat codec's
+# leaf case (`unflatten`, `flatten`) will read from in a later stage;
+# `codec_gen.jl` still walks the type-level table.
 function leaf_param_values(leaf)
     native = params(free_leaf(leaf))
     extras = extra_leaf_params(leaf)

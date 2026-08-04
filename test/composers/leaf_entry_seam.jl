@@ -8,8 +8,8 @@
 
 @testsnippet LeafEntrySeamFixture begin
     using Distributions
-    using ComposedDistributions: leaf_param_values, leaf_param_names,
-                                 _leaf_entry, free_leaf, extra_leaf_params
+    import ComposedDistributions: leaf_param_values, leaf_param_names,
+                                  _leaf_entry, free_leaf, extra_leaf_params
 
     # A leaf-wrapper type carrying one modifier-owned extra parameter,
     # mirroring ModifiedDistributions' `ThinOp` (the motivating case for
@@ -23,7 +23,7 @@
     Distributions.logpdf(d::FakeThinLeaf, x::Real) = logpdf(d.dist, x)
     Base.minimum(d::FakeThinLeaf) = minimum(d.dist)
     Base.maximum(d::FakeThinLeaf) = maximum(d.dist)
-    ComposedDistributions.free_leaf(d::FakeThinLeaf) = ComposedDistributions.free_leaf(d.dist)
+    free_leaf(d::FakeThinLeaf) = free_leaf(d.dist)
     function ComposedDistributions.extra_leaf_params(d::FakeThinLeaf)
         return (thin = (value = d.factor, support = (0.0, 1.0)),)
     end
