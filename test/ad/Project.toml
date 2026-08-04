@@ -40,4 +40,4 @@ EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.
 # Mirrors the root bound, so a git pin against a stale kit `main` cannot mask a
 # missing release and let this env pass without the `xlogy` rules.
 [compat]
-EpiAwareADTools = "0.1.3"
+EpiAwareADTools = "0.1.2"
