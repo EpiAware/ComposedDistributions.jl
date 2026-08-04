@@ -391,37 +391,49 @@ end
 # -- in that same interleaved order. Returns `(entry, groups)`, `groups` a
 # `NamedTuple` of `group => hyper_entry` for every group this leaf-visit
 # materialises (empty when it materialises none).
+#
+# The walk hands back the group names and their hyper entries as two parallel
+# tuples so `groups` can be built with `NamedTuple{keys}(values)`, the same
+# construction `entry` uses just above. Collecting `group => hyper` pairs and
+# splatting them into `(; pairs...)` instead reads identically but is opaque to
+# inference: `NamedTuple`-from-pairs widens to the abstract `NamedTuple` even
+# when every key is a literal, and the generated codec then reads each group
+# off that result (`codec_gen.jl`'s `_leaf_unflatten_expr`), so a single
+# widened field there costs `unflatten` its concrete return type tree-wide.
 function _leaf_entry_grouped(leaf, ::Val{speckeys}, ::Val{pool_names},
         ::Val{materialize}, slots::Tuple) where {speckeys, pool_names, materialize}
     names = leaf_param_names(leaf)
     vals = leaf_param_values(leaf)
     specs = _uncertain_specs(leaf)
-    entry_vals, group_pairs, _ = _leaf_walk_grouped(
+    entry_vals, group_keys, group_vals, _ = _leaf_walk_grouped(
         names, vals, speckeys, materialize, specs, slots)
     entry = NamedTuple{names}(entry_vals)
     entry = isempty(pool_names) ? entry : _wrap_pool_entries(entry, Val(pool_names))
-    return entry, (; group_pairs...)
+    return entry, NamedTuple{group_keys}(group_vals)
 end
 
 @inline function _leaf_walk_grouped(::Tuple{}, ::Tuple{}, ::Tuple, ::Tuple,
         specs, slots::Tuple)
-    return (), (), slots
+    return (), (), (), slots
 end
 @inline function _leaf_walk_grouped(names::Tuple, vals::Tuple, speckeys::Tuple,
         materialize::Tuple, specs, slots::Tuple)
     pname = names[1]
     hit = pname in speckeys
-    group_pair, slots = if hit && pname in materialize
+    group_key, group_val, slots = if hit && pname in materialize
         spec = specs[pname]
         hyper, rest = _pool_hyper_entry(spec.population, slots)
-        (pool_group(spec) => hyper,), rest
+        (pool_group(spec),), (hyper,), rest
     else
-        (), slots
+        (), (), slots
     end
     v, slots = hit ? (slots[1], Base.tail(slots)) : (vals[1], slots)
-    rest_vals, rest_groups, slots = _leaf_walk_grouped(
+    rest_vals, rest_keys, rest_hypers, slots = _leaf_walk_grouped(
         Base.tail(names), Base.tail(vals), speckeys, materialize, specs, slots)
-    return (v, rest_vals...), (group_pair..., rest_groups...), slots
+    entry_vals = (v, rest_vals...)
+    group_keys = (group_key..., rest_keys...)
+    group_hypers = (group_val..., rest_hypers...)
+    return entry_vals, group_keys, group_hypers, slots
 end
 
 # A materialising group's hyperparameter entry: the population's own spec'd
@@ -490,19 +502,34 @@ end
 
 # The dual of `_pool_hyper_entry`: the population's spec'd values read back
 # off its already-`unflatten`ed hyper `NamedTuple`, in the same native order.
+#
+# The names are taken from `hyper_nt` itself rather than re-derived from
+# `leaf_param_names(_population_template(pop))`. `_pool_hyper_entry` built
+# `hyper_nt` as exactly the spec'd names in the population's native order, so
+# its `keys` already are that walk's answer -- and, unlike a `leaf_param_names`
+# call, they are carried in `hyper_nt`'s own type, so the recursion below
+# resolves by dispatch instead of leaning on constant folding. That matters
+# here: with the walk driven off the runtime call, inference gave up on the
+# spec'd/fixed branch and returned a `Union` over hyper-block lengths, which
+# widened `_leaf_flatten_grouped` and cost `flatten` its concrete `Vector`
+# return type on every pooled tree. The unflatten direction has no such
+# shortcut (it is the side that constructs the names) and keeps deriving them
+# from the population template.
 _pool_hyper_flatten(pop::UnivariateDistribution, ::NamedTuple) = ()
 function _pool_hyper_flatten(pop::Uncertain, hyper_nt::NamedTuple)
-    specs = _uncertain_specs(pop)
-    pnames = leaf_param_names(_population_template(pop))
-    return _hyper_flatten_walk(pnames, specs, hyper_nt)
+    return _hyper_flatten_walk(_uncertain_specs(pop), hyper_nt)
 end
 
-@inline _hyper_flatten_walk(::Tuple{}, specs, nt::NamedTuple) = ()
-@inline function _hyper_flatten_walk(pnames::Tuple, specs, nt::NamedTuple)
-    pname = pnames[1]
-    rest = _hyper_flatten_walk(Base.tail(pnames), specs, nt)
-    haskey(specs, pname) || return rest
-    return (getproperty(nt, pname), rest...)
+@inline function _hyper_flatten_walk(
+        specs, hyper_nt::NamedTuple{names}) where {names}
+    return _hyper_flatten_walk(Val(names), specs, hyper_nt)
+end
+@inline _hyper_flatten_walk(::Val{()}, specs, nt::NamedTuple) = ()
+@inline function _hyper_flatten_walk(
+        ::Val{names}, specs, nt::NamedTuple) where {names}
+    rest = _hyper_flatten_walk(Val(Base.tail(names)), specs, nt)
+    haskey(specs, names[1]) || return rest
+    return (getproperty(nt, names[1]), rest...)
 end
 
 # --- pooled leaf reconstruction ---------------------------------------------

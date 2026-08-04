@@ -269,7 +269,7 @@ end
 # change to this file has one place that fails loudly on any drift.
 @testitem "codec: S2 layout parity -- unflatten is unchanged on every existing \
     codec_gen test tree" begin
-    using ComposedDistributions: update, unflatten
+    using ComposedDistributions: update, unflatten, flatten
     using Distributions
 
     cases = Any[]
@@ -370,6 +370,10 @@ end
         nt = @inferred unflatten(tree, x)
         @test nt == expected
         @test typeof(nt) == typeof(expected)
+        # `flatten` is guarded here too, not just round-tripped: it is the
+        # direction whose inference broke silently, because a value-level
+        # round-trip stays correct while the return type widens.
+        @test @inferred(flatten(tree, nt)) == x
     end
 end
 

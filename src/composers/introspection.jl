@@ -675,17 +675,29 @@ end
 # order (`_leaf_entry`'s own substitution order, so the two stay inverse),
 # unwrapping a `Pool`-noncentred entry's `z` field the same way
 # `_wrap_pool_entries` wrapped it.
+#
+# The walk order comes from `entry`'s own `keys` rather than from a
+# `leaf_param_names(leaf)` call. The two are the same sequence -- `_leaf_entry`
+# builds `entry` as `NamedTuple{leaf_param_names(leaf)}` and
+# `_wrap_pool_entries` preserves it -- but `entry`'s copy is carried in its
+# type, so the spec'd/fixed test below resolves by dispatch. Driven off the
+# runtime call instead, inference could not settle how many names pass the
+# test and returned a `Union` over result lengths, which propagated out to
+# `flatten` as a `Union{Vector{Any}, Vector{Float64}}` return type. `leaf` is
+# still taken (unused) so the seam's signature stays the one `codec_gen.jl`
+# emits and `leaf_entry_seam.jl` pins.
 function _leaf_flatten_values(leaf, ::Val{speckeys}, ::Val{pool_names},
-        entry::NamedTuple) where {speckeys, pool_names}
-    names = leaf_param_names(leaf)
-    return _leaf_extract(names, speckeys, pool_names, entry)
+        entry::NamedTuple{names}) where {speckeys, pool_names, names}
+    return _leaf_extract(Val(names), Val(speckeys), Val(pool_names), entry)
 end
 
-@inline _leaf_extract(::Tuple{}, ::Tuple, ::Tuple, ::NamedTuple) = ()
-@inline function _leaf_extract(names::Tuple, speckeys::Tuple,
-        pool_names::Tuple, entry::NamedTuple)
+@inline _leaf_extract(::Val{()}, ::Val, ::Val, ::NamedTuple) = ()
+@inline function _leaf_extract(
+        ::Val{names}, ::Val{speckeys}, ::Val{pool_names},
+        entry::NamedTuple) where {names, speckeys, pool_names}
     pname = names[1]
-    rest = _leaf_extract(Base.tail(names), speckeys, pool_names, entry)
+    rest = _leaf_extract(
+        Val(Base.tail(names)), Val(speckeys), Val(pool_names), entry)
     pname in speckeys || return rest
     raw = getproperty(entry, pname)
     v = pname in pool_names ? raw.z : raw
