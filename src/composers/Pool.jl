@@ -552,14 +552,72 @@ const _pool_centred_logprior = pool_centred_logprior
 #
 # Every leaf of a pooling group must declare the same population and
 # parameterisation (they are one population); the params-table walk emits the
-# group's hyperparameters from the first member it meets. `_validate_pool_groups`
+# group's hyperparameters from the first member it meets. `validate_pool_groups`
 # (called once at DistributionsInference.jl's `as_logdensity` construction, not
 # per gradient evaluation) rejects a mismatch eagerly.
-function _validate_pool_groups(d)
+
+@doc raw"
+
+Check that every leaf of each `pool` group declares the same population
+distribution and parameterisation, throwing an `ArgumentError` on a mismatch.
+
+Called once at [`params_table`](@ref) construction time (typically at
+`as_logdensity` construction), not per gradient evaluation. Reached by
+qualified name from outside this package — DistributionsInference.jl's
+fit-protocol extension calls this directly to gate a tree before fitting
+(#212).
+
+# Arguments
+- `d`: the composed tree whose pool groups are checked.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions.validate_pool_groups(tree)
+```
+
+# See also
+- [`validate_tree_names`](@ref)
+"
+function validate_pool_groups(d)
     acc = Dict{Symbol, Pool}()
     _collect_pools!(acc, d)
     return d
 end
+
+@doc raw"
+
+Deprecated alias for [`validate_pool_groups`](@ref); kept transitionally so a
+caller already qualifying it (`ComposedDistributions._validate_pool_groups`,
+or an explicit `using ComposedDistributions: _validate_pool_groups`) keeps
+working across the rename (this was declared `public` with the leading
+underscore, which the org's naming convention reserves for internal-only
+names). New code should call `validate_pool_groups`; this alias is removed in
+a future cleanup once DistributionsInference.jl's fit-protocol extension has
+moved off it.
+
+# Arguments
+- `d`: the composed tree whose pool groups are checked; see
+  [`validate_pool_groups`](@ref).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions._validate_pool_groups(tree)
+```
+
+# See also
+- [`validate_pool_groups`](@ref)
+"
+const _validate_pool_groups = validate_pool_groups
 
 function _collect_pools!(acc::Dict,
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
@@ -601,13 +659,47 @@ end
 # family's top-level entry alongside the tree's own names). A pool group and a
 # shared tag sharing a name silently clobber each other in that merge, and so
 # does either family sharing a name with a root edge (see #177 and the #178
-# risk list). `_validate_tree_names` gates all three cross-role collisions
+# risk list). `validate_tree_names` gates all three cross-role collisions
 # once at `as_logdensity` construction time, alongside
-# `_validate_pool_groups`'s pool group consistency check, not per gradient
+# `validate_pool_groups`'s pool group consistency check, not per gradient
 # evaluation. Reusing the same tag for a deliberate tie (`shared`/`tie`, or a
 # pool group with several members) is the intended feature and is not
 # flagged; only a name crossing roles is an error.
-function _validate_tree_names(d)
+
+@doc raw"
+
+Check that no `pool` group, `shared` tag, or top-level edge name in the tree
+collides with one from another of those three roles, throwing an
+`ArgumentError` on a collision.
+
+The root-lifted codec merge (`unflatten`'s `_root_merge_expr`) puts pool
+groups, shared tags, and root edge names into the same flat namespace; a name
+crossing roles would silently clobber another entry there. Reusing the same
+tag for a deliberate tie (`shared`/`tie`, or a pool group with several
+members) is the intended feature and is not flagged; only a name crossing
+roles is an error. Called once at [`params_table`](@ref) construction time
+(typically at `as_logdensity` construction), not per gradient evaluation.
+Reached by qualified name from outside this package —
+DistributionsInference.jl's fit-protocol extension calls this directly to
+gate a tree before fitting (#212).
+
+# Arguments
+- `d`: the composed tree whose pool/shared/root names are checked.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions.validate_tree_names(tree)
+```
+
+# See also
+- [`validate_pool_groups`](@ref)
+"
+function validate_tree_names(d)
     pools = Dict{Symbol, Pool}()
     _collect_pools!(pools, d)
     shared_tags = _collect_shared(d)
@@ -631,8 +723,38 @@ function _validate_tree_names(d)
     return nothing
 end
 
+@doc raw"
+
+Deprecated alias for [`validate_tree_names`](@ref); kept transitionally so a
+caller already qualifying it (`ComposedDistributions._validate_tree_names`,
+or an explicit `using ComposedDistributions: _validate_tree_names`) keeps
+working across the rename (this was declared `public` with the leading
+underscore, which the org's naming convention reserves for internal-only
+names). New code should call `validate_tree_names`; this alias is removed in
+a future cleanup once DistributionsInference.jl's fit-protocol extension has
+moved off it.
+
+# Arguments
+- `d`: the composed tree whose pool/shared/root names are checked; see
+  [`validate_tree_names`](@ref).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((north = uncertain(Gamma(2.0, 1.0);
+        shape = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+ComposedDistributions._validate_tree_names(tree)
+```
+
+# See also
+- [`validate_tree_names`](@ref)
+"
+const _validate_tree_names = validate_tree_names
+
 # The direct child names at the root of a composer tree, the level the
-# codec's root-lift merge (see `_validate_tree_names` above) lifts pool/shared
+# codec's root-lift merge (see `validate_tree_names` above) lifts pool/shared
 # entries onto. Every
 # `AbstractComposedDistribution` subtype implements `component_names`.
 _root_edge_names(d) = component_names(d)
