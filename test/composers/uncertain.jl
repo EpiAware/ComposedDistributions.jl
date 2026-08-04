@@ -298,6 +298,23 @@ end
     @test occursin("prior", sprint(show, MIME("text/plain"), tbl))
 end
 
+@testitem "build_priors: a DI-shaped table is refused loudly, not misread" begin
+    using ComposedDistributions: build_priors
+    using Distributions
+
+    # Not a Tables.jl source at all: a bare NamedTuple of scalars.
+    @test_throws ArgumentError build_priors((edge = :a, param = :shape,
+        value = 2.0, support = (0.0, Inf)))
+
+    # DistributionsInference's dotted-`name` row convention (DI#20): it is
+    # `Tables.istable` (a Tables.jl row table) but lacks `edge`/`param`, so it
+    # must be refused for lacking those columns rather than silently
+    # misread — the same guard `update(d, table)` applies.
+    di_shaped_rows = [(name = :onset_admit_shape, value = 2.0,
+        support = (0.0, Inf))]
+    @test_throws r"(?=.*edge)(?=.*param)" build_priors(di_shaped_rows)
+end
+
 @testitem "observed_distribution rejects an uncertain chain" begin
     using ComposedDistributions: update
     using Distributions

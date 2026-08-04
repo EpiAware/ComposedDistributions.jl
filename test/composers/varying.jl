@@ -187,6 +187,12 @@ end
             shape = LogNormal(0.0, 0.3)),
         :admit => LogNormal(0.5, 0.4))
     @test required_parameters(utree) == [(edge = :onset, param = :shape)]
+
+    # A bare uncertain leaf (no enclosing composer) has no name path, so its
+    # edge is the empty `Symbol` — the same root-row convention
+    # `composed_to_table` uses for a leaf at the tree root.
+    bare = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3))
+    @test required_parameters(bare) == [(edge = Symbol(""), param = :shape)]
 end
 
 @testitem "instantiate: the convolution kernel varies with the context" begin
@@ -234,7 +240,7 @@ end
     # The parameter-only walk over a tree with a varying leaf matches the same
     # tree built from the leaf's reference: the varying map is fixed
     # structure, so only the reference's free parameters are inventoried.
-    # Compare the columns (a ParamsTable has no value-`==`), reached via the
+    # Compare the columns (a ComposedTable has no value-`==`), reached via the
     # forwarded property access.
     tbl = _param_rows(compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4))))
     ref = _param_rows(compose((onset_admit = Gamma(2.0, 1.0),

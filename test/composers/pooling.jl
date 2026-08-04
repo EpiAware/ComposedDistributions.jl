@@ -235,6 +235,15 @@ end
     @test isempty(centred_pool_rows(noncentred))
     @test pool_centred_logprior(centred_pool_rows(noncentred),
         unflatten(noncentred, [0.1, 0.2])) == 0.0
+
+    # A bare pooled leaf (no enclosing composer) has no name path, so its
+    # row's path is the single empty-`Symbol` component — the same root-row
+    # convention `required_parameters` pins for a bare uncertain leaf.
+    bare = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Beta(2.0, 3.0)))
+    bare_rows = centred_pool_rows(bare)
+    @test length(bare_rows) == 1
+    @test bare_rows[1][1] == (Symbol(""),)
+    @test bare_rows[1][2] == :shape
 end
 
 @testitem "pool: rejects a hand-built update missing the population entry" begin

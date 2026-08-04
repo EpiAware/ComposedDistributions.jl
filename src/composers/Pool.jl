@@ -412,7 +412,12 @@ construction time) — the same zero-extra-work parameter-only walk
 table, so a tree with only non-centred (or no) pooling adds no per-evaluation
 cost. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
-find the rows [`pool_centred_logprior`](@ref) needs to score (#212).
+find the rows [`pool_centred_logprior`](@ref) needs to score.
+
+A bare pooled leaf (no enclosing composer) has no name path, so its row's
+`path` is the single empty-`Symbol` component `(Symbol(\"\"),)` — the same
+root-row convention [`composed_to_table`](@ref) uses for a leaf at the tree
+root.
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
