@@ -196,6 +196,9 @@ end
     end
 
     # The unmapped-family fallback also agrees (both return an empty tuple).
-    @test ComposedDistributions.param_names(Poisson(3.0)) == () ==
-          _param_names_of(Poisson)
+    # `Dirac` has no `Distributions.params` method at all, so it is (and stays)
+    # outside `LEAF_PARAM_SPECS` (#332); `Poisson` no longer qualifies since
+    # the leaf-parameter table now covers the whole univariate library.
+    @test ComposedDistributions.param_names(Dirac(1.0)) == () ==
+          _param_names_of(Dirac)
 end

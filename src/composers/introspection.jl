@@ -530,8 +530,8 @@ The scalar parameter names of a leaf distribution, matched positionally to
 `params(leaf)`.
 
 Distributions.jl exposes parameter values through `params` but not their names,
-so the common families are mapped explicitly here; anything unmapped falls back
-to `:param_1, :param_2, ...`.
+so the whole univariate library is mapped explicitly in `LEAF_PARAM_SPECS`;
+anything unmapped falls back to `:param_1, :param_2, ...`.
 
 A leaf type whose free parameters are not the native family's overrides this, in
 step with [`leaf_ctor`](@ref): the two together fix the coordinates that
@@ -552,12 +552,6 @@ ComposedDistributions.param_names(Gamma(2.0, 1.0))
 # See also
 - [`leaf_ctor`](@ref): the matching rebuild.
 "
-param_names(::Distributions.Normal) = (:mu, :sigma)
-param_names(::Distributions.LogNormal) = (:mu, :sigma)
-param_names(::Distributions.Gamma) = (:shape, :scale)
-param_names(::Distributions.Weibull) = (:shape, :scale)
-param_names(::Distributions.Exponential) = (:scale,)
-param_names(::Distributions.Uniform) = (:lower, :upper)
 param_names(::Any) = ()
 
 # The underscored alias retained for the package's existing internal callers
@@ -856,6 +850,18 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
     # attached this is exactly the plain per-param walk.
     extras = extra_leaf_params(leaf)
     native = params(inner)
+    # A native parameter that is not a scalar (a `Categorical`'s probability
+    # vector, `DiscreteNonParametric`'s support/probs, a `PoissonBinomial`'s
+    # per-trial vector) cannot become one prior-table row; `uncertain` already
+    # rejects the matching spec cleanly (Uncertain.jl), so a fixed leaf agrees
+    # here instead of pushing a `Vector` into the value column and failing
+    # only later, indirectly, downstream of this walk.
+    for (i, v) in enumerate(native)
+        v isa Real || throw(ArgumentError(
+            "leaf $(typeof(inner)) has a non-scalar native parameter at " *
+            "position $i (a $(typeof(v))); vector-valued parameters are " *
+            "not supported as composed leaves"))
+    end
     vals = (native..., map(e -> e.value, extras)...)
     sups = (ntuple(_ -> sup, length(native))...,
         map(e -> e.support, extras)...)

@@ -92,17 +92,12 @@ _leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_leaf_f
 
 @doc "
 The native parameter name labels of a peeled free-delay type, mirroring
-`param_names` at the type level (dispatch table kept in step with it).
-Returns `()` for an unmapped family, exactly like the instance-based fallback;
+`param_names` at the type level (generated from the same `LEAF_PARAM_SPECS`
+table, composers/leaf_params.jl, so the two cannot drift apart). Returns `()`
+for an unmapped family, exactly like the instance-based fallback;
 `leaf_param_names`'s positional `:param_i` padding then applies at the
 generation-time layer too.
 " _param_names_of(::Type) = ()
-_param_names_of(::Type{<:Distributions.Normal}) = (:mu, :sigma)
-_param_names_of(::Type{<:Distributions.LogNormal}) = (:mu, :sigma)
-_param_names_of(::Type{<:Distributions.Gamma}) = (:shape, :scale)
-_param_names_of(::Type{<:Distributions.Weibull}) = (:shape, :scale)
-_param_names_of(::Type{<:Distributions.Exponential}) = (:scale,)
-_param_names_of(::Type{<:Distributions.Uniform}) = (:lower, :upper)
 
 @doc "
 The extra (modifier-owned) parameter names of a leaf type, mirroring
@@ -118,16 +113,23 @@ _extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_extra
 _extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_extra_names(D)
 
 # The native parameter arity of a peeled free-delay type: the length of
-# `Distributions.params(instance)`. Every ordinary Distributions.jl leaf
-# (Gamma, Normal, LogNormal, Weibull, Exponential, Uniform, Beta, ...) reports
-# exactly its own struct fields as `params`, so `fieldcount` reads the arity
-# straight off the type with no instance needed -- and, unlike
+# `Distributions.params(instance)`. Generated per-family from
+# `LEAF_PARAM_SPECS` (composers/leaf_params.jl) as `length(spec.names)` for
+# every registered family, so this generic fallback -- `fieldcount` -- is only
+# ever consulted for a leaf type with no table entry at all.
+#
+# `fieldcount` is wrong whenever a family's struct caches a derived field
+# alongside its constructor arguments: `VonMises` (`I0κx`, a cached Bessel
+# normaliser), `NormalCanon` (`μ`, a cached canonical-to-natural mean),
+# `DiscreteUniform` (`pv`, a cached probability mass) and
+# `NormalInverseGaussian` (`γ`, a cached `sqrt(α² - β²)`) all report one more
+# field than `params`. Every one of them has an explicit `LEAF_PARAM_SPECS`
+# entry, so none of them ever reach this fallback; it remains correct only for
+# a family (in or out of Distributions.jl) whose fields do match its `params`
+# 1:1 and which has not been added to the table -- and, unlike
 # `Base.return_types`, code reflection of any kind is disallowed inside a
-# `@generated` function body, so this must be a structural (not inferential)
-# query. A leaf type whose `params` is *not* its own fields 1:1 (a custom
-# moment-parameterised wrapper, `leaf_ctor`'s motivating case) needs its own
-# `_params_arity_of` method alongside its `_param_names_of`/`leaf_ctor`
-# override.
+# `@generated` function body, so this must stay a structural (not
+# inferential) query.
 _params_arity_of(::Type{L}) where {L} = fieldcount(L)
 
 # --- load-order-independent leaf-wrapper registry (#189, #178 PR 4) --------

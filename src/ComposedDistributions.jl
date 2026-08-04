@@ -165,6 +165,11 @@ include("composers/Choose.jl")
 include("composers/nesting.jl")
 include("composers/equality.jl")
 include("composers/compose.jl")
+# One leaf-parameter table (#332), generating both the instance-level
+# (`param_names`) and type-level (`_param_names_of`/`_params_arity_of`)
+# dispatch tables `introspection.jl`/`codec_gen.jl` consult below, so the two
+# cannot drift apart the way the hand-maintained versions used to.
+include("composers/leaf_params.jl")
 include("composers/introspection.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
 # introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
