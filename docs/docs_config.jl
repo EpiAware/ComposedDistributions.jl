@@ -35,6 +35,14 @@ const TUTORIAL_STUBS = [
     "event-skeletons.md" => "# [Event skeletons: reusable topologies with `@events`](@id event-skeletons)"
 ]
 
+# Whether this package advertises itself as part of the EpiAware ecosystem: a
+# "Part of the EpiAware ecosystem" section in the managed README block, and the
+# EpiAware logo + org links in the docs footer. Opt-in and off by default — the
+# kit scaffolds packages outside the org too, and they should carry no EpiAware
+# branding. Set `true` in an EpiAware org package; the content it turns on is
+# kit-managed and re-synced, so only this line is package-owned.
+const ORG_BRANDING = true
+
 # Regexes for URLs to skip during the (full-build) linkcheck, e.g. a page
 # published by a separate workflow that is not yet live.
 # - The stable docs URL 404s until the first tagged release deploys it.
