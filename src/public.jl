@@ -17,7 +17,7 @@ public free_leaf, rewrap_leaf, component_names
 # The published leaf protocol a downstream leaf-wrapper package (censoring in
 # CensoredDistributions, the modifiers in ModifiedDistributions) extends
 # alongside `free_leaf`/`rewrap_leaf`. `uncertain_specs` routes a leaf's
-# attached prior specs through to `params_table`/`build_priors`;
+# attached prior specs through to `composed_to_table`/`build_priors`;
 # `leaf_detail_lines` routes a leaf's `inspect` rendering; `shared_tag` sees a
 # shared tie through a wrapper; `leaf_param_names` names a leaf's estimable
 # parameters; `leaf_mean`/`leaf_var` give a leaf's per-moment values; and
@@ -52,7 +52,7 @@ public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
 
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
-# `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
+# `composed_to_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
 # whose free parameters are its native constructor arguments needs neither. A
 # leaf that reports different parameters — a moment-parameterised wrapper naming
 # a mean and a standard deviation rather than a shape and a scale — overrides

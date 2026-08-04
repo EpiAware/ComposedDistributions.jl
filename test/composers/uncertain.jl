@@ -255,18 +255,19 @@ end
     # It composes and samples as a leaf, and is inventoried once under its tag.
     p = parallel(:a => su, :b => LogNormal(0.5, 0.4))
     @test rand(Xoshiro(2), p) isa NamedTuple
-    tbl = params_table(p)
+    tbl = composed_to_table(p)
     idx = findfirst(==(:shape), tbl.param)
     @test tbl.edge[idx] == :inc
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
 end
 
-@testitem "params_table prior column and build_priors precedence" begin
+@testitem "composed_to_table prior column and build_priors precedence" begin
+    using ComposedDistributions: _param_rows
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
     tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_to_table(tree)
     @test :prior in propertynames(tbl)
 
     # The uncertain shape row carries its spec; fixed rows carry nothing.
@@ -287,9 +288,10 @@ end
         priors = (onset_admit = (shape = Exponential(1.0),),))
     @test ovr.onset_admit.shape == Exponential(1.0)
 
-    # A four-column table (no prior column) still works.
-    legacy = (edge = collect(tbl.edge), param = collect(tbl.param),
-        value = collect(tbl.value), support = collect(tbl.support))
+    # A four-column table (no prior, no role column) still works.
+    param_tbl = _param_rows(tree)
+    legacy = (edge = collect(param_tbl.edge), param = collect(param_tbl.param),
+        value = collect(param_tbl.value), support = collect(param_tbl.support))
     @test build_priors(legacy).onset_admit.shape isa Distribution
 
     # The table prints, with blank prior cells for fixed rows.
@@ -345,7 +347,7 @@ end
 
     # Choose: it composes, and its prior column carries the spec.
     ch = choose(:index => u, :sourced => Gamma(2.0, 1.0))
-    tbl = params_table(ch)
+    tbl = composed_to_table(ch)
     idx = findfirst(i -> tbl.edge[i] == :index && tbl.param[i] == :shape,
         eachindex(tbl.edge))
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
@@ -438,7 +440,7 @@ end
 end
 
 @testitem "promote: update(tree, param_priors(tree)) specs every parameter" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -448,7 +450,7 @@ end
 
     @test has_uncertain(promoted)
     # Every free parameter is now estimated (the escape hatch to estimate-all).
-    @test flat_dimension(promoted) == length(params_table(tree).edge)
+    @test flat_dimension(promoted) == length(_param_rows(tree).edge)
     oa = event(promoted, :onset_admit)
     @test oa isa Uncertain
     @test keys(oa.specs) == (:shape, :scale)

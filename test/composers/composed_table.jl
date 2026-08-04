@@ -1,8 +1,9 @@
-# `composed_to_table` / `params_table` projection parity, structural recovery,
-# Tables.jl forwarding from the tree, and role-aware `update` (#227 slice 1).
+# `composed_to_table` projection parity (the `role == :param` filter against
+# the historical parameter-only walk), structural recovery, Tables.jl
+# forwarding from the tree, and role-aware `update` (#227 slice 1).
 
-@testitem "composed_to_table / params_table: golden projection parity" begin
-    using ComposedDistributions: update
+@testitem "composed_to_table: golden projection parity (role == :param filter)" begin
+    using ComposedDistributions: update, _param_rows
     using Distributions, ConvolvedDistributions
     using ConvolvedDistributions: convolved
 
@@ -72,7 +73,11 @@
 
     for (label, tree) in fixtures
         full = composed_to_table(tree)
-        p = params_table(tree)
+        # `_param_rows` runs the parameter-only `_ParamSink` walk directly (the
+        # historical `params_table` implementation), independently of the
+        # `_FullSink` walk `composed_to_table` runs — proving the `role ==
+        # :param` filter over the full table reproduces it.
+        p = _param_rows(tree)
         idx = findall(==(:param), full.role)
 
         # Elementwise, in order — never sets, never sorted.
@@ -148,12 +153,14 @@ end
     end
 end
 
-@testitem "params_table: leaf hot path never calls leaf_layers" begin
+@testitem "_ParamSink walk: leaf hot path never calls leaf_layers" begin
+    using ComposedDistributions: _param_rows
     using Distributions
 
     # A leaf-wrapper that counts `leaf_layers` calls on itself, so the
-    # AD-hot-path anti-regression (`params_table` must not build OR iterate a
-    # leaf's `leaf_layers` tuple, not merely discard the rows it would
+    # AD-hot-path anti-regression (the parameter-only `_ParamSink` walk, run
+    # by `centred_pool_rows`/`required_parameters`, must not build OR iterate
+    # a leaf's `leaf_layers` tuple, not merely discard the rows it would
     # produce) is a directly observable assertion rather than an inferred
     # absence of `:node`/`:attribute` rows.
     mutable struct CountingLeaf{D <: UnivariateDistribution} <:
@@ -176,7 +183,7 @@ end
     leaf = CountingLeaf(Gamma(2.0, 1.0))
     tree = compose((onset = leaf,))
 
-    params_table(tree)
+    _param_rows(tree)
     @test leaf.calls == 0
 
     composed_to_table(tree)
@@ -184,14 +191,15 @@ end
 end
 
 @testitem "composed_to_table: structure is now recoverable" begin
+    using ComposedDistributions: _param_rows
     using Distributions
 
     # A Sequential and a Parallel with the same branch names and identical
-    # children are byte-identical in `params_table` but differ in `node`.
+    # children are byte-identical in their `:param` rows but differ in `node`.
     seq = sequential(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
     par = parallel(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
-    @test params_table(seq).edge == params_table(par).edge
-    @test params_table(seq).value == params_table(par).value
+    @test _param_rows(seq).edge == _param_rows(par).edge
+    @test _param_rows(seq).value == _param_rows(par).value
     @test composed_to_table(seq).node[1] == :Sequential
     @test composed_to_table(par).node[1] == :Parallel
     @test composed_to_table(seq).node[1] != composed_to_table(par).node[1]
@@ -302,7 +310,7 @@ end
 end
 
 @testitem "update: role-aware filtering ignores non-param rows" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions, Tables
 
     inc = shared(:inc, Gamma(2.0, 1.0))
@@ -319,7 +327,7 @@ end
     for tree in fixtures
         # `update(tree, composed_to_table(tree))` is a no-op round trip: the
         # `:node`/`:attribute` rows are filtered out, leaving the exact same
-        # concrete bulk write `update(tree, params_table(tree))` already did.
+        # concrete bulk write a role-less parameter-only table already did.
         @test update(tree, composed_to_table(tree)) == tree
     end
 
@@ -336,9 +344,9 @@ end
     written = update(tree, edited)
     @test event(written, :onset_admit) == Gamma(5.0, 1.0)
 
-    # A role-less table (the existing `params_table` shape) is unaffected —
+    # A role-less table (the historical `params_table` shape) is unaffected —
     # every `test/composers/table_update.jl` case keeps passing unchanged.
-    plain = params_table(tree)
+    plain = _param_rows(tree)
     @test update(tree, plain) == tree
 end
 

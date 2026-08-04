@@ -406,9 +406,11 @@ end
 
 The centred pooled parameters' `(path, param, pool)` triples, in table order.
 
-Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
-construction time), so a tree with only non-centred (or no) pooling adds no
-per-evaluation cost. Reached by qualified name from outside this package —
+Collected from one `_ParamSink` walk (typically at `as_logdensity`
+construction time) — the same zero-extra-work parameter-only walk
+[`composed_to_table`](@ref) widens, run directly rather than through the full
+table, so a tree with only non-centred (or no) pooling adds no per-evaluation
+cost. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
 find the rows [`pool_centred_logprior`](@ref) needs to score (#212).
 
@@ -429,14 +431,12 @@ ComposedDistributions.centred_pool_rows(tree)
 - [`CentredPoolPrior`](@ref), [`pool_centred_logprior`](@ref)
 "
 function centred_pool_rows(dist)
-    tbl = params_table(dist)
-    prcol = Tables.getcolumn(tbl, :prior)
-    edges = Tables.getcolumn(tbl, :edge)
-    params_col = Tables.getcolumn(tbl, :param)
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), dist, ())
     rows = Tuple{Tuple, Symbol, Pool}[]
-    for i in eachindex(prcol)
-        prcol[i] isa CentredPoolPrior || continue
-        push!(rows, (_split_edge(edges[i]), params_col[i], prcol[i].pool))
+    for i in eachindex(s.prior)
+        s.prior[i] isa CentredPoolPrior || continue
+        push!(rows, (_split_edge(s.edge[i]), s.param[i], s.prior[i].pool))
     end
     return rows
 end

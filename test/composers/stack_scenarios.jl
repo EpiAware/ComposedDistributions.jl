@@ -10,6 +10,7 @@
 # bug (a wrong distribution, an unnormalised weight, a dropped step) fails.
 
 @testitem "Scenario: onset→admission→death continuous chain" tags = [:scenarios] begin
+    using ComposedDistributions: _param_rows
     using ComposedDistributions: update
     using Distributions, Random, Statistics
     using ForwardDiff
@@ -57,8 +58,8 @@
     @test var(od) ≈ var(chain)
     @test cdf(od, 5.0) ≈ count(<=(5.0), total) / N atol = 0.01
 
-    # params_table row count and labels.
-    tbl = params_table(chain)
+    # Parameter row count and labels.
+    tbl = _param_rows(chain)
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
     @test tbl.param == [:shape, :scale, :mu, :sigma]
 
@@ -84,6 +85,7 @@
 end
 
 @testitem "Scenario: independent parallel reporting branches" tags = [:scenarios] begin
+    using ComposedDistributions: _param_rows
     using Distributions, Random, Statistics
     using ForwardDiff
 
@@ -126,9 +128,9 @@ end
     @test mean(notify) ≈ m.notify atol = 0.05  # m.notify == 1.5
     @test var(hosp) ≈ v.hosp rtol = 0.06
 
-    # params_table names each branch with a dotted edge path; build_priors gives
-    # a prior per free parameter.
-    tbl = params_table(par)
+    # The parameter walk names each branch with a dotted edge path;
+    # build_priors gives a prior per free parameter.
+    tbl = _param_rows(par)
     @test tbl.edge == [Symbol("hosp.onset_admit"), Symbol("hosp.onset_admit"),
         Symbol("hosp.admit_disch"), Symbol("hosp.admit_disch"),
         :notify, :notify]
@@ -215,6 +217,7 @@ end
 end
 
 @testitem "Scenario: competing causes racing hazard (Compete)" tags = [:scenarios] begin
+    using ComposedDistributions: _param_rows
     using Distributions, Random, Statistics
     using ForwardDiff
 
@@ -248,8 +251,9 @@ end
     @test mean(mins) ≈ mean(comp) atol = 0.1       # mean(comp) ≈ 3.926
     @test var(mins) ≈ var(comp) rtol = 0.06        # var(comp) ≈ 5.458
 
-    # params_table lists only the cause-delay parameters (no free simplex).
-    tbl = params_table(comp)
+    # The parameter walk lists only the cause-delay parameters (no free
+    # simplex).
+    tbl = _param_rows(comp)
     @test tbl.edge == [:death, :death, :recover, :recover]
 
     # One ForwardDiff derivative of the marginal logpdf, finite.
@@ -290,9 +294,9 @@ end
     @test mean(total) ≈ mean(stack) atol = 0.08
     @test var(total) ≈ var(stack) rtol = 0.06
 
-    # params_table descends into the nested Resolve (delay params plus the
+    # composed_to_table descends into the nested Resolve (delay params plus the
     # branch-probability rows).
-    tbl = params_table(stack)
+    tbl = composed_to_table(stack)
     @test :onset_admit in tbl.edge
     @test Symbol("admit_out.death") in tbl.edge
     @test Symbol("admit_out.branch_probs") in tbl.edge
@@ -378,8 +382,8 @@ end
     @test isfinite(logpdf(deep, draw))
     @test logpdf(deep, draw) ≈ logpdf(deep, collect(values(draw)))
 
-    # params_table walks the full tree with dotted edge paths.
-    edges = params_table(deep).edge
+    # composed_to_table walks the full tree with dotted edge paths.
+    edges = composed_to_table(deep).edge
     @test :incubation in edges
     @test Symbol("branches.hosp.admit_disch") in edges
     @test Symbol("branches.fatal.death") in edges
@@ -450,7 +454,7 @@ end
 end
 
 @testitem "Scenario: shared incubation tied across two branches" tags = [:scenarios] begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions, Random
 
     # Story: two reporting branches that share ONE incubation period — tie makes
@@ -459,8 +463,8 @@ end
     d = compose((primary = Gamma(2.0, 1.0), secondary = Gamma(2.0, 1.0)))
     tied = tie(d, :primary, :secondary; name = :incubation)
 
-    # params_table dedups the tied leaves to one row-group under the tag.
-    @test unique(params_table(tied).edge) == [:incubation]
+    # The parameter walk dedups the tied leaves to one row-group under the tag.
+    @test unique(_param_rows(tied).edge) == [:incubation]
 
     # build_priors produces a single prior for the tied group.
     priors = param_priors(tied)

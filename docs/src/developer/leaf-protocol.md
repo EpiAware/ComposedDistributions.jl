@@ -6,7 +6,7 @@ Any `Distributions.jl` distribution is a valid leaf with no extra work, so a pla
 A wrapper leaf, a type that carries fixed structure or extra parameters around an inner delay (censoring in CensoredDistributions, the modifiers in ModifiedDistributions), implements the methods below so the introspection and reconstruction layers see through the wrapper to the inner free delay.
 
 The names are `public` but not exported, so a downstream package reaches them by the qualified name (`ComposedDistributions.free_leaf` and friends) and adds methods dispatching on its own wrapper type.
-Extending only `free_leaf` and `rewrap_leaf` is enough for a fixed-structure wrapper; a wrapper that attaches priors or owns extra parameters extends the rest so those reach `params_table` and `build_priors`.
+Extending only `free_leaf` and `rewrap_leaf` is enough for a fixed-structure wrapper; a wrapper that attaches priors or owns extra parameters extends the rest so those reach `composed_to_table` and `build_priors`.
 
 ## The methods
 
@@ -36,7 +36,7 @@ Names and reconstruction fix the coordinates the parameter table and the codec w
 
 ## Extra parameters
 
-Most wrappers carry only fixed structure, so their extra-parameter map is empty and `params_table` shows just the inner delay's rows.
+Most wrappers carry only fixed structure, so their extra-parameter map is empty and `composed_to_table`'s `:param` rows show just the inner delay's parameters.
 A wrapper that owns a free parameter which is not one of the inner delay's native parameters reports it through `extra_leaf_params`, a `NamedTuple` mapping each extra name to a `(value, support)` pair.
 The thinning factor of `thin(d, p)` is the first instance, reported as a `:thin` entry with support `(0.0, 1.0)`.
 The support drives the default prior, so a `:thin` factor picks up a `Uniform(0, 1)` default the same way a `branch_probs` row does.
@@ -72,7 +72,7 @@ rebuilt = ComposedDistributions.rewrap_leaf(
 3. Override `leaf_mean` and `leaf_var` only when the wrapper's transform changes the moment, as an affine scale and shift does.
 4. Implement `extra_leaf_params` and `set_extra_leaf_params` only when the wrapper owns a free parameter beyond the inner delay's native ones.
 5. Add a `leaf_detail_lines` method when the wrapper's raw struct dump would clutter an `inspect` tree.
-6. Register the wrapper with `register_leaf_wrapper!` (see below) so the generated flat-vector codec (`flat_dimension`/`unflatten`/`flatten`/`reconstruct`) sees through it too — steps 1-5 alone cover `params_table`/`build_priors`, but not the generated codec.
+6. Register the wrapper with `register_leaf_wrapper!` (see below) so the generated flat-vector codec (`flat_dimension`/`unflatten`/`flatten`/`reconstruct`) sees through it too — steps 1-5 alone cover `composed_to_table`/`build_priors`, but not the generated codec.
 
 The docstrings for each method, with runnable examples, are in the public API reference.
 

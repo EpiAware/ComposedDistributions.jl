@@ -244,7 +244,7 @@ end
 #
 # A `Convolved` / `Difference` node used as a leaf is a pre-formed composite
 # delay whose parameters *are* its components' parameters. The prior/params
-# interface sees through it to the component leaves: `params_table` inventories
+# interface sees through it to the component leaves: `composed_to_table` inventories
 # each component's scalar parameters under a `component_i` path segment (so a
 # two-Gamma `Convolved` at edge `:total` lists `total.component_1.shape`,
 # `total.component_1.scale`, `total.component_2.shape`, ...), and `update`

@@ -85,10 +85,12 @@ south_tied = instantiate(tied_template,
 (north_report = event(north_tied, :onset_report),
     south_report = event(south_tied, :onset_report))
 
-# [`params_table`](@ref) inventories the tied leaf once, under its tag, rather
-# than once per stratum.
+# [`composed_to_table`](@ref) inventories the tied leaf once, under its tag,
+# rather than once per stratum; filter its `role` column to `:param` for the
+# free-parameter-only rows.
 
-unique(params_table(north_tied).edge)
+tied_tbl = composed_to_table(north_tied);
+unique(tied_tbl.edge[tied_tbl.role .== :param])
 
 # ## Adding parameter uncertainty
 #
@@ -110,11 +112,14 @@ resolved = instantiate(est_template, Context(time = 5.0))
 
 (has_varying = has_varying(resolved), has_uncertain = has_uncertain(resolved))
 
-# [`params_table`](@ref) carries the uncertain parameter's prior on its `prior`
-# column, so [`build_priors`](@ref) picks it up with no separate override.
+# [`composed_to_table`](@ref) carries the uncertain parameter's prior on its
+# `prior` column, so [`build_priors`](@ref) picks it up with no separate
+# override.
 
-tbl = params_table(resolved)
-(edge = tbl.edge, param = tbl.param, prior = tbl.prior)
+tbl = composed_to_table(resolved)
+param_rows = tbl.role .== :param;
+(edge = tbl.edge[param_rows], param = tbl.param[param_rows],
+    prior = tbl.prior[param_rows])
 
 # Only `rand` reports the marginal: it draws the uncertain parameter from its
 # prior, rebuilds the leaf, then draws the record.
@@ -187,8 +192,9 @@ pooled = compose((
 # `exp(mu + sigma*z_k)`.
 # So `K = 3` strata estimate `2 + 3 = 5` parameters.
 
-pooled_table = params_table(pooled)
-(edge = pooled_table.edge, param = pooled_table.param)
+pooled_full = composed_to_table(pooled)
+pooled_rows = pooled_full.role .== :param;
+(edge = pooled_full.edge[pooled_rows], param = pooled_full.param[pooled_rows])
 
 # The estimated flat vector is `[mu, sigma, z_north, z_east, z_south]` — the same
 # layout a CensoredDistributions user hand-writes in a Turing `@model`
@@ -231,8 +237,9 @@ gamma_pool = compose((
 # - [`pool`](@ref) partially pools a parameter across the leaves of a group: each
 #   stratum's parameter is drawn from one shared, estimated population
 #   distribution, the middle of the pooling spectrum.
-# - An [`uncertain`](@ref) leaf carries a parameter's prior; [`params_table`](@ref)
-#   rides it on the `prior` column, `rand` draws the marginal, and
+# - An [`uncertain`](@ref) leaf carries a parameter's prior;
+#   [`composed_to_table`](@ref) rides it on the `prior` column, `rand` draws
+#   the marginal, and
 #   [`update`](@ref) collapses it to a concrete leaf, guarded by
 #   [`has_uncertain`](@ref).
 #

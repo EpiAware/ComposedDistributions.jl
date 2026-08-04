@@ -399,6 +399,6 @@ end
 # Backward-compatible internal alias (see `child_nleaves`).
 const _child_rand! = child_rand!
 
-# The recursive indented-tree printing and the `params`/`params_table` traversal
+# The recursive indented-tree printing and the `params`/`composed_to_table` traversal
 # share the hand-rolled, type-stable helpers defined in `introspection.jl`
 # (`_named_children`, `_show_children`, `_node_header`).

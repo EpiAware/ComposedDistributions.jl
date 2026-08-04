@@ -1,12 +1,13 @@
-# Codec/params_table ordering consistency (#192, the #190 review follow-up).
+# Codec/parameter-walk ordering consistency (#192, the #190 review follow-up).
 #
 # Three independent hand-maintained implementations of the same walk-order +
-# dedup rule exist: `_walk_rows!` (params_table, a runtime walk that COLLECTS
-# rows of DATA — edges, values, supports, priors — for a specific instance)
-# and `_unflatten_expr`/`_flatten_reads!` (the generated codec, a compile-time
-# walk that EMITS EXPRESSIONS over a TYPE). They agree today, but nothing
-# catches divergence, and DistributionsInference.jl's generic `as_turing`
-# (via its ComposedDistributions fit-protocol extension) zips `params_table`'s
+# dedup rule exist: `_walk_rows!` (the parameter-only `_ParamSink` walk, a
+# runtime walk that COLLECTS rows of DATA — edges, values, supports, priors —
+# for a specific instance) and `_unflatten_expr`/`_flatten_reads!` (the
+# generated codec, a compile-time walk that EMITS EXPRESSIONS over a TYPE).
+# They agree today, but nothing catches divergence, and
+# DistributionsInference.jl's generic `as_turing` (via its
+# ComposedDistributions fit-protocol extension) zips the parameter walk's
 # estimated rows against `flatten`'s flat vector index-for-index, assuming the
 # orderings coincide.
 #
@@ -16,8 +17,8 @@
 # this package, at a moment when #202 was independently rewriting
 # introspection.jl (merged since). This test is the fallback the issue offers
 # instead: it builds every composer/leaf shape the walk must handle and
-# asserts, for each, that feeding params_table's own current values (in table
-# order) through the codec (`reconstruct`) reproduces the SAME values — which
+# asserts, for each, that feeding the parameter walk's own current values (in
+# table order) through the codec (`reconstruct`) reproduces the SAME values — which
 # can only hold if table order and codec order are the same bijection onto
 # the tree's estimated parameters. A silent divergence (a reordering, a skip
 # that disagrees between the two walks) breaks this immediately. Pool's
@@ -45,31 +46,32 @@
 
 @testsnippet CodecConsistencyHelpers begin
     using Distributions
-    using ComposedDistributions: flat_dimension, reconstruct
+    using ComposedDistributions: flat_dimension, reconstruct, _param_rows
 
     # The shared check: table order and codec order name the SAME parameters.
-    # Feeding params_table's own current values (already domain-valid, since
-    # they came from a live instance) through `reconstruct`, in table order,
-    # must reproduce every row's value exactly — fixed rows untouched,
-    # estimated rows round-tripped. A table/codec order mismatch reassigns at
-    # least one parameter's value to the wrong leaf, which a tree built with
-    # distinct per-leaf values always surfaces as a changed row somewhere.
+    # Feeding the parameter-only walk's own current values (already
+    # domain-valid, since they came from a live instance) through
+    # `reconstruct`, in table order, must reproduce every row's value exactly
+    # — fixed rows untouched, estimated rows round-tripped. A table/codec
+    # order mismatch reassigns at least one parameter's value to the wrong
+    # leaf, which a tree built with distinct per-leaf values always surfaces
+    # as a changed row somewhere.
     function _assert_codec_matches_table(d)
-        table = params_table(d)
+        table = _param_rows(d)
         est = findall(!isnothing, table.prior)
         n = flat_dimension(d)
         n == length(est) || return (:length_mismatch, n, length(est))
         n == 0 && return :ok
         x = Float64.(collect(table.value[est]))
         rebuilt = reconstruct(d, x)
-        table2 = params_table(rebuilt)
+        table2 = _param_rows(rebuilt)
         all(isapprox.(collect(table2.value), collect(table.value); atol = 1e-10)) ||
             return (:value_mismatch, table.edge, table.value, table2.value)
         return :ok
     end
 end
 
-@testitem "codec/params_table order: Sequential and Parallel" setup=[
+@testitem "codec/parameter order: Sequential and Parallel" setup=[
     CodecConsistencyHelpers] begin
     seq = sequential(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
         uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
@@ -80,7 +82,7 @@ end
     @test _assert_codec_matches_table(par) == :ok
 end
 
-@testitem "codec/params_table order: Resolve (fixed probs)" setup=[
+@testitem "codec/parameter order: Resolve (fixed probs)" setup=[
     CodecConsistencyHelpers] begin
     # Dirichlet-uncertain branch_probs is deliberately NOT covered by this
     # generic check: reconstruct collapses it from K-1 estimated stick rows to
@@ -103,7 +105,7 @@ end
     @test _assert_codec_matches_table(withno) == :ok
 end
 
-@testitem "codec/params_table order: Compete and Choose" setup=[
+@testitem "codec/parameter order: Compete and Choose" setup=[
     CodecConsistencyHelpers] begin
     cmp = compete(:a => uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
         :b => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
@@ -114,7 +116,7 @@ end
     @test _assert_codec_matches_table(ch) == :ok
 end
 
-@testitem "codec/params_table order: Shared tie across branches" setup=[
+@testitem "codec/parameter order: Shared tie across branches" setup=[
     CodecConsistencyHelpers] begin
     tied = shared(:g, uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)))
     tree = compose((a = tied, b = tied,
@@ -122,7 +124,7 @@ end
     @test _assert_codec_matches_table(tree) == :ok
 end
 
-@testitem "codec/params_table order: Convolved/Difference leaves" setup=[
+@testitem "codec/parameter order: Convolved/Difference leaves" setup=[
     CodecConsistencyHelpers] begin
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   Difference, difference, product, Product,
@@ -143,7 +145,7 @@ end
     @test _assert_codec_matches_table(seq2) == :ok
 end
 
-@testitem "codec/params_table order: Truncated and Censored wrapper leaves" setup=[
+@testitem "codec/parameter order: Truncated and Censored wrapper leaves" setup=[
     CodecConsistencyHelpers] begin
     # Wrapper peeling (free_leaf/rewrap_leaf) is a distinct code path both
     # walks must agree on independently of plain leaves and composers — the
@@ -159,7 +161,7 @@ end
     @test _assert_codec_matches_table(tree) == :ok
 end
 
-@testitem "codec/params_table order: deeply nested mixed tree" setup=[
+@testitem "codec/parameter order: deeply nested mixed tree" setup=[
     CodecConsistencyHelpers] begin
     # A fixed-probs Resolve, not a Dirichlet-uncertain one, for the reason
     # given in the "Resolve (fixed probs)" testitem above.

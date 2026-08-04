@@ -7,7 +7,7 @@
 # count -- is a function of `typeof(d)` alone. This file walks that type once
 # per distinct concrete tree shape (inside `@generated` function bodies) and
 # emits code with the slot indices baked in as literals, replacing the old
-# runtime `Dict{Symbol, Any}` walk (`params_table` + `_nest_insert!` +
+# runtime `Dict{Symbol, Any}` walk (the `_ParamSink` walk + `_nest_insert!` +
 # `_freeze_tree`) that `unflatten` used to re-run on every call. That
 # Dict/`Any`-typed walk is #162's root cause (Enzyme's type analysis cannot
 # see through a `Dict{Symbol, Any}`/heap-boxed reconstruction); the generated
@@ -629,9 +629,10 @@ end
 The estimated parameter dimension of a composed distribution.
 
 `flat_dimension(d)` is the number of scalar estimated parameters: the count of
-[`uncertain`](@ref) specs across the tree, i.e. the [`params_table`](@ref) rows
-whose `prior` column carries a spec. A fixed (non-uncertain) leaf contributes
-nothing, so a tree with no uncertain leaves has flat dimension 0. It is the
+[`uncertain`](@ref) specs across the tree, i.e. the [`composed_to_table`](@ref)
+`:param` rows whose `prior` column carries a spec. A fixed (non-uncertain) leaf
+contributes nothing, so a tree with no uncertain leaves has flat dimension 0.
+It is the
 length of the flat vector [`flatten`](@ref) produces and [`unflatten`](@ref)
 consumes. Read straight off the same compile-time layout walk `unflatten` uses
 (a literal count baked in at generation time), so it cannot drift from the
@@ -811,10 +812,11 @@ end
 Flatten a nested parameter `NamedTuple` to the estimated flat vector.
 
 `flatten(d, nt)` reads `nt` (keyed like [`params`](@ref)`(d)`, the shape
-[`update`](@ref) consumes) at each estimated [`params_table`](@ref) row (an
-[`uncertain`](@ref) spec's parameter) and returns those values as a `Vector`,
-in table order restricted to the spec'd rows. A fixed parameter is not read. It
-is the inverse of [`unflatten`](@ref): `flatten(d, unflatten(d, x)) == x`.
+[`update`](@ref) consumes) at each estimated [`composed_to_table`](@ref)
+`:param` row (an [`uncertain`](@ref) spec's parameter) and returns those
+values as a `Vector`, in table order restricted to the spec'd rows. A fixed
+parameter is not read. It is the inverse of [`unflatten`](@ref): `flatten(d,
+unflatten(d, x)) == x`.
 
 Shares the same compile-time layout walk `unflatten` uses (a thin generated
 view over it), so the two cannot drift apart.

@@ -224,8 +224,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
         [2.0, 1.0], (Constant(obs),))
 
     # Shared-tag codec: the same uncertain template occurs twice under one
-    # `shared(:g, ...)` tag, so `params_table`/`unflatten` dedup it to one flat
-    # parameter and `update` places the drawn value in both occurrences. The
+    # `shared(:g, ...)` tag, so `composed_to_table`/`unflatten` dedup it to one
+    # flat parameter and `update` places the drawn value in both occurrences. The
     # reverse-mode gradient of that one parameter must accumulate from both
     # occurrences' likelihoods, the AD-critical path for tag dedup (#96/#146).
     # Driven through `unflatten`/`update` with a hand-written likelihood rather

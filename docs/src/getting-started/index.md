@@ -66,14 +66,14 @@ record = rand(Xoshiro(1), admission)
 logpdf(admission, record)
 ```
 
-Its free parameters read as a flat table, keyed by edge and parameter name;
+Its full structure reads as a flat table, keyed by edge and parameter name;
 `onset_admit`'s `mu` carries the uncertainty prior attached above (its
 reported value, `0.0`, is the `LogNormal` family's own default, which here
 also happens to be the prior's centre), and the death/discharge split shows
 up as its own `branch_probs` rows.
 
 ```@example overview
-params_table(admission)
+composed_to_table(admission)
 ```
 
 [`event`](@ref) fetches any node by its dotted path, so the death outcome's
