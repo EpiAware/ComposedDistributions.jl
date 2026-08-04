@@ -645,6 +645,53 @@ end
         rest)...)
 end
 
+# A `Pool`-noncentred entry's dual: after `_leaf_entry` builds the leaf's
+# `(native..., extra...)` NamedTuple, wrap whichever of its fields are
+# `Pool`-noncentred parameters in a `(z = value,)` sub-NamedTuple, by NAME
+# (`pool_names`, a `Val` of the noncentred spec'd names -- generation-time
+# information from `speckeys`/`specvaltypes` alone, no `leaf_param_names`
+# order needed). Kept as a separate pass over `_leaf_entry`'s own tested
+# 3-argument contract (introspection.jl, S1) rather than folded into it, since
+# `_leaf_entry` has no notion of `Pool` at all -- codec_gen.jl's
+# `_leaf_unflatten_expr` is the only caller that needs the wrap.
+function _wrap_pool_entries(
+        entry::NamedTuple{names}, ::Val{pool_names}) where {names, pool_names}
+    return NamedTuple{names}(_wrap_pool_vals(names, entry, pool_names))
+end
+
+@inline _wrap_pool_vals(::Tuple{}, ::NamedTuple, ::Tuple) = ()
+@inline function _wrap_pool_vals(
+        names::Tuple, entry::NamedTuple, pool_names::Tuple)
+    pname = names[1]
+    raw = getproperty(entry, pname)
+    v = pname in pool_names ? (z = raw,) : raw
+    return (v, _wrap_pool_vals(Base.tail(names), entry, pool_names)...)
+end
+
+# The read-direction counterpart of `_leaf_entry`/`_wrap_pool_entries`:
+# `flatten`'s leaf case. `entry` is the leaf's own already-`unflatten`ed
+# NamedTuple sub-tree (keyed by `leaf_param_names(leaf)`, native then extra);
+# this extracts the `speckeys`-named values back out, in `leaf_param_names`
+# order (`_leaf_entry`'s own substitution order, so the two stay inverse),
+# unwrapping a `Pool`-noncentred entry's `z` field the same way
+# `_wrap_pool_entries` wrapped it.
+function _leaf_flatten_values(leaf, ::Val{speckeys}, ::Val{pool_names},
+        entry::NamedTuple) where {speckeys, pool_names}
+    names = leaf_param_names(leaf)
+    return _leaf_extract(names, speckeys, pool_names, entry)
+end
+
+@inline _leaf_extract(::Tuple{}, ::Tuple, ::Tuple, ::NamedTuple) = ()
+@inline function _leaf_extract(names::Tuple, speckeys::Tuple,
+        pool_names::Tuple, entry::NamedTuple)
+    pname = names[1]
+    rest = _leaf_extract(Base.tail(names), speckeys, pool_names, entry)
+    pname in speckeys || return rest
+    raw = getproperty(entry, pname)
+    v = pname in pool_names ? raw.z : raw
+    return (v, rest...)
+end
+
 # --- params_table (hand-rolled pre-order walk) -----------------------------
 
 # A thin wrapper over the flat column table so `params_table(d)` prints as an

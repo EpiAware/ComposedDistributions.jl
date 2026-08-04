@@ -26,22 +26,19 @@
 # package's own former `turing_ext.jl`, #221/#233) already exercises it end
 # to end through real NUTS sampling and readback.
 #
-# `param_names` (introspection.jl) and `_param_names_of` (codec_gen.jl) were
-# the other duplicated piece the issue names. Unlike the two walks, these are
-# NOT safely mergeable: `param_names` is public API (`public.jl`), dispatched
-# on an INSTANCE, and designed for a downstream leaf-wrapper package to
-# override for its own type — a real extension point, not an internal detail.
-# `_param_names_of` dispatches on a TYPE because the generated codec builds a
-# NamedTuple whose keys must be compile-time literals, at a point
-# (macro-expansion) with no instance to call `param_names` on at all; this is
-# already documented in codec_gen.jl as a deliberate, ADDITIVE companion
-# ("the instance-based hooks are untouched... kept in lockstep"), not an
-# oversight. Making the runtime walk call `_param_names_of` instead would
-# silently drop a downstream package's `param_names` override; making
-# `param_names` itself type-dispatched would be a breaking change to a
-# published protocol no current package uses yet but could. Neither is mine to
-# do unilaterally, so this file adds the guard instead: a direct comparison of
-# the two tables for every family both cover.
+# `param_names` (introspection.jl) used to have a duplicated type-level
+# mirror, `_param_names_of` (codec_gen.jl), that this file guarded against
+# drifting apart from the instance-level original. Stage S3 of the
+# codec-generation plan removed the whole type-level leaf-protocol-companion
+# table `_param_names_of` belonged to (`_leaf_free_type`, `_extra_names_of`,
+# `_params_arity_of`, the load-order-independent registry, and their
+# `_leaf_type_param_names` combiner): the generated codec's leaf case now
+# calls the SAME instance-level hooks (`param_names`, `leaf_param_names`,
+# `leaf_param_values`) at runtime, from the returned generated code rather
+# than the generator (see `_leaf_entry`/`_leaf_flatten_values`,
+# introspection.jl, and the comments on `_leaf_unflatten_expr`/
+# `_leaf_flatten_reads!`, codec_gen.jl). With only one name table left, there
+# is nothing left for this file to compare it against.
 
 @testsnippet CodecConsistencyHelpers begin
     using Distributions
@@ -174,28 +171,4 @@ end
             :y => (Gamma(1.5, 1.0), 0.5)),
         also_tied = tied))
     @test _assert_codec_matches_table(nested) == :ok
-end
-
-@testitem "param_names / _param_names_of: the two name tables agree" begin
-    using Distributions
-    using ComposedDistributions: _param_names_of
-
-    # Every family both tables cover, compared directly — the instance- and
-    # type-dispatched hooks are structurally different (see the file header)
-    # so this equality check is the guard against them drifting apart, not a
-    # replacement for one calling the other.
-    cases = (
-        (Normal(0.0, 1.0), Normal),
-        (LogNormal(0.0, 1.0), LogNormal),
-        (Gamma(2.0, 1.0), Gamma),
-        (Weibull(2.0, 1.0), Weibull),
-        (Exponential(1.0), Exponential),
-        (Uniform(0.0, 1.0), Uniform))
-    for (inst, T) in cases
-        @test ComposedDistributions.param_names(inst) == _param_names_of(T)
-    end
-
-    # The unmapped-family fallback also agrees (both return an empty tuple).
-    @test ComposedDistributions.param_names(Poisson(3.0)) == () ==
-          _param_names_of(Poisson)
 end

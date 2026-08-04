@@ -283,3 +283,55 @@ end
         @test typeof(nt) == typeof(expected)
     end
 end
+
+# STAGE S3 of the codec-generation plan: `_leaf_unflatten_expr`/
+# `_leaf_flatten_reads!` no longer look up a leaf's estimable names/arity from
+# a type-level table (`_leaf_type_param_names` and the four companions it
+# combined, all removed) -- they resolve them at RUNTIME, from the leaf's own
+# INSTANCE-level `leaf_param_names`/`leaf_param_values` (introspection.jl),
+# exactly like `params_table`/`update` always have. This is the motivating
+# regression case that table could not handle without a bespoke override: a
+# leaf type whose `Distributions.params` are NOT its own struct fields 1:1 (a
+# moment-parameterised wrapper, mirroring `ReparameterisedDistributions`),
+# defining only the two INSTANCE hooks (`param_names`, `leaf_ctor`) the public
+# leaf protocol asks for -- no `_param_names_of`/`_params_arity_of`-shaped
+# override exists any more for it to need. Defined fresh here (after
+# `ComposedDistributions` is loaded, like a real downstream extension would),
+# to also stand in as the load-order check the old registry existed for.
+@testitem "codec: S3 runtime seam -- a leaf type whose params are not its own \
+    fields 1:1 round-trips with only param_names/leaf_ctor defined" begin
+    using ComposedDistributions: update
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    struct MomentLeaf <: Distributions.ContinuousUnivariateDistribution
+        vals::NTuple{2, Float64}
+    end
+    Distributions.params(m::MomentLeaf) = m.vals
+    Distributions.logpdf(m::MomentLeaf, x::Real) = logpdf(
+        LogNormal(log(m.vals[1]), 0.3), x)
+    Base.minimum(::MomentLeaf) = 0.0
+    Base.maximum(::MomentLeaf) = Inf
+    ComposedDistributions.param_names(::MomentLeaf) = (:mean, :sd)
+    ComposedDistributions.leaf_ctor(::MomentLeaf) = (a, b) -> MomentLeaf((a, b))
+
+    @test ComposedDistributions.leaf_param_names(MomentLeaf((8.0, 2.0))) ==
+          (:mean, :sd)
+
+    leaf = uncertain(MomentLeaf((8.0, 2.0)); mean = LogNormal(log(8.0), 0.2))
+    tree = compose((
+        m = leaf, other = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(0.0, 0.3))))
+    @test flat_dimension(tree) == 2
+
+    x = [9.0, 2.5]
+    nt = unflatten(tree, x)
+    @test nt == (m = (mean = 9.0, sd = 2.0), other = (shape = 2.5, scale = 1.0))
+    @test isconcretetype(typeof(nt))
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+    @test event(collapsed, :m) == MomentLeaf((9.0, 2.0))
+    @test event(collapsed, :other) == Gamma(2.5, 1.0)
+end
