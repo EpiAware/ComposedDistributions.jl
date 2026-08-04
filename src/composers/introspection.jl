@@ -408,9 +408,13 @@ around the rebuild).
 
 This is the reconstruction hook `_update_leaf` actually calls: `update`, the
 `unflatten` then `update` posterior read-back, `uncertain`'s pinning path, and
-a tied leaf's rebuild all go through it. The default composes
-[`leaf_ctor`](@ref) with the value tuple, `leaf_ctor(leaf)(vals...)`, so a
-native-family leaf needs no method here.
+a tied leaf's rebuild all go through it. The default peels one
+[`free_leaf`](@ref) layer at a time and recurses, so an override on the inner
+leaf is reached through any wrapper (`Truncated`, `Uncertain`, `Shared`, a
+censored or modified leaf), exactly like [`leaf_ctor`](@ref)'s own peeling.
+Once the leaf is its own free delay, the default composes `leaf_ctor` with the
+value tuple, `leaf_ctor(leaf)(vals...)`, so a native-family leaf needs no
+method here.
 
 A leaf type whose free parameters are not its native constructor arguments —
 a moment-parameterised wrapper reporting a mean and a standard deviation
@@ -418,7 +422,10 @@ rather than a shape and a scale, or a type carrying its family in a type
 parameter the bare constructor cannot infer positionally — overrides this
 directly instead of `leaf_ctor`. Unlike `leaf_ctor`, `rebuild_leaf` carries no
 egal-stability contract (see [`leaf_signature`](@ref) for that one): an
-ordinary method is enough, no callable struct required.
+ordinary method is enough, no callable struct required. Because the default
+peels down to the free delay before dispatching, such an override is honoured
+whether the leaf is used bare or under `truncated`, `uncertain`, `shared`, or
+any other wrapper.
 
 # Arguments
 - `leaf`: the leaf whose free delay is rebuilt.
@@ -437,7 +444,11 @@ ComposedDistributions.rebuild_leaf(Gamma(2.0, 1.0), (3.0, 1.5))
 - [`leaf_signature`](@ref): the tie-identity pairing, kept separate from
   reconstruction.
 "
-rebuild_leaf(leaf, vals::Tuple) = leaf_ctor(leaf)(vals...)
+function rebuild_leaf(leaf, vals::Tuple)
+    inner = free_leaf(leaf)
+    inner === leaf && return leaf_ctor(leaf)(vals...)
+    return rebuild_leaf(inner, vals)
+end
 
 @doc raw"
 
@@ -643,7 +654,11 @@ const _leaf_param_names = leaf_param_names
 The `(constructor, parameter-names)` signature [`tie`](@ref) groups leaves by:
 tied leaves become one free parameter, so they must share a rebuild and a
 parameter structure. The default pairs [`leaf_ctor`](@ref) with
-[`leaf_param_names`](@ref).
+[`leaf_param_names`](@ref), peeling one [`free_leaf`](@ref) layer at a time so
+the constructor half is read from the inner leaf's own signature (honouring an
+override there) while the parameter-names half stays the outer leaf's
+[`leaf_param_names`](@ref) — a wrapper's own name set, including any
+[`extra_leaf_params`](@ref) it adds, which a naive full peel would drop.
 
 An override must return an **egal-stable** value: two structurally identical
 leaves must return `==`-equal signatures, since a tie compares them. In
@@ -671,7 +686,11 @@ ComposedDistributions.leaf_signature(Gamma(2.0, 1.0))
   non-native leaf's signature is built from, or replaces.
 - [`tie`](@ref): the leaf-grouping verb keyed on this signature.
 "
-leaf_signature(leaf) = (leaf_ctor(leaf), leaf_param_names(leaf))
+function leaf_signature(leaf)
+    inner = free_leaf(leaf)
+    fam = inner === leaf ? leaf_ctor(leaf) : first(leaf_signature(inner))
+    return (fam, leaf_param_names(leaf))
+end
 
 # The values matching `leaf_param_names(leaf)` positionally: the free delay's
 # native `params`, then each `extra_leaf_params` value, in the same order

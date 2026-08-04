@@ -1208,3 +1208,92 @@ end
     tied = tie(twin, :a, :b; name = :g)
     @test unique(params_table(tied).edge) == [:g]
 end
+
+@testitem "rebuild_leaf and leaf_signature peel wrapper layers" begin
+    using ComposedDistributions: update
+    using Distributions
+    using ComposedDistributions
+
+    # Same family-in-a-type-parameter shape as the sibling testitem, but
+    # exercised through `truncated`/`uncertain` wrappers. `_update_leaf` is
+    # always called with the OUTER leaf, so `rebuild_leaf`'s default must peel
+    # to the leaf that carries the override, rather than re-entering
+    # `leaf_ctor`'s (unrelated) default peeling.
+    struct WrapFamLeaf{D} <: ContinuousUnivariateDistribution
+        a::Float64
+        b::Float64
+    end
+
+    native(d::WrapFamLeaf{Gamma}) = Gamma(d.a, d.b)
+
+    Distributions.params(d::WrapFamLeaf) = (d.a, d.b)
+    Distributions.logpdf(d::WrapFamLeaf, x::Real) = logpdf(native(d), x)
+    Distributions.cdf(d::WrapFamLeaf, x::Real) = cdf(native(d), x)
+    Distributions.quantile(d::WrapFamLeaf, q::Real) = quantile(native(d), q)
+    Base.minimum(::WrapFamLeaf) = 0.0
+    Base.maximum(::WrapFamLeaf) = Inf
+
+    function ComposedDistributions.rebuild_leaf(::WrapFamLeaf{D},
+            vals::Tuple) where {D}
+        return WrapFamLeaf{D}(vals[1], vals[2])
+    end
+
+    leaf = WrapFamLeaf{Gamma}(2.0, 1.0)
+
+    # `update` through `truncated`: without peeling, `rebuild_leaf` falls
+    # back to `leaf_ctor(leaf)(vals...)`, which re-enters the default
+    # `leaf_ctor` recursion and tries to call the bare `WrapFamLeaf`
+    # positionally -- a `MethodError`, since `D` is not implied by the values.
+    trunc_tree = sequential(:onset_admit => truncated(leaf; upper = 10.0),
+        :admit_death => Gamma(2.0, 1.0))
+    trunc_bumped = update(trunc_tree,
+        (onset_admit = (param_1 = 3.0, param_2 = 1.5),
+            admit_death = (shape = 2.0, scale = 1.0)))
+    @test params(ComposedDistributions.free_leaf(
+        event(trunc_bumped, :onset_admit))) == (3.0, 1.5)
+
+    # `reconstruct` on an `uncertain`-wrapped leaf: the fitting path this
+    # split exists to unblock (RD#25).
+    unc_tree = sequential(
+        :onset_admit => uncertain(leaf;
+            param_1 = LogNormal(log(2.0), 0.2)),
+        :admit_death => Gamma(2.0, 1.0))
+    unc_rebuilt = ComposedDistributions.reconstruct(unc_tree, [3.0])
+    @test params(event(unc_rebuilt, :onset_admit)) == (3.0, 1.0)
+
+    # `leaf_signature`'s default has the same peel-through requirement: an
+    # override on the inner leaf must still be consulted through a wrapper, so
+    # a `tie` that is rejected unwrapped is rejected the same way wrapped.
+    # The family half is routed through the inner leaf's own signature; the
+    # parameter-name half stays the OUTER leaf's `leaf_param_names`, so a
+    # modifier wrapper's `extra_leaf_params` names are not silently dropped.
+    struct SigLeaf <: ContinuousUnivariateDistribution
+        a::Float64
+        variant::Symbol
+    end
+    Distributions.params(d::SigLeaf) = (d.a,)
+    Distributions.logpdf(d::SigLeaf, x::Real) = logpdf(Normal(d.a, 1.0), x)
+    Distributions.cdf(d::SigLeaf, x::Real) = cdf(Normal(d.a, 1.0), x)
+    Distributions.quantile(d::SigLeaf, q::Real) = quantile(Normal(d.a, 1.0), q)
+    Base.minimum(::SigLeaf) = -Inf
+    Base.maximum(::SigLeaf) = Inf
+
+    # The identity half depends on `variant`, not `a`: two `SigLeaf`s of the
+    # same Julia type, with different field values, can still be
+    # parameter-incompatible, and the default `(leaf_ctor(leaf),
+    # leaf_param_names(leaf))` signature (same type, same names) could not
+    # tell them apart. This is the genuine delegation test: if `tie` stopped
+    # calling `leaf_signature` (e.g. `_tie_signature` reverted to computing
+    # `leaf_ctor`/`leaf_param_names` directly), this override would never be
+    # consulted and both calls below would wrongly succeed.
+    ComposedDistributions.leaf_signature(d::SigLeaf) = (
+        d.variant, ComposedDistributions.leaf_param_names(d))
+
+    bare_tree = sequential(:a => SigLeaf(1.0, :left),
+        :b => SigLeaf(1.0, :right))
+    @test_throws ArgumentError tie(bare_tree, :a, :b; name = :g)
+
+    wrapped_tree = sequential(:a => truncated(SigLeaf(1.0, :left); upper = 5.0),
+        :b => truncated(SigLeaf(1.0, :right); upper = 5.0))
+    @test_throws ArgumentError tie(wrapped_tree, :a, :b; name = :g)
+end
