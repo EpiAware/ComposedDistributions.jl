@@ -278,9 +278,8 @@ end
     end
 
     for (tree, x, expected) in cases
-        nt = unflatten(tree, x)
+        nt = @inferred unflatten(tree, x)
         @test nt == expected
-        @test isconcretetype(typeof(nt))
         @test typeof(nt) == typeof(expected)
     end
 end
