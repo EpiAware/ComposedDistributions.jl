@@ -30,8 +30,8 @@
     @test !has_uncertain(event(utree, :tail))
 end
 
-@testitem "branch_probs: params_table emits stick rows with Beta priors" begin
-    using ComposedDistributions: update
+@testitem "branch_probs: parameter walk emits stick rows with Beta priors" begin
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -41,7 +41,7 @@ end
         :recover => Gamma(1.0, 1.0))
     ur = update(r, (branch_probs = Dirichlet([1.0, 1.0, 1.0]),))
 
-    tbl = params_table(ur)
+    tbl = _param_rows(ur)
     stick = findall(==(:branch_probs), tbl.edge)
     @test length(stick) == 2
     @test tbl.param[stick] == [:stick_1, :stick_2]
@@ -60,7 +60,7 @@ end
 
     # A fixed Resolve contributes no estimated stick rows.
     @test flat_dimension(r) == 0
-    ptbl = params_table(r)
+    ptbl = _param_rows(r)
     @test !any(==(:stick_1), ptbl.param)
 end
 
@@ -97,7 +97,7 @@ end
 end
 
 @testitem "branch_probs: stick Betas reproduce the Dirichlet" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions, Random, Statistics
     using ComposedDistributions: unflatten
 
@@ -108,7 +108,7 @@ end
         :d => Gamma(1.0, 1.0))
     ur = update(r, (branch_probs = Dirichlet(alpha),))
 
-    tbl = params_table(ur)
+    tbl = _param_rows(ur)
     stick = findall(==(:branch_probs), tbl.edge)
     betas = tbl.prior[stick]
 
@@ -127,7 +127,7 @@ end
 end
 
 @testitem "branch_probs: promote attaches a flat Dirichlet" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -142,7 +142,7 @@ end
     @test flat_dimension(promoted) == 5
 
     # The attached branch-prob prior is the flat Dirichlet.
-    tbl = params_table(promoted)
+    tbl = _param_rows(promoted)
     stick = findall(i -> tbl.edge[i] == Symbol("resolution.branch_probs"),
         eachindex(tbl.edge))
     @test length(stick) == 1
@@ -150,7 +150,7 @@ end
 end
 
 @testitem "Compete has no node-level free parameter" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -158,7 +158,7 @@ end
     # not a free parameter, so it has no branch-probability row and promote adds
     # only the causes' own delay parameters.
     c = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
-    tbl = params_table(c)
+    tbl = _param_rows(c)
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:stick_1), tbl.param)
 
@@ -168,7 +168,7 @@ end
 end
 
 @testitem "Choose selector is data, not a parameter" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
@@ -176,7 +176,7 @@ end
     # node-level free weight parameter; only the alternatives' own params are
     # estimated.
     ch = choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(3.0, 1.5))
-    tbl = params_table(ch)
+    tbl = _param_rows(ch)
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:weights), tbl.param)
 
@@ -185,7 +185,7 @@ end
 end
 
 @testitem "branch_probs: promote across a mixed tree with a composite leaf" begin
-    using ComposedDistributions: update
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   Difference, difference, product, Product,
@@ -208,7 +208,7 @@ end
 
     @test has_uncertain(promoted)
     @test has_uncertain(event(promoted, :resolution))
-    tbl = params_table(promoted)
+    tbl = _param_rows(promoted)
     # The Resolve contributes exactly one stick coordinate (K = 2).
     @test count(==(Symbol("resolution.branch_probs")), tbl.edge) == 1
     # The composite's components are still inventoried and now estimated.

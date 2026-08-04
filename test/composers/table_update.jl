@@ -3,7 +3,7 @@
 # DistributionsInference-shaped (dotted-`name`) row table (CD#195/DI#20
 # design pass).
 
-@testitem "update(tree, table): params_table round-trips and edits" begin
+@testitem "update(tree, table): composed_to_table round-trips and edits" begin
     using ComposedDistributions: update
     using Distributions, Tables
 
@@ -11,7 +11,7 @@
         admit_death = LogNormal(0.5, 0.4)))
 
     # A no-op round trip: every `value` re-applied.
-    tbl = params_table(tree)
+    tbl = composed_to_table(tree)
     @test update(tree, tbl) == tree
 
     # Editing a `value` and bulk-writing it back is a concrete change.
@@ -70,9 +70,9 @@ end
     # The round trip the `update` docstring shows first must not throw and must
     # reproduce the tree exactly: the uncertain leaf keeps its prior, the fixed
     # `Resolve` keeps its concrete probabilities.
-    @test update(tree, params_table(tree)) == tree
-    @test has_uncertain(update(tree, params_table(tree)))
-    @test probs(event(update(tree, params_table(tree)),
+    @test update(tree, composed_to_table(tree)) == tree
+    @test has_uncertain(update(tree, composed_to_table(tree)))
+    @test probs(event(update(tree, composed_to_table(tree)),
         :clinical, :admit_resolve)) == (death = 0.3, discharge = 0.7)
 end
 

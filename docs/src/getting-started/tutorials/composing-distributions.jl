@@ -18,7 +18,7 @@
 #    [`Resolve`](@ref), [`Compete`](@ref), [`Choose`](@ref)) and see how they
 #    nest.
 # 3. Score and simulate from one composed object.
-# 4. Attach parameters and priors with [`params_table`](@ref) and
+# 4. Attach parameters and priors with [`composed_to_table`](@ref) and
 #    [`build_priors`](@ref).
 # 5. Edit an assembled tree with [`update`](@ref), [`prune`](@ref) and
 #    [`splice`](@ref).
@@ -248,26 +248,33 @@ collapsed = observed_distribution(chain_moments);
 
 # ## Parameters and priors
 #
-# A composed distribution carries a flat inventory of its free parameters.
-# [`params_table`](@ref) lists one row per scalar parameter, keyed by the edge
-# path and the parameter name, with the support a prior must respect.
-# It prints as a table and is a Tables.jl source, so `tbl.edge` / `tbl.param`
-# read its columns.
+# A composed distribution carries a flat inventory of its full structure.
+# [`composed_to_table`](@ref) lists one row per composer node, leaf layer,
+# fixed-structure attribute and scalar parameter, keyed by the edge path and
+# the parameter name, with the support a prior must respect. It prints as a
+# table and is a Tables.jl source, so `tbl.edge` / `tbl.param` read its
+# columns; `tbl.role` distinguishes `:node`, `:attribute` and `:param` rows.
 
 template = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)));
 
-tbl = params_table(template)
+tbl = composed_to_table(template)
 
 # Its columns are accessed by name.
 
 tbl.edge, tbl.param
 
+# The free-parameter-only view is a filter on `role`, a plain Julia one-liner
+# over the columns (no extra dependency needed).
+
+param_idx = tbl.role .== :param;
+tbl.edge[param_idx], tbl.param[param_idx]
+
 # [`build_priors`](@ref) takes that table (any Tables.jl source with `edge`,
-# `param`, `value`, `support` columns) and derives a default prior per row from
-# that leaf's support: a positive scale parameter gets a positive-truncated
-# prior, a location parameter an unbounded one, a `[0, 1]` probability a
-# `Uniform(0, 1)`.
+# `param`, `value`, `support` columns, optionally a `role` column) and derives
+# a default prior per `:param` row from that leaf's support: a positive scale
+# parameter gets a positive-truncated prior, a location parameter an
+# unbounded one, a `[0, 1]` probability a `Uniform(0, 1)`.
 # So `build_priors(tbl)` alone yields a complete set, defined against the table
 # rather than by hand-matching the tree.
 
@@ -321,14 +328,15 @@ spliced = splice(template, :admit_death;
 event_names(event(spliced, :admit_death))
 
 # [`tie`](@ref) links leaves at several paths into one free parameter group, so
-# [`params_table`](@ref) inventories the tied occurrences once under the shared
-# tag rather than as separate parameters.
+# [`composed_to_table`](@ref) inventories the tied occurrences once under the
+# shared tag rather than as separate parameters.
 
 shared_rate = compose((a = Gamma(2.0, 1.0), b = Gamma(2.0, 1.0)));
 
 tied = tie(shared_rate, :a, :b; name = :rate);
 
-unique(params_table(tied).edge)
+tied_tbl = composed_to_table(tied);
+unique(tied_tbl.edge[tied_tbl.role .== :param])
 
 # ## Syntax reference
 #
@@ -356,7 +364,7 @@ unique(params_table(tied).edge)
 # | `event_tree(d)` | the nested tree of event names | read |
 # | `event_names(d)` | the per-record key names | read |
 # | `observed_distribution(d)` | collapse a chain to its convolved total | read |
-# | `params_table(d)` | the flat free-parameter inventory | read |
+# | `composed_to_table(d)` | the full node/attribute/parameter inventory; filter `role == :param` for parameters only | read |
 #
 # The address `path` in `event` / `update` / `prune` / `splice` / `tie` is the
 # same in all: a bare `Symbol`, a dotted `Symbol` (`:a.b`), or a tuple of edge
@@ -381,7 +389,7 @@ unique(params_table(tied).edge)
 #   delays algebraically.
 # - `mean` and `var` read the composed marginal moments, and
 #   [`observed_distribution`](@ref) collapses a chain to its convolved total.
-# - [`params_table`](@ref) and [`build_priors`](@ref) attach parameters and
+# - [`composed_to_table`](@ref) and [`build_priors`](@ref) attach parameters and
 #   support-derived priors to the same object.
 # - [`update`](@ref) edits the tree: `path => new_node` replaces nodes keeping
 #   the shape, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,

@@ -7,8 +7,8 @@ independent branches ([`Parallel`](@ref)), fixed-probability or racing one_of
 outcomes ([`Resolve`](@ref) / [`Compete`](@ref)) and data-selected disjunctions
 ([`Choose`](@ref)); the [`compose`](@ref) front-end lowers a NamedTuple, a
 Tables.jl table, or a nested matrix to the same stack. Read the structure with
-[`params_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), build priors
-with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
+[`composed_to_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), build
+priors with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
 [`prune`](@ref) / [`splice`](@ref). Attach parameter uncertainty with
 [`uncertain`](@ref) (parameters that are themselves distributions, nestable):
 `rand` draws the marginal, and [`update`](@ref) collapses an uncertain leaf to
@@ -25,9 +25,9 @@ censoring: this is the generic composition layer.
 ```@example
 using ComposedDistributions, Distributions
 
-# A two-step delay chain, then its parameter table.
+# A two-step delay chain, then its structural table.
 tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
-params_table(tree)
+composed_to_table(tree)
 ```
 """
 module ComposedDistributions
@@ -134,7 +134,7 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # packages have their own `update`-shaped verb, and exporting it risks the
 # same ambiguous-binding clash #233 hit with `as_turing` when two packages
 # both export a same-named generic (#221).
-export params_table, composed_to_table, event_names, event_tree, event,
+export composed_to_table, event_names, event_tree, event,
        build_priors, default_prior, param_priors, inspect,
        reserved_record_fields
 
@@ -214,8 +214,9 @@ include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
 # ConvolvedDistributions interop (vector convolution, difference, composite
-# leaves): after observed.jl (the collapse), introspection.jl (the params_table
-# / update walks it extends to see through a composite leaf) and Uncertain.jl
+# leaves): after observed.jl (the collapse), introspection.jl (the
+# composed_to_table / update walks it extends to see through a composite leaf)
+# and Uncertain.jl
 # (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")
 # Distribution-level elapsed-distance accessors over a named chain: after
