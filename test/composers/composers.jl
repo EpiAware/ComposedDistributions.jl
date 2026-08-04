@@ -1145,3 +1145,66 @@ end
         admit_death = (shape = 2.0, scale = 1.0)))
     @test params(collapsed).onset_admit == (9.0, 2.5)
 end
+
+@testitem "rebuild_leaf: reconstruction split from tie identity" begin
+    using ComposedDistributions: update
+    using Distributions
+    using ComposedDistributions
+
+    # A family-in-a-type-parameter leaf, `leaf_ctor`'s motivating shape: the
+    # bare UnionAll cannot rebuild positionally, since `D` is not implied by
+    # the field values. `rebuild_leaf` is an ordinary method with no
+    # egal-stability contract, so overriding only it (not `leaf_ctor`) is
+    # enough to make the leaf reconstructible.
+    struct FamLeaf{D} <: ContinuousUnivariateDistribution
+        a::Float64
+        b::Float64
+    end
+
+    native(d::FamLeaf{Gamma}) = Gamma(d.a, d.b)
+
+    Distributions.params(d::FamLeaf) = (d.a, d.b)
+    Distributions.logpdf(d::FamLeaf, x::Real) = logpdf(native(d), x)
+    Distributions.cdf(d::FamLeaf, x::Real) = cdf(native(d), x)
+    Distributions.quantile(d::FamLeaf, q::Real) = quantile(native(d), q)
+    Base.minimum(::FamLeaf) = 0.0
+    Base.maximum(::FamLeaf) = Inf
+
+    function ComposedDistributions.rebuild_leaf(::FamLeaf{D},
+            vals::Tuple) where {D}
+        return FamLeaf{D}(vals[1], vals[2])
+    end
+
+    # Why the hook is needed: `D` isn't implied by the field values, so the
+    # bare UnionAll cannot be called positionally.
+    @test_throws MethodError FamLeaf(2.0, 1.0)
+
+    leaf = FamLeaf{Gamma}(2.0, 1.0)
+    tree = sequential(:onset_admit => leaf, :admit_death => Gamma(2.0, 1.0))
+
+    # `update` rebuilds through `rebuild_leaf`, not the default `leaf_ctor`
+    # (which would MethodError on the bare UnionAll).
+    bumped = update(tree,
+        (onset_admit = (param_1 = 3.0, param_2 = 1.5),
+            admit_death = (shape = 2.0, scale = 1.0)))
+    @test params(event(bumped, :onset_admit)) == (3.0, 1.5)
+
+    # `reconstruct` composes `unflatten` then `update` (this change touches
+    # nothing in codec_gen.jl), so it inherits the same split: an unrelated
+    # leaf carries the one estimated parameter, and the fixed `FamLeaf` still
+    # has to round-trip through `rebuild_leaf` on every collapse.
+    tree2 = sequential(:onset_admit => leaf,
+        :admit_death => uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)))
+    rebuilt = ComposedDistributions.reconstruct(tree2, [3.0])
+    @test params(event(rebuilt, :onset_admit)) == params(leaf)
+    @test params(event(rebuilt, :admit_death)) == (3.0, 1.0)
+
+    # `leaf_signature` -- not `leaf_ctor` -- is what `tie` now groups by; its
+    # default (`(leaf_ctor(leaf), leaf_param_names(leaf))`) is unchanged, so
+    # two structurally identical leaves still tie into one group.
+    twin = sequential(:a => FamLeaf{Gamma}(2.0, 1.0),
+        :b => FamLeaf{Gamma}(2.0, 1.0))
+    tied = tie(twin, :a, :b; name = :g)
+    @test unique(params_table(tied).edge) == [:g]
+end
