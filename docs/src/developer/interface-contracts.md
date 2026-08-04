@@ -114,6 +114,7 @@ A composed tree exposes its structure through name introspection, and every buil
 - [`event_tree`](@ref) — the same names as a nested record;
 - [`event`](@ref) — fetch a child or descend a name path;
 - [`params_table`](@ref) — the free parameters flattened to a Tables.jl table, one row per parameter.
+- [`composed_to_table`](@ref) — the full node/attribute/parameter inventory `params_table` projects from (one row per composer node, leaf wrapper layer, fixed-structure attribute and free parameter); a composed distribution is itself a Tables.jl source over this table.
 
 ```julia
 using ComposedDistributions, Distributions
@@ -124,6 +125,7 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 component_names(tree)          # (:onset_admit, :admit_death)
 event(tree, :onset_admit)      # Gamma(2.0, 1.0)
 params_table(tree)             # a Tables.jl table of the free parameters
+composed_to_table(tree)        # the full node/attribute/param table
 ```
 
 ## The leaf-wrapper contract
