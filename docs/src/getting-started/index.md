@@ -105,6 +105,26 @@ than pinning it by hand — is DistributionsInference.jl's job; see its
 [inference guide](https://distributionsinference.epiaware.org/dev/getting-started/inference)
 for the full walkthrough.
 
+## Two spellings for named children
+
+Every composer above names its children two equivalent ways: `name => dist`
+arrow pairs, or a single positional named tuple `(name = dist, …)`. Both
+spellings lower to the same pairs and build the identical node.
+
+```@example spellings
+using ComposedDistributions, Distributions
+
+arrow = sequential(:onset_admit => Gamma(2.0, 1.0),
+    :admit_death => LogNormal(0.5, 0.4))
+equals = sequential((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+arrow == equals
+```
+
+Use the equals form for hand-written, fixed names, and the arrow form for
+data-driven or computed names (a `Symbol` built programmatically). The same
+pairing holds for `parallel`, `resolve`, `compete` and `choose`.
+
 ## Uncertain distributions
 
 A literature-reported delay rarely comes with exact parameters. Write the
