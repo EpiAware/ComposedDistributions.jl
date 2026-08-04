@@ -148,6 +148,41 @@ end
     end
 end
 
+@testitem "params_table: leaf hot path never calls leaf_layers" begin
+    using Distributions
+
+    # A leaf-wrapper that counts `leaf_layers` calls on itself, so the
+    # AD-hot-path anti-regression (`params_table` must not build OR iterate a
+    # leaf's `leaf_layers` tuple, not merely discard the rows it would
+    # produce) is a directly observable assertion rather than an inferred
+    # absence of `:node`/`:attribute` rows.
+    mutable struct CountingLeaf{D <: UnivariateDistribution} <:
+                   ContinuousUnivariateDistribution
+        dist::D
+        calls::Int
+    end
+    CountingLeaf(dist) = CountingLeaf(dist, 0)
+    function ComposedDistributions.free_leaf(d::CountingLeaf)
+        return ComposedDistributions.free_leaf(d.dist)
+    end
+    function ComposedDistributions.rewrap_leaf(d::CountingLeaf, inner)
+        return CountingLeaf(ComposedDistributions.rewrap_leaf(d.dist, inner))
+    end
+    function ComposedDistributions.leaf_layers(d::CountingLeaf)
+        d.calls += 1
+        return (d,)
+    end
+
+    leaf = CountingLeaf(Gamma(2.0, 1.0))
+    tree = compose((onset = leaf,))
+
+    params_table(tree)
+    @test leaf.calls == 0
+
+    composed_to_table(tree)
+    @test leaf.calls > 0
+end
+
 @testitem "composed_to_table: structure is now recoverable" begin
     using Distributions
 

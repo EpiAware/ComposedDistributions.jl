@@ -909,6 +909,21 @@ function _push_attr_rows!(sink, edge::Symbol, node::Symbol, attrs::NamedTuple)
     return nothing
 end
 
+# A leaf's `:node`/`:attribute` rows, one pair per `leaf_layers(leaf)` layer.
+# A no-op on `_ParamSink`: `leaf_layers` peels a leaf-wrapper stack (e.g.
+# `Truncated`) that only the full table shows, so `params_table`'s hot path
+# must not build or iterate it at all, not just discard the rows it would
+# produce.
+@inline _emit_layers!(::_ParamSink, ::Symbol, leaf) = nothing
+function _emit_layers!(sink::_FullSink, edge_path::Symbol, leaf)
+    for layer in leaf_layers(leaf)
+        kind = node_kind(layer)
+        _push_node!(sink, edge_path, kind)
+        _push_attr_rows!(sink, edge_path, kind, node_attributes(layer))
+    end
+    return nothing
+end
+
 # --- params_table (hand-rolled pre-order walk) -----------------------------
 
 # A thin wrapper over the flat column table so `params_table(d)` prints as an
@@ -1266,11 +1281,7 @@ end
 # attached prior up without an explicit override.
 function _walk_rows!(sink, seen, leaf, path)
     edge_path = _join_path(path)
-    for layer in leaf_layers(leaf)
-        kind = node_kind(layer)
-        _push_node!(sink, edge_path, kind)
-        _push_attr_rows!(sink, edge_path, kind, node_attributes(layer))
-    end
+    _emit_layers!(sink, edge_path, leaf)
     tag = _shared_tag(leaf)
     tag !== nothing && tag in seen && return nothing
     inner = free_leaf(leaf)
