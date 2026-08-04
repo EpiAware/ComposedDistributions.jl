@@ -89,6 +89,111 @@ end
     @test logpdf(tree, tbl) ≈ sum(logpdf(tree, r) for r in rows)
 end
 
+@testitem "rand(d, n): Choose batches from kind, or tags kind-less draws" begin
+    using ComposedDistributions: choose
+    using Distributions, Random
+
+    d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+
+    # With `kind`, the batch draws directly from that alternative — the
+    # alternative's own `rand(rng, dist, n)` — mirroring the single-draw
+    # committed-selection path (no selector tag needed).
+    xs = rand(Xoshiro(1), d, 5; kind = :short)
+    @test xs isa Vector{Float64}
+    @test length(xs) == 5
+    @test all(isfinite, logpdf(d, x; kind = :short) for x in xs)
+
+    # Without `kind`, each draw is its own self-describing tagged record
+    # (mirroring the single-draw forward-simulation path), and each
+    # round-trips through `logpdf` with no extra argument.
+    records = rand(Xoshiro(2), d, 6)
+    @test records isa Vector
+    @test length(records) == 6
+    @test all(r -> r.kind in (:short, :long), records)
+    @test all(r -> isfinite(logpdf(d, r)), records)
+
+    # The rng-less form threads the default RNG, both with and without `kind`.
+    Random.seed!(20260803)
+    a = rand(d, 4; kind = :long)
+    Random.seed!(20260803)
+    b = rand(d, 4; kind = :long)
+    @test a == b
+
+    Random.seed!(20260803)
+    c = rand(d, 4)
+    Random.seed!(20260803)
+    e = rand(d, 4)
+    @test c == e
+end
+
+@testitem "rand(d, n): Choose batches round-trip through logpdf" begin
+    using ComposedDistributions: choose, sequential
+    using Distributions, Random
+
+    s = sequential(:a => Gamma(2.0, 1.0), :b => Gamma(3.0, 1.0))
+    d = choose(:leaf => Gamma(2.0, 1.0), :nested => s)
+
+    # Kind-less: a Vector of self-describing records scores as one batch,
+    # equal to summing the per-record scores.
+    records = rand(Xoshiro(8), d, 4)
+    @test logpdf(d, records) isa Real
+    @test logpdf(d, records) ≈ sum(logpdf(d, r) for r in records)
+
+    # Kind = leaf alternative: a Vector of scalars is the batch, so the score
+    # is the summed scalar, not the element-wise vector the flat single-record
+    # method would give.
+    xs = rand(Xoshiro(1), d, 5; kind = :leaf)
+    @test xs isa Vector{Float64}
+    @test logpdf(d, xs; kind = :leaf) isa Real
+    @test logpdf(d, xs; kind = :leaf) ≈
+          sum(logpdf(Gamma(2.0, 1.0), x) for x in xs)
+
+    # Kind = composer alternative: the column table scores through that
+    # alternative's own batch logpdf.
+    tbl = rand(Xoshiro(7), d, 3; kind = :nested)
+    @test logpdf(d, tbl; kind = :nested) ≈ logpdf(s, tbl)
+    # a Vector of that alternative's records takes the same route
+    rows = [(a = 1.0, b = 2.0), (a = 1.5, b = 2.5)]
+    @test logpdf(d, rows; kind = :nested) ≈ logpdf(s, rows)
+
+    # A flat vector under a composer alternative is still ONE record, not a
+    # batch — the batch reading applies only to univariate alternatives.
+    @test logpdf(d, [1.0, 2.0]; kind = :nested) ≈ logpdf(s, [1.0, 2.0])
+    @test logpdf(d, (a = 1.0, b = 2.0); kind = :nested) ≈
+          logpdf(s, [1.0, 2.0])
+
+    # A bare value still needs a kind.
+    @test_throws ArgumentError logpdf(d, [1.0, 2.0])
+end
+
+@testitem "rand(p, n): Pool batches from the population" begin
+    using ComposedDistributions: pool
+    using Distributions, Random
+
+    p = pool(:district)
+    xs = rand(Xoshiro(3), p, 5)
+    @test xs isa Vector{Float64}
+    @test length(xs) == 5
+    @test all(x -> isfinite(logpdf(p.population, x)), xs)
+
+    # A fixed (non-uncertain) population batches too.
+    q = pool(:g, LogNormal(0.5, 0.3))
+    ys = rand(Xoshiro(4), q, 4)
+    @test length(ys) == 4
+    @test all(y -> isfinite(logpdf(q.population, y)), ys)
+
+    # Reproducible under a seeded rng.
+    @test rand(Xoshiro(5), p, 3) == rand(Xoshiro(5), p, 3)
+
+    # The rng-less form threads the default RNG (mirrors Choose/Sequential/
+    # Parallel/Varying, all of which define both forms).
+    Random.seed!(20260803)
+    a = rand(p, 4)
+    Random.seed!(20260803)
+    b = rand(p, 4)
+    @test a == b
+end
+
 @testitem "batch logpdf does not shadow the flat single-record method" begin
     using ComposedDistributions: sequential
     using Distributions

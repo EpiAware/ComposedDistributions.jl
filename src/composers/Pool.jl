@@ -660,6 +660,19 @@ See also: [`Pool`](@ref), [`pool`](@ref)
 Base.rand(rng::AbstractRNG, p::Pool) = rand(rng, p.population)
 
 @doc "
+Draw `n` independent marginal draws of one pooled parameter.
+
+Mirrors the single-draw [`rand`](@ref)`(::Pool)`: delegates to the
+population's own multi-draw `rand(rng, population, n)`. As with the
+single-draw form, this is the marginal of one pooled parameter in isolation,
+not the joint prior-predictive of a whole pooled tree.
+
+See also: [`Pool`](@ref), [`pool`](@ref)
+"
+Base.rand(rng::AbstractRNG, p::Pool, n::Int) = rand(rng, p.population, n)
+Base.rand(p::Pool, n::Int) = rand(default_rng(), p, n)
+
+@doc "
 Print a [`Pool`](@ref) spec as its constructor form.
 
 See also: [`pool`](@ref)

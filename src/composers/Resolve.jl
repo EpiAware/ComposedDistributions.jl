@@ -918,13 +918,6 @@ function _one_of_event_record(rng::AbstractRNG, c::AbstractOneOf)
     return NamedTuple{_flat_event_names(c)}(Tuple(out))
 end
 
-# Independent count draw of a standalone one_of node: a vector of records (the
-# univariate count form Distributions cannot build, since a record is a
-# `NamedTuple`, not the scalar `eltype`).
-function Base.rand(rng::AbstractRNG, c::AbstractOneOf, n::Int)
-    return [rand(rng, c) for _ in 1:n]
-end
-
 # The promoted float element type of a terminal one_of node's sampled event
 # times: each outcome delay's own `eltype` promoted together (a no-event marker
 # carries none and is skipped). head/tail recursion, not `mapreduce`, to keep

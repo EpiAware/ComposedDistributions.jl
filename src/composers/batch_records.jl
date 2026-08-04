@@ -10,7 +10,7 @@
 #
 # The column layout is per-composer, matching each composer's own single-record
 # convention: `Sequential`/`Parallel` records are value-name keyed, a standalone
-# one_of record is event-name keyed (`rand(::AbstractOneOf, n)` in Resolve.jl).
+# one_of record is event-name keyed (`rand(::AbstractOneOf, n)`, below).
 # That mirrors their single-record conventions differing, not a new split. Reach
 # the event-name view of the schema through [`event_names`](@ref) /
 # [`event_tree`](@ref); convert a drawn record's per-step increments to absolute
@@ -46,4 +46,45 @@ function logpdf(d::Sequential, x::AbstractVector{<:NamedTuple})
 end
 function logpdf(d::Parallel, x::AbstractVector{<:NamedTuple})
     return sum(logpdf(d, r) for r in x)
+end
+
+@doc "
+
+Log density of a batch of [`Choose`](@ref) records, summed over the batch.
+
+A kind-less `rand(d, n)` returns a `Vector` of self-describing records rather
+than a column table (the drawn alternative varies row to row, so there is no one
+column layout), and each record scores through the selector-reading
+[`logpdf`](@ref)`(d, ::NamedTuple)` path. Passing `kind` instead hands the whole
+vector to the named alternative's own batch `logpdf`.
+
+# Arguments
+- `d`: the [`Choose`](@ref) node to score under.
+- `x`: a vector of records, as a kind-less `rand(d, n)` returns.
+- `kind`: name of the active alternative, when the records were drawn with an
+  explicit selection. Defaults to reading each record's selector field.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions, Random
+
+d = choose(:short => Gamma(2.0, 1.0), :long => Gamma(5.0, 1.0))
+logpdf(d, rand(Xoshiro(1), d, 4))
+```
+
+See also: [`rand`](@ref), [`Choose`](@ref)
+"
+function logpdf(d::Choose, x::AbstractVector{<:NamedTuple};
+        kind::Union{Symbol, Nothing} = nothing)
+    kind === nothing || return logpdf(_pick(d, kind), x)
+    return sum(logpdf(d, r) for r in x)
+end
+
+# Independent count draw of a standalone one_of node (`Resolve`/`Compete`): a
+# vector of records (the univariate count form Distributions cannot build,
+# since a record is a `NamedTuple`, not the scalar `eltype`). This is the
+# event-name-keyed batch convention (see the module note above), unlike the
+# `Sequential`/`Parallel` column table.
+function Base.rand(rng::AbstractRNG, c::AbstractOneOf, n::Int)
+    return [rand(rng, c) for _ in 1:n]
 end
