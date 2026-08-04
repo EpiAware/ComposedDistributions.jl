@@ -134,8 +134,9 @@ export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
 # packages have their own `update`-shaped verb, and exporting it risks the
 # same ambiguous-binding clash #233 hit with `as_turing` when two packages
 # both export a same-named generic (#221).
-export params_table, event_names, event_tree, event, build_priors,
-       default_prior, param_priors, inspect, reserved_record_fields
+export params_table, composed_to_table, event_names, event_tree, event,
+       build_priors, default_prior, param_priors, inspect,
+       reserved_record_fields
 
 # Record transforms: `event_times` maps a drawn record of per-step increments
 # to absolute positions from the origin; `event_increments` is the inverse.

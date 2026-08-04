@@ -86,3 +86,13 @@ public flat_dimension, flatten, unflatten, reconstruct
 # method to `_leaf_free_type`/`_extra_names_of`, which the generated codec's
 # `@generated` generator cannot see reliably once loaded after the fact.
 public register_leaf_wrapper!
+
+# The node-emission half of the single-table contract (#227 slice 1): a
+# composer node or leaf (wrapper) type overrides these to control its own
+# `composed_to_table` rows. `node_kind` labels a node/layer; `node_children`
+# reads a composer node's children uniformly; `node_attributes` reports a
+# node/layer's own fixed-structure attributes; `leaf_layers` lists a leaf's
+# wrapper layers outermost to innermost. The rebuild half of the contract
+# (`node_rebuild`, `register_node_kind!`, `set_node_params`, for
+# `compose(table)` and friends) is deferred to a later slice.
+public node_kind, node_children, node_attributes, leaf_layers

@@ -294,6 +294,13 @@ free_leaf(d::Varying) = free_leaf(d.reference)
 function rewrap_leaf(d::Varying, inner)
     return Varying(d.f, d.covariate, rewrap_leaf(d.reference, inner))
 end
+
+# The covariate map is fixed structure (an `:attribute` row; `map` carries a
+# live function object, so composed_to_table's in-memory round trip only, no
+# CSV), and `Varying` is a wrapper layer of its own, peeling to the
+# reference's layers.
+node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
+leaf_layers(d::Varying) = (d, leaf_layers(d.reference)...)
 _shared_tag(d::Varying) = _shared_tag(d.reference)
 extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 

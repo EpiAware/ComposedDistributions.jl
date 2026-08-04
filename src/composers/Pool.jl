@@ -295,28 +295,24 @@ end
 #
 # Emit the population's hyperparameter rows once per group (deduped through the
 # walk's `seen` set, so they precede every member's latent and the flat vector
-# opens with `[hyper..., ...]`), then this member's latent: a `Normal(0, 1)`
-# `z` row (non-centred) or the member's own parameter carrying the centred-pool
-# marker (centred). All ordinary scalar rows.
-function _pool_rows!(edges, params_col, values, supports, priors, seen,
-        p::Pool, leaf_edge, pname, v, s)
+# opens with `[hyper..., ...]`), then an `:attribute` row naming this member's
+# group (so a member row's group identity is recoverable from
+# `composed_to_table` without joining on `edge`), then this member's latent: a
+# `Normal(0, 1)` `z` row (non-centred) or the member's own parameter carrying
+# the centred-pool marker (centred). All ordinary scalar rows (`node = :Pool`).
+function _pool_rows!(sink, seen, p::Pool, leaf_edge, pname, v, s)
     gkey = _pool_seen_key(pool_group(p))
     if !(gkey in seen)
         push!(seen, gkey)
-        _pool_hyper_rows!(edges, params_col, values, supports, priors, p)
+        _pool_hyper_rows!(sink, p)
     end
+    _push_attr!(sink, leaf_edge, :Pool, pname,
+        (; group = pool_group(p), noncentred = pool_noncentred(p)))
     if pool_noncentred(p)
-        push!(edges, _join_path((_split_edge(leaf_edge)..., pname)))
-        push!(params_col, :z)
-        push!(values, 0.0)
-        push!(supports, (-Inf, Inf))
-        push!(priors, _pool_z_prior(p))
+        edge = _join_path((_split_edge(leaf_edge)..., pname))
+        _push_param!(sink, edge, :z, :Pool, 0.0, (-Inf, Inf), _pool_z_prior(p))
     else
-        push!(edges, leaf_edge)
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, s)
-        push!(priors, CentredPoolPrior(p))
+        _push_param!(sink, leaf_edge, pname, :Pool, v, s, CentredPoolPrior(p))
     end
     return nothing
 end
@@ -325,7 +321,7 @@ end
 # emitted under the `<group>` edge with the specs' priors. A population with no
 # uncertain specs (a fully fixed population) contributes no hyperparameters.
 # This is exactly the uncertain-leaf param walk restricted to the spec'd rows.
-function _pool_hyper_rows!(edges, params_col, values, supports, priors, p::Pool)
+function _pool_hyper_rows!(sink, p::Pool)
     specs = _uncertain_specs(p.population)
     specs === nothing && return nothing
     tmpl = _population_template(p.population)
@@ -335,11 +331,7 @@ function _pool_hyper_rows!(edges, params_col, values, supports, priors, p::Pool)
     sup = (minimum(inner), maximum(inner))
     for (pname, v) in zip(pnames, vals)
         haskey(specs, pname) || continue
-        push!(edges, pool_group(p))
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, sup)
-        push!(priors, specs[pname])
+        _push_param!(sink, pool_group(p), pname, :Pool, v, sup, specs[pname])
     end
     return nothing
 end

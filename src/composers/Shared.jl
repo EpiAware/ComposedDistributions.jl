@@ -120,6 +120,12 @@ function rewrap_leaf(d::Shared{tag}, inner) where {tag}
     return Shared{tag}(rewrap_leaf(d.dist, inner))
 end
 
+# The tag is fixed structure (an `:attribute` row), and `Shared` is a wrapper
+# layer of its own in `composed_to_table` (peeling to the wrapped `dist`'s
+# layers), mirroring `Truncated`/`Censored`.
+node_attributes(d::Shared{tag}) where {tag} = (; tag = tag)
+leaf_layers(d::Shared) = (d, leaf_layers(d.dist)...)
+
 # Any modifier-owned extra parameters of the wrapped leaf survive the tag (a
 # `shared(:tag, thin(...))`); the setter re-applies the tag around the rebuilt
 # inner. The empty-`NamedTuple` method disambiguates the forward from the

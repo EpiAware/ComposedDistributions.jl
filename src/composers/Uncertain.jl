@@ -392,6 +392,12 @@ end
 free_leaf(d::Uncertain) = free_leaf(d.template)
 rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
+# `Uncertain` is a wrapper layer of its own in `composed_to_table`, peeling to
+# the template's layers; it has no attributes of its own (its specs already
+# ride the `:param` rows' `prior` column, so the default empty
+# `node_attributes` is right and needs no override).
+leaf_layers(u::Uncertain) = (u, leaf_layers(u.template)...)
+
 # A modifier-owned extra parameter (e.g. a thinned template's `:thin` factor)
 # survives an uncertain leaf, so `params_table` still surfaces it. There is no
 # `set_extra_leaf_params(::Uncertain)`: `rewrap_leaf` strips the uncertainty, so
