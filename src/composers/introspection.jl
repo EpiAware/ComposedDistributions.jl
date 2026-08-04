@@ -704,6 +704,211 @@ end
     return (v, rest...)
 end
 
+# --- node-emission hooks (#227 slice 1) -------------------------------------
+#
+# The single pre-order walk (`_walk_rows!` below) emits a `:node` row for
+# every composer node and every leaf (wrapper) layer, alongside the existing
+# `:param` rows. These four hooks are what a node/leaf-wrapper type overrides
+# to control its own rows; the core composer types and `Truncated` have
+# methods here or beside their other hooks (Choose.jl, Resolve.jl, Shared.jl,
+# varying.jl, Uncertain.jl, wrapped_leaves.jl), so a downstream node/wrapper
+# only needs these four to appear correctly in `composed_to_table`.
+
+@doc raw"
+
+The structural kind of a composer node or leaf (wrapper) layer, for the
+`node` column of [`composed_to_table`](@ref).
+
+The default reads the type name off `x` directly (e.g. a `Gamma` leaf reports
+`:Gamma`, a `Sequential` node `:Sequential`), which is right for every core
+node and leaf family with no override needed. A type that wants a different
+label (rare — the default is almost always right) overrides this on its own
+type.
+
+# Arguments
+- `x`: the composer node or (possibly wrapped) leaf layer.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.node_kind(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`node_attributes`](@ref): a node/layer's own fixed-structure attributes.
+- [`leaf_layers`](@ref): a leaf's wrapper layers, outermost to innermost.
+- [`composed_to_table`](@ref): the table this feeds.
+"
+node_kind(x) = Base.typename(typeof(x)).name
+
+@doc raw"
+
+A node or leaf (wrapper) layer's own fixed-structure attributes, for the
+`:attribute` rows of [`composed_to_table`](@ref).
+
+Returns a `NamedTuple` of name-value pairs that are fixed structure, not free
+parameters (a `Truncated`'s bounds, a `Choose`'s `selector`, a `Shared`'s
+tag): each entry becomes one `:attribute` row at the node's edge. The default
+is the empty `NamedTuple` `(;)` (no attributes), which is right for a leaf
+family whose parameters are already fully covered by the `:param` rows. A
+node or leaf-wrapper type with fixed, non-parameter structure overrides this
+on its own type.
+
+# Arguments
+- `x`: the composer node or (possibly wrapped) leaf layer.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.node_attributes(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`node_kind`](@ref): the node/layer's own structural label.
+- [`composed_to_table`](@ref): the table this feeds.
+"
+node_attributes(x) = (;)
+
+@doc raw"
+
+A (possibly wrapped) leaf's wrapper layers, outermost to innermost, for the
+`:node`/`:attribute` rows [`composed_to_table`](@ref) emits per leaf.
+
+The default `(x,)` treats `x` as a single, unwrapped layer (right for a plain
+Distributions.jl leaf and for any wrapper type with no override — it then
+appears as one opaque node row, which is current, acceptable behaviour, not
+an error). A wrapper type peeling to an inner delay (`Truncated`, `Censored`,
+`Shared`, `Varying`, `Uncertain`) overrides this to list itself followed by
+its inner layer's own `leaf_layers`, so each layer gets its own `:node` row
+(and any `node_attributes`) at the leaf's one edge, distinguished by the
+`node` column. A leaf-wrapper package extending [`free_leaf`](@ref)/
+[`rewrap_leaf`](@ref) should extend this (and [`node_attributes`](@ref))
+alongside them, or its layer appears as one opaque row instead of a peeled
+one.
+
+# Arguments
+- `x`: the (possibly wrapped) leaf distribution.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.leaf_layers(truncated(Gamma(2.0, 1.0); upper = 10.0))
+```
+
+# See also
+- [`free_leaf`](@ref), [`rewrap_leaf`](@ref): the matching peel/rebuild hooks.
+- [`node_attributes`](@ref): a layer's own fixed-structure attributes.
+- [`composed_to_table`](@ref): the table this feeds.
+"
+leaf_layers(x) = (x,)
+leaf_layers(d::Truncated) = (d, leaf_layers(d.untruncated)...)
+
+# `Truncated`'s bounds are fixed structure, not free parameters (its inner
+# delay's own parameters ride the `:param` rows as always).
+node_attributes(d::Truncated) = (; lower = d.lower, upper = d.upper)
+
+# --- row sinks: a single walk feeding two projections -----------------------
+#
+# `_walk_rows!` threads one sink object rather than five positional column
+# vectors, so the same pre-order walk feeds either the four-column
+# parameter-only table ([`params_table`](@ref), unchanged) or the full
+# seven-column node/attribute/param table ([`composed_to_table`](@ref)) with
+# no extra traversal. The `_ParamSink` node/attribute push methods are no-ops
+# (`@inline`), so `params_table` costs nothing extra on its existing
+# AD-adjacent call sites (e.g. `centred_pool_rows`, called once per gradient
+# evaluation for a centred-pooled tree) — this is materialise-once-per-sink,
+# never materialise-then-filter.
+
+struct _ParamSink
+    edge::Vector{Symbol}
+    param::Vector{Symbol}
+    value::Vector{Any}
+    support::Vector{Any}
+    prior::Vector{Any}
+end
+_ParamSink() = _ParamSink(Symbol[], Symbol[], Any[], Any[], Any[])
+
+struct _FullSink
+    edge::Vector{Symbol}
+    param::Vector{Symbol}
+    node::Vector{Symbol}
+    role::Vector{Symbol}
+    value::Vector{Any}
+    support::Vector{Any}
+    prior::Vector{Any}
+end
+function _FullSink()
+    return _FullSink(
+        Symbol[], Symbol[], Symbol[], Symbol[], Any[], Any[], Any[])
+end
+
+# One `:param` row: a scalar free parameter. `node` names the leaf family
+# (or `:Pool`/`:Resolve`) the parameter belongs to; ignored by `_ParamSink`.
+function _push_param!(s::_ParamSink, edge::Symbol, param::Symbol,
+        ::Symbol, value, support, prior)
+    push!(s.edge, edge)
+    push!(s.param, param)
+    push!(s.value, value)
+    push!(s.support, support)
+    push!(s.prior, prior)
+    return nothing
+end
+function _push_param!(s::_FullSink, edge::Symbol, param::Symbol, node::Symbol,
+        value, support, prior)
+    push!(s.edge, edge)
+    push!(s.param, param)
+    push!(s.node, node)
+    push!(s.role, :param)
+    push!(s.value, value)
+    push!(s.support, support)
+    push!(s.prior, prior)
+    return nothing
+end
+
+# One `:node` row, naming a composer node or a leaf (wrapper) layer; no
+# value/support/prior. A no-op on the parameter-only sink.
+@inline _push_node!(::_ParamSink, ::Symbol, ::Symbol) = nothing
+function _push_node!(s::_FullSink, edge::Symbol, node::Symbol)
+    push!(s.edge, edge)
+    push!(s.param, Symbol(""))
+    push!(s.node, node)
+    push!(s.role, :node)
+    push!(s.value, nothing)
+    push!(s.support, nothing)
+    push!(s.prior, nothing)
+    return nothing
+end
+
+# One `:attribute` row: a node/layer's own fixed-structure attribute (not a
+# free parameter). A no-op on the parameter-only sink.
+@inline function _push_attr!(::_ParamSink, ::Symbol, ::Symbol, ::Symbol,
+        value)
+    nothing
+end
+function _push_attr!(s::_FullSink, edge::Symbol, node::Symbol, param::Symbol,
+        value)
+    push!(s.edge, edge)
+    push!(s.param, param)
+    push!(s.node, node)
+    push!(s.role, :attribute)
+    push!(s.value, value)
+    push!(s.support, nothing)
+    push!(s.prior, nothing)
+    return nothing
+end
+
+# Push one `:attribute` row per entry of a `node_attributes(x)` NamedTuple, in
+# field order.
+function _push_attr_rows!(sink, edge::Symbol, node::Symbol, attrs::NamedTuple)
+    for k in keys(attrs)
+        _push_attr!(sink, edge, node, k, attrs[k])
+    end
+    return nothing
+end
+
 # --- params_table (hand-rolled pre-order walk) -----------------------------
 
 # A thin wrapper over the flat column table so `params_table(d)` prints as an
@@ -766,7 +971,8 @@ function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
     cols = getfield(t, :columns)
     names = collect(keys(cols))
     n = _nrows(t)
-    println(io, "params_table ($n rows)")
+    header = :role in keys(cols) ? "composed table" : "params_table"
+    println(io, "$header ($n rows)")
     isempty(names) && return nothing
     # Stringify every cell (an absent entry, e.g. a row with no attached
     # prior, renders blank), then size each column to its widest entry.
@@ -834,30 +1040,111 @@ tbl.edge  # a column; wrap the table in `DataFrame(tbl)` for a DataFrame
 # See also
 - [`params`](@ref): the nested name-keyed values
 - [`event_names`](@ref), [`event`](@ref): name introspection
+- [`composed_to_table`](@ref): the full node/attribute/param table this
+  projects (the `role == :param` rows, minus the `node`/`role` columns).
 "
 function params_table(
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    edges = Symbol[]
-    params_col = Symbol[]
-    values = Any[]
-    supports = Any[]
-    priors = Any[]
-    seen = Set{Symbol}()
-    _walk_rows!(edges, params_col, values, supports, priors, seen, d, ())
-    return ParamsTable((edge = edges, param = params_col,
-        value = values, support = supports, prior = priors))
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), d, ())
+    return ParamsTable((edge = s.edge, param = s.param,
+        value = s.value, support = s.support, prior = s.prior))
+end
+
+@doc "
+
+Flatten a composed distribution's full structure into one node/attribute/
+parameter table.
+
+`composed_to_table(d)` returns a Tables.jl column table (a [`ParamsTable`](@ref)
+wrapping a `NamedTuple` of equal-length column vectors) with one row per
+composer node, per leaf (wrapper) layer, per fixed-structure attribute, and
+per scalar free parameter — the same pre-order walk [`params_table`](@ref)
+runs, widened to every row it currently skips. Columns:
+
+- `edge`: the dotted path of names to the row's node/leaf (e.g. `:onset_admit`),
+  or the tag/group for a [`shared`](@ref)/pooled parameter row (see below).
+- `param`: the parameter or attribute name; the empty `Symbol` on a `:node`
+  row.
+- `node`: the structural kind ([`node_kind`](@ref)) of the owning composer
+  node or leaf layer (e.g. `:Sequential`, `:Gamma`, `:Truncated`).
+- `role`: one of `:node`, `:attribute`, `:param`.
+- `value`: the current value (a `:param`/`:attribute` row), or `nothing` (a
+  `:node` row).
+- `support`: the parameter's domain (a `:param` row), else `nothing`.
+- `prior`: the attached [`uncertain`](@ref) prior (a `:param` row), else
+  `nothing`.
+
+`params_table(d)` is exactly the `role == :param` projection of this table
+(the `edge`/`param`/`value`/`support`/`prior` columns, in the same row order),
+kept as a separate function since most callers only need the parameter rows
+and it is the one this package has always returned. `composed_to_table`
+recovers the structure `params_table` alone cannot: whether two branches with
+the same names are the same node kind, whether a leaf carries a wrapper
+(`Truncated`, `Censored`, ...), and a wrapper's own fixed attributes (a
+`Truncated`'s bounds, a `Choose`'s `selector`).
+
+A node row's `edge` is always the row's real dotted tree path. A `:param` row's
+`edge` is the real path too, *except* for a [`shared`](@ref)`(:tag, ...)` leaf
+(keyed by its tag; later occurrences contribute no further rows, node or
+param) or a pooled parameter's hyperparameter rows (keyed by its
+[`pool`](@ref) group). So a node row and a `:param` row at the same object can
+legitimately disagree on `edge` — do not join the two by `edge` alone; join a
+leaf's node rows to its param rows by path prefix instead. A `Resolve`'s own
+`branch_probs` param rows are emitted after its children's rows (not
+immediately after its own node/attribute rows), so a node's rows are not
+generally contiguous in the table.
+
+The composed distribution `d` itself is a Tables.jl source forwarding to this
+table (`Tables.columns(d) == Tables.columns(composed_to_table(d))`), so
+`DataFrame(tree)` yields the full table — `DataFrame(params_table(tree))` for
+the parameter-only projection.
+
+Only an in-memory (DataFrame) round trip is supported: a `Varying` leaf's
+`map` attribute and a `Convolved`/`Difference` composite's solver are live
+objects, not values a text format (CSV) can carry.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = LogNormal(1.5, 0.4),
+    admit_death = truncated(Gamma(2.0, 1.0); upper = 10.0)))
+tbl = composed_to_table(tree)
+tbl.node  # :Sequential, :LogNormal, :Truncated, :Gamma, ...
+```
+
+# See also
+- [`params_table`](@ref): the `role == :param` projection.
+- [`node_kind`](@ref), [`node_attributes`](@ref), [`leaf_layers`](@ref): the
+  node-emission hooks a downstream node/leaf-wrapper type overrides.
+"
+function composed_to_table(
+        d::Union{Sequential, Parallel, AbstractOneOf, Choose})
+    s = _FullSink()
+    _walk_rows!(s, Set{Symbol}(), d, ())
+    return ParamsTable((edge = s.edge, param = s.param, node = s.node,
+        role = s.role, value = s.value, support = s.support, prior = s.prior))
 end
 
 # Pre-order walk over the composer tree. `path` is the tuple of names from the
-# root to the current node. A composer recurses into its named children; a
-# `Resolve` additionally emits its branch-probability rows; a leaf emits one
-# row per scalar parameter. Hand-rolled recursion to stay type-stable.
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        d::Union{Sequential, Parallel}, path)
+# root to the current node (the empty tuple at the root, so `_join_path(())`
+# `== Symbol("")`; no child name can be empty, so this cannot collide, unlike
+# `:root` which would collide with a depth-1 child actually called `root`). A
+# composer node emits its own `:node` row, then one `:attribute` row per
+# `node_attributes` entry, then recurses into its named children, then any of
+# its OWN param rows (a `Resolve`'s `branch_probs`, emitted last — see below).
+# A leaf emits one `:node`/`:attribute` row per `leaf_layers` layer, then one
+# `:param` row per scalar free parameter. Hand-rolled recursion to stay
+# type-stable.
+function _walk_rows!(sink, seen, d::Union{Sequential, Parallel}, path)
+    edge = _join_path(path)
+    kind = node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
     names = component_names(d)
     for (name, child) in zip(names, d.components)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, child,
-            (path..., name))
+        _walk_rows!(sink, seen, child, (path..., name))
     end
     return nothing
 end
@@ -865,25 +1152,37 @@ end
 # A `Choose`'s alternatives each contribute their own rows; a tag shared across
 # alternatives is deduped via `seen`, so a parameter tied across the index and
 # sourced branches is inventoried once.
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        d::Choose, path)
+function _walk_rows!(sink, seen, d::Choose, path)
+    edge = _join_path(path)
+    kind = node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
     for (name, alt) in zip(component_names(d), d.alternatives)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, alt,
-            (path..., name))
+        _walk_rows!(sink, seen, alt, (path..., name))
     end
     return nothing
 end
 
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        c::Resolve, path)
+# A `Resolve`'s own `branch_probs` rows are emitted AFTER its children's rows
+# (parity with the codec's type-level walk beats a tidy "node, then its own
+# rows" ordering — see `_walk_rows!`'s header comment). A `NoEvent` branch
+# gets its own `:node` row (so it is visible in `composed_to_table`) and then
+# is skipped, unchanged from the params-only behaviour (no param rows).
+function _walk_rows!(sink, seen, c::Resolve, path)
+    edge = _join_path(path)
+    kind = node_kind(c)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
-        _is_no_event(delay) && continue
-        _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
-            (path..., name))
+        child_path = (path..., name)
+        if _is_no_event(delay)
+            _push_node!(sink, _join_path(child_path), node_kind(delay))
+            continue
+        end
+        _walk_rows!(sink, seen, delay, child_path)
     end
-    edge = _join_path((path..., :branch_probs))
-    _branch_prob_rows!(edges, params_col, values, supports, priors, c, edge,
-        c.branch_prob_prior)
+    bp_edge = _join_path((path..., :branch_probs))
+    _branch_prob_rows!(sink, c, bp_edge, c.branch_prob_prior)
     return nothing
 end
 
@@ -893,56 +1192,59 @@ end
 # scalar estimated parameter `:stick_k` in (0, 1) carrying its stick-breaking
 # `Beta` prior, so the codec flattens the simplex through the existing per-row
 # scoring with no special-casing.
-function _branch_prob_rows!(edges, params_col, values, supports, priors,
-        c::Resolve, edge, ::Nothing)
+function _branch_prob_rows!(sink, c::Resolve, edge, ::Nothing)
     sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
     cnames = component_names(c)
     for (k, p) in enumerate(c.branch_probs)
-        push!(edges, edge)
-        push!(params_col, Symbol(cnames[k]))
-        push!(values, p)
-        push!(supports, sup)
-        push!(priors, nothing)
+        _push_param!(sink, edge, Symbol(cnames[k]), :Resolve, p, sup, nothing)
     end
     return nothing
 end
 
-function _branch_prob_rows!(edges, params_col, values, supports, priors,
-        c::Resolve, edge, prior::Distributions.Dirichlet)
+function _branch_prob_rows!(sink, c::Resolve, edge, prior::Distributions.Dirichlet)
     v = _simplex_to_stick(collect(c.branch_probs))
     betas = _dirichlet_stick_betas(prior)
     names = _stick_param_names(length(component_names(c)))
     for k in eachindex(names)
-        push!(edges, edge)
-        push!(params_col, names[k])
-        push!(values, v[k])
-        push!(supports, (0.0, 1.0))
-        push!(priors, betas[k])
+        _push_param!(sink, edge, names[k], :Resolve, v[k], (0.0, 1.0), betas[k])
     end
     return nothing
 end
 
 # A racing-hazard node emits only its outcome delays' parameter rows; there is
 # no branch-probability block (the winning probability is derived, not free).
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        c::Compete, path)
+function _walk_rows!(sink, seen, c::Compete, path)
+    edge = _join_path(path)
+    kind = node_kind(c)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
-            (path..., name))
+        _walk_rows!(sink, seen, delay, (path..., name))
     end
     return nothing
 end
 
-# Leaf distribution: one row per scalar free parameter. A censored leaf shows
-# only its inner free delay's params and that delay's support (the censoring
-# bounds are fixed structure, see `free_leaf`). A shared-tagged leaf
-# (`_shared_tag`) is inventoried once under its tag as the edge: the first
-# occurrence emits the rows, later occurrences with the same tag are skipped so
-# the tied parameter is listed once. An uncertain leaf's attached spec rides
-# each row's `prior` entry (`nothing` for a fully fixed parameter), so
-# `build_priors` picks the attached prior up without an explicit override.
-function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
-        path)
+# Leaf distribution: one `:node`/`:attribute` row per `leaf_layers` layer,
+# then one `:param` row per scalar free parameter. A censored leaf shows only
+# its inner free delay's params and that delay's support (the censoring
+# bounds are fixed structure, see `free_leaf`); its wrapper layer still gets
+# its own node/attribute rows via `leaf_layers`. A shared-tagged leaf
+# (`_shared_tag`) is inventoried once under its tag as the PARAM edge: the
+# first occurrence emits the param rows, later occurrences with the same tag
+# are skipped so the tied parameter is listed once. The leaf's node/attribute
+# rows are emitted BEFORE that dedup check and always use the leaf's real
+# path (never the tag), so every shared occurrence gets its own node rows —
+# a node row and a param row for the same leaf can legitimately disagree on
+# `edge`. An uncertain leaf's attached spec rides each row's `prior` entry
+# (`nothing` for a fully fixed parameter), so `build_priors` picks the
+# attached prior up without an explicit override.
+function _walk_rows!(sink, seen, leaf, path)
+    edge_path = _join_path(path)
+    for layer in leaf_layers(leaf)
+        kind = node_kind(layer)
+        _push_node!(sink, edge_path, kind)
+        _push_attr_rows!(sink, edge_path, kind, node_attributes(layer))
+    end
     tag = _shared_tag(leaf)
     tag !== nothing && tag in seen && return nothing
     inner = free_leaf(leaf)
@@ -958,22 +1260,18 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
     vals = (native..., map(e -> e.value, extras)...)
     sups = (ntuple(_ -> sup, length(native))...,
         map(e -> e.support, extras)...)
-    edge = tag === nothing ? _join_path(path) : tag
+    edge = tag === nothing ? edge_path : tag
     tag === nothing || push!(seen, tag)
+    leaf_kind = node_kind(inner)
     for (pname, v, s) in zip(pnames, vals, sups)
         spec = specs === nothing ? nothing : get(specs, pname, nothing)
         # A pooled parameter lowers to the group's shared population
         # hyperparameters (once) plus this member's own latent, all scalar rows.
         if spec isa Pool
-            _pool_rows!(edges, params_col, values, supports, priors, seen,
-                spec, edge, pname, v, s)
+            _pool_rows!(sink, seen, spec, edge, pname, v, s)
             continue
         end
-        push!(edges, edge)
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, s)
-        push!(priors, spec)
+        _push_param!(sink, edge, pname, leaf_kind, v, s, spec)
     end
     return nothing
 end
@@ -1532,11 +1830,36 @@ end
 _rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
 _rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
 
-# A composer node's children tuple, uniform across the node kinds (the field
-# holding them differs per type). Pairs with `_rebuild` for generic node walks.
-_node_children(d::Union{Sequential, Parallel}) = d.components
-_node_children(c::AbstractOneOf) = c.delays
-_node_children(d::Choose) = d.alternatives
+@doc raw"
+
+A composer node's children tuple, uniform across the node kinds (the field
+holding them differs per type).
+
+Pairs with `_rebuild` for a generic node walk over any composer type; the
+generated codec (`codec_gen.jl`) reads it by qualified name at the type level
+too, so a call site keeping the underscored spelling
+(`ComposedDistributions._node_children`) keeps resolving unchanged (`const`
+makes it the same function object).
+
+# Arguments
+- `d`: the composer node whose children are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0), admit_death = LogNormal(0.5, 0.4)))
+ComposedDistributions.node_children(tree)
+```
+
+# See also
+- [`node_kind`](@ref), [`node_attributes`](@ref): the sibling node-emission
+  hooks.
+"
+node_children(d::Union{Sequential, Parallel}) = d.components
+node_children(c::AbstractOneOf) = c.delays
+node_children(d::Choose) = d.alternatives
+const _node_children = node_children
 
 # --- build_priors: params_table + flat priors -> nested NamedTuple ----------
 

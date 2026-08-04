@@ -35,6 +35,12 @@ end
 shared_tag(d::Distributions.Censored) = shared_tag(d.uncensored)
 has_varying(d::Distributions.Censored) = has_varying(d.uncensored)
 
+# `Censored`'s bounds are fixed structure (an `:attribute` row, mirroring
+# `Truncated`), and it is a wrapper layer of its own in `composed_to_table`,
+# peeling to the uncensored inner delay's layers.
+node_attributes(d::Distributions.Censored) = (; lower = d.lower, upper = d.upper)
+leaf_layers(d::Distributions.Censored) = (d, leaf_layers(d.uncensored)...)
+
 # Upstream gives `Truncated` a one-line `show` but `Censored` only the generic
 # multi-line struct dump (its `uncensored` field is a distribution), which broke
 # out of the tree prefix when a censored leaf printed inline (#282). Label it
