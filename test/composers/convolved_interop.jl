@@ -3,6 +3,14 @@
 # testitem is one matrix cell (works / errors informatively / see-through
 # component fitting). Censoring-free: this package composes any
 # `UnivariateDistribution`.
+#
+# ConvolvedDistributions pinned via [sources] (main, unreleased, for
+# quantile_by_optimization — #337): main's #130 dropped the dedicated
+# continuous-delay error-gate method (closing #95/#126), so
+# `convolve_series` on a continuous delay now hits plain dispatch and
+# throws `MethodError` rather than the hand-thrown `ArgumentError` 0.3.1
+# raised. Revisit the `MethodError` expectations below once the pin moves
+# to a released version.
 
 @testitem "convolve_series(chain, series): vector convolution" setup=[DelayMasses] begin
     using Distributions
@@ -21,8 +29,8 @@
     # way (#226) — CD does not pick a discretisation scheme on the caller's
     # behalf.
     obs = observed_distribution(chain)
-    @test_throws ArgumentError convolve_series(chain, series)
-    @test_throws ArgumentError convolve_series(obs, series)
+    @test_throws MethodError convolve_series(chain, series)
+    @test_throws MethodError convolve_series(obs, series)
 
     # Discretise explicitly, then convolve.
     out = convolve_series(delay_masses(obs, length(series) - 1), series)
@@ -34,7 +42,7 @@
     # A nested chain collapses through to the same flat total.
     nested = Sequential(Sequential(Gamma(2.0, 1.0), Gamma(1.0, 1.0)),
         LogNormal(0.5, 0.4))
-    @test_throws ArgumentError convolve_series(nested, series)
+    @test_throws MethodError convolve_series(nested, series)
     @test convolve_series(
         delay_masses(observed_distribution(nested), length(series) - 1),
         series) isa AbstractVector
@@ -58,11 +66,11 @@ end
     # Every step here is continuous, so an interim event's cumulative prefix
     # delay is continuous too and hits the same discretise-first error as the
     # whole chain (#226) — for a single name, a tuple, and a vector alike.
-    @test_throws ArgumentError convolve_series(chain, series; events = :admit)
-    @test_throws ArgumentError convolve_series(chain, series; events = :death)
-    @test_throws ArgumentError convolve_series(
+    @test_throws MethodError convolve_series(chain, series; events = :admit)
+    @test_throws MethodError convolve_series(chain, series; events = :death)
+    @test_throws MethodError convolve_series(
         chain, series; events = (:admit, :report))
-    @test_throws ArgumentError convolve_series(
+    @test_throws MethodError convolve_series(
         chain, series; events = [:admit, :death])
 
     # The prefix collapse itself is still correct: discretise each interim
@@ -100,8 +108,8 @@ end
     # same continuous-delay error, and — once discretised by hand — the same
     # result: the terminal event's cumulative prefix delay is the whole-chain
     # observed total.
-    @test_throws ArgumentError convolve_series(chain, series; events = :death)
-    @test_throws ArgumentError convolve_series(chain, series)
+    @test_throws MethodError convolve_series(chain, series; events = :death)
+    @test_throws MethodError convolve_series(chain, series)
     death_prefix = ComposedDistributions._event_prefix_delay(chain, :death)
     @test cdf(death_prefix, 5.0) ≈ cdf(observed_distribution(chain), 5.0)
     @test convolve_series(delay_masses(death_prefix, length(series) - 1),
@@ -110,7 +118,7 @@ end
 
     # A positional-default chain names its events :event_i; the endpoint matches.
     pos = Sequential(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
-    @test_throws ArgumentError convolve_series(
+    @test_throws MethodError convolve_series(
         pos, series; events = event_names(pos)[end])
     pos_prefix = ComposedDistributions._event_prefix_delay(
         pos, event_names(pos)[end])
@@ -159,7 +167,7 @@ end
     r = resolve(:recover => (Gamma(2.0, 1.0), 0.7),
         :die => (Gamma(1.5, 2.0), 0.3))
     series = [0.0, 1.0, 2.0, 4.0, 3.0]
-    @test_throws ArgumentError convolve_series(r, series)
+    @test_throws MethodError convolve_series(r, series)
     out = convolve_series(
         delay_masses(observed_distribution(r), length(series) - 1), series)
     @test length(out) == length(series)
@@ -180,7 +188,7 @@ end
     # first error; `observed_distribution` returns it unchanged.
     c = Compete(:recover => Gamma(2.0, 1.0), :die => Gamma(1.5, 2.0))
     @test observed_distribution(c) === c
-    @test_throws ArgumentError convolve_series(c, series)
+    @test_throws MethodError convolve_series(c, series)
     out = convolve_series(
         delay_masses(observed_distribution(c), length(series) - 1), series)
     @test length(out) == length(series)
@@ -197,7 +205,7 @@ end
     # revises; if that changes these outputs, reconcile at the update-branch.
     cf = Compete(:recover => truncated(Gamma(2.0, 1.0); lower = 1.0),
         :die => truncated(Gamma(1.5, 2.0); lower = 2.0))
-    @test_throws ArgumentError convolve_series(cf, series)
+    @test_throws MethodError convolve_series(cf, series)
     outf = convolve_series(
         delay_masses(observed_distribution(cf), length(series) - 1), series)
     @test length(outf) == length(series)

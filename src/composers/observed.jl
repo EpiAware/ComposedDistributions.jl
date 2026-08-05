@@ -68,6 +68,15 @@ function ConvolvedDistributions.convolved(d::Sequential)
     return observed_distribution(d)
 end
 
+# A `Sequential` has no closed-form quantile of its own; its overall quantile
+# is that of the collapsed observed total (a single leaf, or the `Convolved`
+# sum `observed_distribution` builds). A one-step chain collapses to a bare
+# leaf and needs nothing further; a multi-step chain needs `Convolved`'s own
+# `quantile`, which only exists once `ConvolvedDistributionsOptimizationExt`
+# is loaded (Optimization.jl + OptimizationOptimJL.jl) -- absent that, this
+# throws the ordinary `MethodError` for the missing `Convolved` quantile.
+quantile(d::Sequential, p::Real) = quantile(observed_distribution(d), p)
+
 # Flatten a composer's components to the univariate leaves whose sum is the
 # chain's terminal time. A nested `Sequential` contributes its own steps; a
 # nested `Parallel` has no single terminal time, so a chain step that is itself
