@@ -54,7 +54,7 @@ See the [Getting started](@ref getting-started) walkthrough for a side-by-side e
 | `param_priors` | `params_table` + `build_priors` in one call, for `uncertain(tree)` (bare) | a nested prior `NamedTuple` |
 | `uncertain(tree, ...)` | promote one or more free parameters of an existing tree; bare `uncertain(tree)` promotes all | a tree |
 
-See DistributionsInference.jl's [inference guide](https://distributionsinference.epiaware.org/dev/getting-started/inference) for how these feed the estimation pipeline.
+See DistributionsInference.jl's [composed-tree tutorial](https://distributionsinference.epiaware.org/dev/getting-started/tutorials/composed-distributions) for how these feed the estimation pipeline.
 
 **Reading and editing** inspect or reshape an assembled tree.
 
