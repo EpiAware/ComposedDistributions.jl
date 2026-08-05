@@ -98,6 +98,38 @@ end
     @test_throws ArgumentError quantile(c, 1.1)
 end
 
+@testitem "quantile guess stays finite for a no-finite-mean cause (#344)" begin
+    using Distributions
+    using Optimization, OptimizationOptimJL
+
+    # `mean(Cauchy())` is `NaN` (no finite mean), and clamping `NaN` into a
+    # support does not make it finite; a `NaN`/`Inf` initial guess broke the
+    # Nelder-Mead solve outright rather than erroring cleanly (#344),
+    # diagnosed as the mechanism behind a Windows CI hang (#356). The guess
+    # must fall back to a finite, support-based point instead.
+    ext = Base.get_extension(
+        ComposedDistributions, :ComposedDistributionsOptimizationExt)
+
+    r = resolve(:death => (Cauchy(0.0, 1.0), 0.5),
+        :disch => (Gamma(2.0, 1.5), 0.5))
+    @test isfinite(only(ext._quantile_guess(r, 0.5)))
+
+    c = compete(:death => Cauchy(0.0, 1.0), :recover => Gamma(2.0, 1.5))
+    @test isfinite(only(ext._quantile_guess(c, 0.5)))
+
+    # End to end: the solve itself converges to a finite answer for a
+    # bounded probability rather than erroring or hanging.
+    for p in (0.1, 0.5, 0.9)
+        qr = quantile(r, p)
+        @test isfinite(qr)
+        @test cdf(r, qr) ≈ p atol = 1e-3
+
+        qc = quantile(c, p)
+        @test isfinite(qc)
+        @test cdf(c, qc) ≈ p atol = 1e-3
+    end
+end
+
 @testitem "Sequential quantile: one-step exact, multi-step via Convolved" begin
     using Distributions
     using Optimization, OptimizationOptimJL
