@@ -50,6 +50,23 @@ public pool_group, pool_noncentred
 public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
        _centred_pool_rows, _pool_centred_logprior
 
+# The pooling gate surface (#325): DistributionsInference.jl's fit-protocol
+# extension calls `validate_pool_groups` and `validate_tree_names` directly
+# to gate a composed tree once at `as_logdensity` construction, before
+# `params_table`/`build_priors` walk it per gradient evaluation.
+# `validate_pool_groups` checks every leaf of a pool group agrees on
+# population and parameterisation; `validate_tree_names` checks that no pool
+# group, shared tag, or top-level edge name collides with one from another of
+# those three roles. No behaviour change — declaring what was already
+# reachable, unrestricted, by qualified name. `_validate_pool_groups` and
+# `_validate_tree_names` are transitional aliases for the two functions'
+# original (leading-underscore) public names, kept `public` themselves — like
+# `_centred_pool_rows`/`_pool_centred_logprior` above — until
+# DistributionsInference.jl's fit-protocol extension moves onto the renamed
+# functions, then removed.
+public validate_pool_groups, validate_tree_names,
+       _validate_pool_groups, _validate_tree_names
+
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
@@ -79,10 +96,3 @@ public TestUtils
 # log-density/extensions (`as_logdensity`/`as_turing`) generically over this
 # core via the fit protocol (`parameter_rows`/`reconstruct`).
 public flat_dimension, flatten, unflatten, reconstruct
-
-# The load-order-independent leaf-wrapper registry (#189, #178 PR 4): a
-# leaf-wrapper package extension (censoring, modifiers) registers its type-level
-# codec hooks here (in its own `__init__`) instead of adding a direct dispatch
-# method to `_leaf_free_type`/`_extra_names_of`, which the generated codec's
-# `@generated` generator cannot see reliably once loaded after the fact.
-public register_leaf_wrapper!

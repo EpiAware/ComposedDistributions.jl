@@ -18,6 +18,8 @@ The package has four layers, each building on the one before.
 The verbs fall into five families, listed here as verb, what it does, and what it returns.
 
 **Structural composition** wires named branches into a tree.
+Each of `sequential`, `parallel`, `resolve`, `compete` and `choose` names its children either as `name => dist` pairs or as one positional named tuple `(name = dist, …)`, and both spellings build the identical node.
+See the [Getting started](@ref getting-started) walkthrough for a side-by-side example.
 
 | Verb | What it does | Returns |
 |---|---|---|

@@ -103,6 +103,95 @@ end
     @test event(collapsed, :fixed) == LogNormal(0.5, 0.4)
 end
 
+@testitem "codec: pooled parameter that is not the leaf's first native parameter" begin
+    using ComposedDistributions: update, params_table
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    # Gamma's native order is (shape, scale); `scale` is pooled here, so a
+    # codec walk that (wrongly) hoists the pool group's hyperparameter slots
+    # before the WHOLE leaf's own block -- rather than at `scale`'s own
+    # native-order position, after `shape` -- disagrees with `params_table`.
+    tree = compose((
+        a = uncertain(Gamma(2.0, 3.0);
+            shape = LogNormal(0.0, 0.3), scale = pool(:g)),
+        b = uncertain(Gamma(4.0, 5.0);
+            shape = LogNormal(0.0, 0.3), scale = pool(:g))))
+
+    table = params_table(tree)
+    @test collect(table.edge) ==
+          [:a, :g, :g, Symbol("a.scale"), :b, Symbol("b.scale")]
+    @test collect(table.param) == [:shape, :mu, :sigma, :z, :shape, :z]
+
+    x = [2.0, 0.0, 1.0, 0.0, 4.0, 0.0]
+    nt = unflatten(tree, x)
+    @test nt.a.shape == 2.0
+    @test nt.g == (mu = 0.0, sigma = 1.0)
+    @test nt.a.scale == (z = 0.0,)
+    @test nt.b.shape == 4.0
+    @test nt.b.scale == (z = 0.0,)
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+end
+
+@testitem "codec: a leaf naming two different pool groups" begin
+    using ComposedDistributions: update, params_table
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    tree = compose((
+        a = uncertain(Gamma(2.0, 3.0); shape = pool(:g1), scale = pool(:g2)),
+        b = uncertain(Gamma(4.0, 5.0); shape = pool(:g1)),
+        c = uncertain(Gamma(6.0, 7.0); scale = pool(:g2))))
+
+    table = params_table(tree)
+    @test collect(table.edge) == [:g1, :g1, Symbol("a.shape"), :g2, :g2,
+        Symbol("a.scale"), Symbol("b.shape"), :b, :c, Symbol("c.scale")]
+    @test flat_dimension(tree) == 8
+
+    x = [10.0, 11.0, 20.0, 30.0, 31.0, 40.0, 50.0, 60.0]
+    nt = unflatten(tree, x)
+    @test nt.g1 == (mu = 10.0, sigma = 11.0)
+    @test nt.a.shape == (z = 20.0,)
+    @test nt.g2 == (mu = 30.0, sigma = 31.0)
+    @test nt.a.scale == (z = 40.0,)
+    @test nt.b.shape == (z = 50.0,)
+    @test nt.c.scale == (z = 60.0,)
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+end
+
+@testitem "codec: pool population whose uncertain kwargs are out of native order" begin
+    using ComposedDistributions: update, params_table
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    # `pop` writes `scale` before `shape`, the reverse of Gamma's native
+    # (shape, scale) order; the group hyperparameter rows must still land in
+    # NATIVE order (`params_table` walks `leaf_param_names`, not a
+    # population's kwargs order).
+    pop = uncertain(Gamma(2.0, 3.0);
+        scale = LogNormal(0.0, 0.3), shape = LogNormal(0.0, 0.3))
+    tree = compose((
+        a = uncertain(Gamma(2.0, 3.0); shape = pool(:g, pop)),
+        b = uncertain(Gamma(4.0, 5.0); shape = pool(:g, pop))))
+
+    table = params_table(tree)
+    @test collect(table.param)[1:2] == [:shape, :scale]
+
+    x = [2.0, 3.0, 2.0, 3.0]
+    nt = unflatten(tree, x)
+    @test nt.g == (shape = 2.0, scale = 3.0)
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+end
+
 @testitem "codec: property round-trip -- Resolve stick-breaking nested in a tree" begin
     using ComposedDistributions: update
     using Distributions
@@ -165,4 +254,177 @@ end
           ComposedDistributions.free_leaf(sourced_inc) == Gamma(2.6, 1.0)
     @test params(event(event(collapsed, :sel), :sourced, :src))[1] ≈ 0.7
     @test params(event(event(collapsed, :race), :death))[1] ≈ 2.1
+end
+
+# STAGE S2 of the codec-generation plan (#189-adjacent): `_leaf_unflatten_expr`
+# (codec_gen.jl) now builds a leaf's `unflatten` entry by calling the runtime
+# seam (`_leaf_entry`, introspection.jl, S1) instead of baking each fixed
+# parameter's value straight into the generated code. That is a pure
+# generation-strategy swap -- the emitted flat-vector layout (which name owns
+# which `x` slot) is untouched -- so every tree already covered by the
+# `codec: property round-trip` items above must still `unflatten` to exactly
+# the same nested `NamedTuple`, both in value and in (fully concrete, still
+# `@inferred`-stable) type. This item re-collects those same trees and
+# expected results as one dedicated parity check, so a future generation-time
+# change to this file has one place that fails loudly on any drift.
+@testitem "codec: S2 layout parity -- unflatten is unchanged on every existing \
+    codec_gen test tree" begin
+    using ComposedDistributions: update, unflatten, flatten
+    using Distributions
+
+    cases = Any[]
+
+    # Plain fixed tree (nothing estimated).
+    let tree = compose((onset_admit = Gamma(2.0, 1.0),
+            admit_death = LogNormal(0.5, 0.4)))
+        x = Float64[]
+        expected = (onset_admit = (shape = 2.0, scale = 1.0),
+            admit_death = (mu = 0.5, sigma = 0.4))
+        push!(cases, (tree, x, expected))
+    end
+
+    # A censored leaf's estimated parameter.
+    let est = uncertain(censored(Gamma(2.0, 3.0); upper = 10.0);
+            shape = LogNormal(log(2.0), 0.2))
+        tree = compose((onset = est, death = LogNormal(0.5, 0.4)))
+        x = [2.5]
+        expected = (onset = (shape = 2.5, scale = 3.0),
+            death = (mu = 0.5, sigma = 0.4))
+        push!(cases, (tree, x, expected))
+    end
+
+    # Shared tags at different depths.
+    let u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+        tied1 = shared(:g, u)
+        tied2 = shared(:g, u)
+        sub = compose((admit = LogNormal(0.5, 0.4), tied1 = tied1))
+        root = compose((
+            onset = uncertain(Gamma(1.5, 1.0); shape = LogNormal(0.0, 0.5)),
+            sub = sub,
+            tied2 = tied2))
+        x = [2.3, 2.9]
+        expected = (onset = (shape = 2.3, scale = 1.0),
+            sub = (admit = (mu = 0.5, sigma = 0.4),),
+            g = (shape = 2.9, scale = 1.0))
+        push!(cases, (root, x, expected))
+    end
+
+    # Non-centred and centred pools together.
+    let centred_pop = uncertain(Gamma(2.0, 1.0);
+            shape = truncated(Normal(2.0, 1.0); lower = 0))
+        tree = compose((
+            north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+            east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
+            a = uncertain(Gamma(3.0, 1.0); shape = pool(:g, centred_pop)),
+            b = uncertain(Gamma(3.0, 1.0); shape = pool(:g, centred_pop)),
+            fixed = LogNormal(0.5, 0.4)))
+        x = [0.1, 0.5, 0.3, -0.2, 2.4, 3.0, 1.5]
+        expected = (north = (shape = (z = 0.3,), scale = 1.0),
+            east = (shape = (z = -0.2,), scale = 1.0),
+            a = (shape = 3.0, scale = 1.0),
+            b = (shape = 1.5, scale = 1.0),
+            fixed = (mu = 0.5, sigma = 0.4),
+            district = (mu = 0.1, sigma = 0.5),
+            g = (shape = 2.4,))
+        push!(cases, (tree, x, expected))
+    end
+
+    # Resolve stick-breaking nested in a tree.
+    let inner = update(
+            resolve(:death => (Gamma(1.5, 1.0), 0.3),
+                :disch => (Gamma(2.0, 1.5), 0.7)),
+            (branch_probs = Dirichlet(ones(2)),))
+        tree = compose((
+            onset = uncertain(
+                Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+            outcome = inner))
+        x = [2.2, 0.4]
+        expected = (onset = (shape = 2.2, scale = 1.0),
+            outcome = (death = (shape = 1.5, scale = 1.0),
+                disch = (shape = 2.0, scale = 1.5),
+                branch_probs = (stick_1 = 0.4,)))
+        push!(cases, (tree, x, expected))
+    end
+
+    # Choose alternatives with a shared tag, and Compete.
+    let inc = shared(
+            :inc, uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)))
+        sel = choose(
+            :index => inc,
+            :sourced => compose((
+                src = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.3)),
+                inc = inc)))
+        race = compete(
+            :death => uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+            :recover => Gamma(1.5, 2.0))
+        tree = compose((sel = sel, race = race))
+        x = [2.6, 0.7, 2.1]
+        expected = (sel = (sourced = (src = (mu = 0.7, sigma = 0.4),),),
+            race = (death = (shape = 2.1, scale = 1.0),
+                recover = (shape = 1.5, scale = 2.0)),
+            inc = (shape = 2.6, scale = 1.0))
+        push!(cases, (tree, x, expected))
+    end
+
+    for (tree, x, expected) in cases
+        nt = @inferred unflatten(tree, x)
+        @test nt == expected
+        @test typeof(nt) == typeof(expected)
+        # `flatten` is guarded here too, not just round-tripped: it is the
+        # direction whose inference broke silently, because a value-level
+        # round-trip stays correct while the return type widens.
+        @test @inferred(flatten(tree, nt)) == x
+    end
+end
+
+# STAGE S3 of the codec-generation plan: `_leaf_unflatten_expr`/
+# `_leaf_flatten_reads!` no longer look up a leaf's estimable names/arity from
+# a type-level table (`_leaf_type_param_names` and the four companions it
+# combined, all removed) -- they resolve them at RUNTIME, from the leaf's own
+# INSTANCE-level `leaf_param_names`/`leaf_param_values` (introspection.jl),
+# exactly like `params_table`/`update` always have. This is the motivating
+# regression case that table could not handle without a bespoke override: a
+# leaf type whose `Distributions.params` are NOT its own struct fields 1:1 (a
+# moment-parameterised wrapper, mirroring `ReparameterisedDistributions`),
+# defining only the two INSTANCE hooks (`param_names`, `leaf_ctor`) the public
+# leaf protocol asks for -- no `_param_names_of`/`_params_arity_of`-shaped
+# override exists any more for it to need. Defined fresh here (after
+# `ComposedDistributions` is loaded, like a real downstream extension would),
+# to also stand in as the load-order check the old registry existed for.
+@testitem "codec: S3 runtime seam -- a leaf type whose params are not its own \
+    fields 1:1 round-trips with only param_names/leaf_ctor defined" begin
+    using ComposedDistributions: update
+    using Distributions
+    using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
+
+    struct MomentLeaf <: Distributions.ContinuousUnivariateDistribution
+        vals::NTuple{2, Float64}
+    end
+    Distributions.params(m::MomentLeaf) = m.vals
+    Distributions.logpdf(m::MomentLeaf, x::Real) = logpdf(
+        LogNormal(log(m.vals[1]), 0.3), x)
+    Base.minimum(::MomentLeaf) = 0.0
+    Base.maximum(::MomentLeaf) = Inf
+    ComposedDistributions.param_names(::MomentLeaf) = (:mean, :sd)
+    ComposedDistributions.leaf_ctor(::MomentLeaf) = (a, b) -> MomentLeaf((a, b))
+
+    @test ComposedDistributions.leaf_param_names(MomentLeaf((8.0, 2.0))) ==
+          (:mean, :sd)
+
+    leaf = uncertain(MomentLeaf((8.0, 2.0)); mean = LogNormal(log(8.0), 0.2))
+    tree = compose((
+        m = leaf, other = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(0.0, 0.3))))
+    @test flat_dimension(tree) == 2
+
+    x = [9.0, 2.5]
+    nt = unflatten(tree, x)
+    @test nt == (m = (mean = 9.0, sd = 2.0), other = (shape = 2.5, scale = 1.0))
+    @test isconcretetype(typeof(nt))
+    @test flatten(tree, nt) == x
+
+    collapsed = reconstruct(tree, x)
+    @test collapsed == update(tree, nt)
+    @test event(collapsed, :m) == MomentLeaf((9.0, 2.0))
+    @test event(collapsed, :other) == Gamma(2.5, 1.0)
 end

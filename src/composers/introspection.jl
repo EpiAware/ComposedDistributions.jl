@@ -605,6 +605,105 @@ function leaf_param_names(leaf)
 end
 const _leaf_param_names = leaf_param_names
 
+# The values matching `leaf_param_names(leaf)` positionally: the free delay's
+# native `params`, then each `extra_leaf_params` value, in the same order
+# `leaf_param_names` appends their names. Built entirely from the generic,
+# instance-level hooks (`free_leaf`, `Distributions.params`,
+# `extra_leaf_params`), so it is correct for any leaf type an extension
+# defines those on, with no registration step -- the seam `_leaf_entry` and
+# `_leaf_flatten_values` (below) read from for the flat codec's leaf case
+# (`unflatten`, `flatten`), with no type-level table to keep in sync.
+function leaf_param_values(leaf)
+    native = params(free_leaf(leaf))
+    extras = extra_leaf_params(leaf)
+    return (native..., map(v -> v.value, values(extras))...)
+end
+
+# A leaf's `unflatten` entry: `leaf_param_names(leaf)` walked in order, taking
+# the next value from `slots` for each name present in `speckeys` (an
+# `Uncertain` node's estimated parameter names, fixed as a `Val` type
+# parameter) and the leaf's own current value from `leaf_param_values`
+# otherwise. `speckeys` membership decides *whether* a name is substituted;
+# `slots` is consumed strictly in `leaf_param_names` order, NOT `speckeys`'s
+# own order (`speckeys` holds the constructor's kwargs order, which can
+# differ), so this reproduces the layout the generated codec builds by
+# walking the same `leaf_param_names` order and advancing its slot index on
+# each match.
+function _leaf_entry(leaf, ::Val{speckeys}, slots::Tuple) where {speckeys}
+    names = leaf_param_names(leaf)
+    vals = leaf_param_values(leaf)
+    return NamedTuple{names}(_leaf_substitute(names, vals, speckeys, slots))
+end
+
+@inline _leaf_substitute(::Tuple{}, ::Tuple{}, ::Tuple, ::Tuple) = ()
+@inline function _leaf_substitute(names::Tuple, vals::Tuple, speckeys::Tuple,
+        slots::Tuple)
+    hit = names[1] in speckeys
+    v = hit ? slots[1] : vals[1]
+    rest = hit ? Base.tail(slots) : slots
+    return (v, _leaf_substitute(Base.tail(names), Base.tail(vals), speckeys,
+        rest)...)
+end
+
+# A `Pool`-noncentred entry's dual: after `_leaf_entry` builds the leaf's
+# `(native..., extra...)` NamedTuple, wrap whichever of its fields are
+# `Pool`-noncentred parameters in a `(z = value,)` sub-NamedTuple, by NAME
+# (`pool_names`, a `Val` of the noncentred spec'd names -- generation-time
+# information from `speckeys`/`specvaltypes` alone, no `leaf_param_names`
+# order needed). Kept as a separate pass over `_leaf_entry`'s own tested
+# 3-argument contract (introspection.jl, S1) rather than folded into it, since
+# `_leaf_entry` has no notion of `Pool` at all -- codec_gen.jl's
+# `_leaf_unflatten_expr` is the only caller that needs the wrap.
+function _wrap_pool_entries(
+        entry::NamedTuple{names}, ::Val{pool_names}) where {names, pool_names}
+    return NamedTuple{names}(_wrap_pool_vals(names, entry, pool_names))
+end
+
+@inline _wrap_pool_vals(::Tuple{}, ::NamedTuple, ::Tuple) = ()
+@inline function _wrap_pool_vals(
+        names::Tuple, entry::NamedTuple, pool_names::Tuple)
+    pname = names[1]
+    raw = getproperty(entry, pname)
+    v = pname in pool_names ? (z = raw,) : raw
+    return (v, _wrap_pool_vals(Base.tail(names), entry, pool_names)...)
+end
+
+# The read-direction counterpart of `_leaf_entry`/`_wrap_pool_entries`:
+# `flatten`'s leaf case. `entry` is the leaf's own already-`unflatten`ed
+# NamedTuple sub-tree (keyed by `leaf_param_names(leaf)`, native then extra);
+# this extracts the `speckeys`-named values back out, in `leaf_param_names`
+# order (`_leaf_entry`'s own substitution order, so the two stay inverse),
+# unwrapping a `Pool`-noncentred entry's `z` field the same way
+# `_wrap_pool_entries` wrapped it.
+#
+# The walk order comes from `entry`'s own `keys` rather than from a
+# `leaf_param_names(leaf)` call. The two are the same sequence -- `_leaf_entry`
+# builds `entry` as `NamedTuple{leaf_param_names(leaf)}` and
+# `_wrap_pool_entries` preserves it -- but `entry`'s copy is carried in its
+# type, so the spec'd/fixed test below resolves by dispatch. Driven off the
+# runtime call instead, inference could not settle how many names pass the
+# test and returned a `Union` over result lengths, which propagated out to
+# `flatten` as a `Union{Vector{Any}, Vector{Float64}}` return type. `leaf` is
+# still taken (unused) so the seam's signature stays the one `codec_gen.jl`
+# emits and `leaf_entry_seam.jl` pins.
+function _leaf_flatten_values(leaf, ::Val{speckeys}, ::Val{pool_names},
+        entry::NamedTuple{names}) where {speckeys, pool_names, names}
+    return _leaf_extract(Val(names), Val(speckeys), Val(pool_names), entry)
+end
+
+@inline _leaf_extract(::Val{()}, ::Val, ::Val, ::NamedTuple) = ()
+@inline function _leaf_extract(
+        ::Val{names}, ::Val{speckeys}, ::Val{pool_names},
+        entry::NamedTuple) where {names, speckeys, pool_names}
+    pname = names[1]
+    rest = _leaf_extract(
+        Val(Base.tail(names)), Val(speckeys), Val(pool_names), entry)
+    pname in speckeys || return rest
+    raw = getproperty(entry, pname)
+    v = pname in pool_names ? raw.z : raw
+    return (v, rest...)
+end
+
 # --- params_table (hand-rolled pre-order walk) -----------------------------
 
 # A thin wrapper over the flat column table so `params_table(d)` prints as an
