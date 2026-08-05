@@ -251,7 +251,7 @@ end
 
 @testitem "pool: rejects an inconsistent group" begin
     using Distributions
-    using ComposedDistributions: _validate_pool_groups
+    using ComposedDistributions: validate_pool_groups
 
     # Every member of a group is one population, so two members declaring
     # different populations under the same group name are rejected. The guard
@@ -260,7 +260,7 @@ end
     bad = compose((
         a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
         b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Normal(0.0, 1.0)))))
-    @test_throws ArgumentError _validate_pool_groups(bad)
+    @test_throws ArgumentError validate_pool_groups(bad)
 
     # A mismatched parameterisation on one shared population is the same
     # error: centred and non-centred members cannot share a group.
@@ -268,43 +268,43 @@ end
         a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
         b = uncertain(Gamma(2.0, 1.0);
             shape = pool(:g, LogNormal(0.0, 1.0); noncentred = false))))
-    @test_throws ArgumentError _validate_pool_groups(mixed)
+    @test_throws ArgumentError validate_pool_groups(mixed)
 
     # A consistent group passes and returns the tree.
     good = compose((
         a = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0))),
         b = uncertain(Gamma(2.0, 1.0); shape = pool(:g, LogNormal(0.0, 1.0)))))
-    @test _validate_pool_groups(good) === good
+    @test validate_pool_groups(good) === good
 end
 
 @testitem "pool/shared: rejects a name shared across roles" begin
     using Distributions
-    using ComposedDistributions: _validate_tree_names
+    using ComposedDistributions: validate_tree_names
 
     # A pool group and a shared tag with the same name silently clobber each
     # other in the readback merge (#177); the name-collision guard rejects it.
     pool_vs_shared = compose((
         a = shared(:g, Gamma(2.0, 1.0)),
         b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
-    @test_throws ArgumentError _validate_tree_names(pool_vs_shared)
+    @test_throws ArgumentError validate_tree_names(pool_vs_shared)
 
     # A pool group colliding with a sibling root-level edge name collides at
     # the same root-lifted level (#178 risk list).
     pool_vs_edge = compose((
         g = Gamma(2.0, 1.0),
         b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))
-    @test_throws ArgumentError _validate_tree_names(pool_vs_edge)
+    @test_throws ArgumentError validate_tree_names(pool_vs_edge)
 
     # A shared tag colliding with a sibling root-level edge name, same guard.
     shared_vs_edge = compose((
         g = Gamma(2.0, 1.0),
         b = shared(:g, LogNormal(0.5, 0.4))))
-    @test_throws ArgumentError _validate_tree_names(shared_vs_edge)
+    @test_throws ArgumentError validate_tree_names(shared_vs_edge)
 end
 
 @testitem "pool/shared: legitimate tying is not a false positive" begin
     using Distributions
-    using ComposedDistributions: _validate_tree_names
+    using ComposedDistributions: validate_tree_names
 
     # The same shared tag tying a parameter across two branches is the
     # intended feature, not a collision, so it must still gate cleanly. The
@@ -314,7 +314,7 @@ end
     tied = compose((
         a = inc,
         b = compose((src = LogNormal(0.5, 0.4), inc = inc))))
-    @test _validate_tree_names(tied) === nothing
+    @test validate_tree_names(tied) === nothing
 
     # Two distinct pool groups and a distinct shared tag, none colliding with
     # each other or with the root edge names, also gate cleanly.
@@ -322,7 +322,7 @@ end
         a = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
         b = uncertain(Gamma(3.0, 1.0); shape = pool(:region)),
         c = shared(:tag1, LogNormal(0.5, 0.4))))
-    @test _validate_tree_names(clean) === nothing
+    @test validate_tree_names(clean) === nothing
 
     # A pool group name equal to a NESTED (non-root) edge name is not a
     # collision: the guard only checks the tree's own ROOT edge names
@@ -331,7 +331,7 @@ end
         a = Gamma(2.0, 1.0),
         branch = compose((g = Gamma(2.0, 1.0),
             b = uncertain(Gamma(3.0, 1.0); shape = pool(:g))))))
-    @test _validate_tree_names(nested_reuse) === nothing
+    @test validate_tree_names(nested_reuse) === nothing
 end
 
 @testitem "pool: rand draws a single-parameter marginal" begin

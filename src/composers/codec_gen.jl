@@ -556,7 +556,7 @@ end
 
 # Merge the root node's own NamedTuple with the root-lifted tag/group entries
 # (each keyed by tag/group name), matching the old Dict walk's flat top-level
-# namespace. `_validate_tree_names` (called once at `as_logdensity`
+# namespace. `validate_tree_names` (called once at `as_logdensity`
 # construction, not here) is what actually guards against a name collision
 # across the three namespaces; a collision here just silently prefers the
 # later `merge` argument, exactly as the old `Dict` insert did.

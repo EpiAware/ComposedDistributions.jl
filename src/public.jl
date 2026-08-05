@@ -50,6 +50,23 @@ public pool_group, pool_noncentred
 public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
        _centred_pool_rows, _pool_centred_logprior
 
+# The pooling gate surface (#325): DistributionsInference.jl's fit-protocol
+# extension calls `validate_pool_groups` and `validate_tree_names` directly
+# to gate a composed tree once at `as_logdensity` construction, before
+# `params_table`/`build_priors` walk it per gradient evaluation.
+# `validate_pool_groups` checks every leaf of a pool group agrees on
+# population and parameterisation; `validate_tree_names` checks that no pool
+# group, shared tag, or top-level edge name collides with one from another of
+# those three roles. No behaviour change — declaring what was already
+# reachable, unrestricted, by qualified name. `_validate_pool_groups` and
+# `_validate_tree_names` are transitional aliases for the two functions'
+# original (leading-underscore) public names, kept `public` themselves — like
+# `_centred_pool_rows`/`_pool_centred_logprior` above — until
+# DistributionsInference.jl's fit-protocol extension moves onto the renamed
+# functions, then removed.
+public validate_pool_groups, validate_tree_names,
+       _validate_pool_groups, _validate_tree_names
+
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
 # `params_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
