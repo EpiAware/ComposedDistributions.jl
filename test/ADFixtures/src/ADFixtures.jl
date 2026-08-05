@@ -81,10 +81,12 @@ broken_scenario_names() = String[]
 # `Distributions.gammalogpdf`, and Mooncake had no rule for the two-argument
 # `xlogy`/`xlog1py` (it derives one from the primal branch, giving `0` instead
 # of `log(y)` at `x == 0`; see #99 and upstream
-# https://github.com/chalk-lab/Mooncake.jl/issues/1241).
-# `ComposedDistributionsMooncakeExt` now imports the ChainRulesCore rules for
-# `xlogy`/`xlog1py` (already shipped by `LogExpFunctionsChainRulesCoreExt`) as
-# Mooncake primitives, so this scenario is no longer broken on Mooncake.
+# https://github.com/chalk-lab/Mooncake.jl/issues/1241, withdrawn as bot-filed
+# rather than fixed and awaiting a re-file).
+# `EpiAwareADToolsLogExpFunctionsMooncakeExt` now imports the ChainRulesCore
+# rules for `xlogy`/`xlog1py` (already shipped by
+# `LogExpFunctionsChainRulesCoreExt`) as Mooncake primitives, so this scenario
+# is no longer broken on Mooncake.
 
 "Per-backend broken scenario names (`Dict{String, Set{String}}`)."
 function backend_broken_scenarios()

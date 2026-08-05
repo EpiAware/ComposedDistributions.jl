@@ -127,16 +127,21 @@ end
 # (`xlogy(shape - 1, x / scale)` with `shape - 1 == 0`). Mooncake has no rule for
 # `xlogy`/`xlog1py` and derives a wrong (zero) gradient there instead of the
 # correct `log(y)` (#99).
-# `ComposedDistributionsMooncakeExt` imports the ChainRulesCore rules for both
-# functions. Importing via `@from_chainrules` (both AD directions) rather than
-# `@from_rrule` (reverse only) closes the forward-mode gap too, so this exercises
-# `shape == 1.0` under Mooncake forward as well as reverse (#214).
+# `EpiAwareADToolsLogExpFunctionsMooncakeExt` imports the ChainRulesCore rules
+# for both functions. Importing via `@from_chainrules` (both AD directions)
+# rather than `@from_rrule` (reverse only) closes the forward-mode gap too, so
+# this exercises `shape == 1.0` under Mooncake forward as well as reverse
+# (#214).
 @testitem "Mooncake differentiates a Gamma logpdf at shape == 1.0, both directions (#214)" tags=[
     :ad, :mooncake, :mooncake_reverse] begin
     using ADTypes: AutoMooncake, AutoMooncakeForward, AutoForwardDiff
     using DifferentiationInterface: gradient
     using Distributions: Gamma, logpdf
     using ForwardDiff, Mooncake
+    # Loading this package is what pulls EpiAwareADTools and LogExpFunctions
+    # in, triggering the extension that owns the rules; without it the item
+    # only passed when a sibling in the same worker had loaded them.
+    using ComposedDistributions
 
     obs = [0.5, 1.2, 2.5, 3.8, 5.1]
     # `θ[1]` is the Gamma shape, evaluated at exactly `1.0`, so the reverse pass
