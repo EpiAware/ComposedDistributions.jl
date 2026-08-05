@@ -285,6 +285,9 @@ function _rand_outcome(rng::AbstractRNG, c::Compete)
 end
 _rand_outcome(c::Compete) = _rand_outcome(default_rng(), c)
 
+# The panelled quadrature window (`_hazard_panelled_integrate`) that keeps a
+# wide shared window from starving the region where the mass actually sits
+# was introduced in issue #294.
 @doc "
 
 The derived per-cause winning probabilities of a racing-hazard
@@ -299,7 +302,7 @@ hazards rather than declared.
 Computed by AD-safe fixed-node Gauss-Legendre quadrature of the cause-resolved
 sub-density over the marginal support, panelled at each cause's own quantile
 (or moment) markers so a wide window doesn't starve the region where the mass
-actually sits (`_hazard_panelled_integrate`, #294). The probabilities are
+actually sits (`_hazard_panelled_integrate`). The probabilities are
 sub-stochastic-free (they sum to one for proper, eventually-certain causes); a
 node whose causes can leave residual survival at `+∞` (a defective cause) sums
 to less than one, the deficit being the never-resolved mass.
@@ -491,11 +494,12 @@ function _hazard_integrate_over_breaks(f::F, lo, hi, breaks) where {F}
     return acc
 end
 
+# This panelling design was introduced in issue #294.
 @doc "
 
 Integrate `f` over `[lo, hi]`, splitting at each of `c`'s causes' own
 quantile (or moment) markers so a wide shared window doesn't starve the
-region where the mass actually sits (#294). Falls back to the single-window
+region where the mass actually sits. Falls back to the single-window
 `_PRIMARY` rule when there are no interior breaks (a window that's already
 narrow, or every cause lacking a usable quantile/moment marker).
 

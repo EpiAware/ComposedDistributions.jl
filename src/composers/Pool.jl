@@ -254,6 +254,8 @@ function _collapse_population(pop::Uncertain, hyper::NamedTuple)
 end
 _collapse_population(pop::UnivariateDistribution, ::NamedTuple) = pop
 
+# The pattern-match target for the fit-protocol extension's prior
+# translation was settled in issue #212.
 @doc "
 The centred latent's prior marker, carried on the `prior` column of a centred
 pooled parameter's row.
@@ -266,7 +268,7 @@ A non-`nothing` entry, so the row still counts as estimated.
 
 Reached by qualified name from outside this package — DistributionsInference.jl's
 fit-protocol extension pattern-matches on this marker to translate a
-centred-pooled row's prior to `nothing` (#212).
+centred-pooled row's prior to `nothing`.
 
 See also: [`_centred_pool_rows`](@ref), [`_pool_centred_logprior`](@ref),
 [`pool`](@ref)
@@ -598,6 +600,8 @@ end
 # construction), so a tree with only non-centred (or no) pooling adds no
 # per-evaluation cost.
 
+# This qualified-name path for DistributionsInference.jl's fit-protocol
+# extension was settled in issue #212.
 @doc raw"
 
 The centred pooled parameters' `(path, param, pool)` triples, in table order.
@@ -606,7 +610,7 @@ Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
 construction time), so a tree with only non-centred (or no) pooling adds no
 per-evaluation cost. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
-find the rows [`pool_centred_logprior`](@ref) needs to score (#212).
+find the rows [`pool_centred_logprior`](@ref) needs to score.
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
@@ -637,15 +641,17 @@ function centred_pool_rows(dist)
     return rows
 end
 
+# The rename away from the leading-underscore name was made in issue #212.
 @doc raw"
 
 Deprecated alias for [`centred_pool_rows`](@ref); kept transitionally so a
 caller already qualifying it (`ComposedDistributions._centred_pool_rows`, or
 an explicit `using ComposedDistributions: _centred_pool_rows`) keeps working
-across the rename (#212 declared this `public` with the leading underscore,
-which the org's naming convention reserves for internal-only names). New code
-should call `centred_pool_rows`; this alias is removed in a future cleanup
-once DistributionsInference.jl's fit-protocol extension has moved off it.
+across the rename to a leading-underscore-free `public` name (the org's
+naming convention reserves a leading underscore for internal-only names).
+New code should call `centred_pool_rows`; this alias is removed in a future
+cleanup once DistributionsInference.jl's fit-protocol extension has moved
+off it.
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected; see
@@ -673,7 +679,7 @@ the current hyperparameters (read from the flattened draw `nt`).
 
 Reached by qualified name from outside this package — DistributionsInference.jl's
 fit-protocol extension calls this to score a composed tree's centred-pooled
-population term (#212).
+population term.
 
 # Arguments
 - `rows`: the `(path, param, pool)` triples from [`centred_pool_rows`](@ref).
@@ -703,13 +709,14 @@ function pool_centred_logprior(rows, nt)
     end
 end
 
+# The rename away from the leading-underscore name was made in issue #212.
 @doc raw"
 
 Deprecated alias for [`pool_centred_logprior`](@ref); kept transitionally so a
 caller already qualifying it (`ComposedDistributions._pool_centred_logprior`,
 or an explicit `using ComposedDistributions: _pool_centred_logprior`) keeps
-working across the rename (#212 declared this `public` with the leading
-underscore, which the org's naming convention reserves for internal-only
+working across the rename to a leading-underscore-free `public` name (the
+org's naming convention reserves a leading underscore for internal-only
 names). New code should call `pool_centred_logprior`; this alias is removed in
 a future cleanup once DistributionsInference.jl's fit-protocol extension has
 moved off it.

@@ -348,7 +348,7 @@ holding the fixed parameters at the template.
 
 Generated once per distinct tree type from a compile-time layout walk (no
 `Dict`, no intermediate `Any`-typed accumulation), so the result is
-`@inferred`-concrete and the reverse-mode AD backends (including Enzyme, #162)
+`@inferred`-concrete and the reverse-mode AD backends (including Enzyme)
 differentiate through it.
 
 # Arguments

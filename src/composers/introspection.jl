@@ -1227,8 +1227,8 @@ hand and calling `update(d, nt)`.
 
 A `Vector{<:NamedTuple}` is `Tables.istable` (a Tables.jl row table) under
 both this package's `edge`/`param` convention and
-`DistributionsInference`'s dotted-`name` row convention
-(`parameter_rows`/DI#20) — the two are not interchangeable. Either way it
+`DistributionsInference`'s dotted-`name` row convention (its
+`parameter_rows`) — the two are not interchangeable. Either way it
 reaches this same logic (a `Vector{<:NamedTuple}` argument is caught by the
 [`update`](@ref)`(d, x::AbstractVector)` method, which checks
 `Tables.istable` before treating `x` as a flat numeric vector, and forwards
@@ -1677,7 +1677,7 @@ default_prior((; edge = :onset_admit, param = :scale,
 ```
 
 !!! note \"DistributionsInference's `distribution_priors`\"
-    `DistributionsInference.distribution_priors` (CD#195/DI#20) applies the
+    `DistributionsInference.distribution_priors` applies the
     same support-derived heuristic generically, over any fit-protocol
     object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
     `ComposedDistributions` tree. It is a separate implementation, not a
