@@ -18,13 +18,13 @@ end
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
     est = uncertain(censored(Gamma(2.0, 3.0); upper = 10.0);
-        shape = LogNormal(log(2.0), 0.2))
+        alpha = LogNormal(log(2.0), 0.2))
     tree = compose((onset = est, death = LogNormal(0.5, 0.4)))
     @test flat_dimension(tree) == 1
 
     x = [2.5]
     nt = unflatten(tree, x)
-    @test nt == (onset = (shape = 2.5, scale = 3.0), death = (mu = 0.5, sigma = 0.4))
+    @test nt == (onset = (alpha = 2.5, theta = 3.0), death = (mu = 0.5, sigma = 0.4))
     @test flatten(tree, nt) == x
 
     collapsed = reconstruct(tree, x)
@@ -40,12 +40,12 @@ end
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     tied1 = shared(:g, u)
     tied2 = shared(:g, u)
     sub = compose((admit = LogNormal(0.5, 0.4), tied1 = tied1))
     root = compose((
-        onset = uncertain(Gamma(1.5, 1.0); shape = LogNormal(0.0, 0.5)),
+        onset = uncertain(Gamma(1.5, 1.0); alpha = LogNormal(0.0, 0.5)),
         sub = sub,
         tied2 = tied2))
 
@@ -55,7 +55,7 @@ end
     nt = unflatten(root, x)
     @test flatten(root, nt) == x
     @test !haskey(nt.sub, :tied1)
-    @test nt.g.shape == 2.9
+    @test nt.g.alpha == 2.9
 
     collapsed = reconstruct(root, x)
     @test collapsed == update(root, nt)
@@ -72,27 +72,27 @@ end
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
     centred_pop = uncertain(Gamma(2.0, 1.0);
-        shape = truncated(Normal(2.0, 1.0); lower = 0))
+        alpha = truncated(Normal(2.0, 1.0); lower = 0))
     tree = compose((
-        north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-        a = uncertain(Gamma(3.0, 1.0); shape = pool(:g, centred_pop)),
-        b = uncertain(Gamma(3.0, 1.0); shape = pool(:g, centred_pop)),
+        north = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+        east = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+        a = uncertain(Gamma(3.0, 1.0); alpha = pool(:g, centred_pop)),
+        b = uncertain(Gamma(3.0, 1.0); alpha = pool(:g, centred_pop)),
         fixed = LogNormal(0.5, 0.4)))
 
-    # district: mu, sigma, z_north, z_east (4); g: shape (1 hyper) + a, b (2
+    # district: mu, sigma, z_north, z_east (4); g: alpha (1 hyper) + a, b (2
     # centred latents) = 3. Total 7.
     @test flat_dimension(tree) == 7
 
     x = [0.1, 0.5, 0.3, -0.2, 2.4, 3.0, 1.5]
     nt = unflatten(tree, x)
     @test flatten(tree, nt) == x
-    @test nt.north.shape == (z = 0.3,)
-    @test nt.east.shape == (z = -0.2,)
-    @test nt.a.shape == 3.0            # centred: bare value, not (z = ...)
-    @test nt.b.shape == 1.5
+    @test nt.north.alpha == (z = 0.3,)
+    @test nt.east.alpha == (z = -0.2,)
+    @test nt.a.alpha == 3.0            # centred: bare value, not (z = ...)
+    @test nt.b.alpha == 1.5
     @test nt.district == (mu = 0.1, sigma = 0.5)
-    @test nt.g == (shape = 2.4,)
+    @test nt.g == (alpha = 2.4,)
 
     collapsed = reconstruct(tree, x)
     @test collapsed == update(tree, nt)
@@ -108,28 +108,28 @@ end
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
-    # Gamma's native order is (shape, scale); `scale` is pooled here, so a
+    # Gamma's native order is (alpha, theta); `theta` is pooled here, so a
     # codec walk that (wrongly) hoists the pool group's hyperparameter slots
-    # before the WHOLE leaf's own block -- rather than at `scale`'s own
-    # native-order position, after `shape` -- disagrees with `params_table`.
+    # before the WHOLE leaf's own block -- rather than at `theta`'s own
+    # native-order position, after `alpha` -- disagrees with `params_table`.
     tree = compose((
         a = uncertain(Gamma(2.0, 3.0);
-            shape = LogNormal(0.0, 0.3), scale = pool(:g)),
+            alpha = LogNormal(0.0, 0.3), theta = pool(:g)),
         b = uncertain(Gamma(4.0, 5.0);
-            shape = LogNormal(0.0, 0.3), scale = pool(:g))))
+            alpha = LogNormal(0.0, 0.3), theta = pool(:g))))
 
     table = params_table(tree)
     @test collect(table.edge) ==
-          [:a, :g, :g, Symbol("a.scale"), :b, Symbol("b.scale")]
-    @test collect(table.param) == [:shape, :mu, :sigma, :z, :shape, :z]
+          [:a, :g, :g, Symbol("a.theta"), :b, Symbol("b.theta")]
+    @test collect(table.param) == [:alpha, :mu, :sigma, :z, :alpha, :z]
 
     x = [2.0, 0.0, 1.0, 0.0, 4.0, 0.0]
     nt = unflatten(tree, x)
-    @test nt.a.shape == 2.0
+    @test nt.a.alpha == 2.0
     @test nt.g == (mu = 0.0, sigma = 1.0)
-    @test nt.a.scale == (z = 0.0,)
-    @test nt.b.shape == 4.0
-    @test nt.b.scale == (z = 0.0,)
+    @test nt.a.theta == (z = 0.0,)
+    @test nt.b.alpha == 4.0
+    @test nt.b.theta == (z = 0.0,)
     @test flatten(tree, nt) == x
 
     collapsed = reconstruct(tree, x)
@@ -142,23 +142,23 @@ end
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
     tree = compose((
-        a = uncertain(Gamma(2.0, 3.0); shape = pool(:g1), scale = pool(:g2)),
-        b = uncertain(Gamma(4.0, 5.0); shape = pool(:g1)),
-        c = uncertain(Gamma(6.0, 7.0); scale = pool(:g2))))
+        a = uncertain(Gamma(2.0, 3.0); alpha = pool(:g1), theta = pool(:g2)),
+        b = uncertain(Gamma(4.0, 5.0); alpha = pool(:g1)),
+        c = uncertain(Gamma(6.0, 7.0); theta = pool(:g2))))
 
     table = params_table(tree)
-    @test collect(table.edge) == [:g1, :g1, Symbol("a.shape"), :g2, :g2,
-        Symbol("a.scale"), Symbol("b.shape"), :b, :c, Symbol("c.scale")]
+    @test collect(table.edge) == [:g1, :g1, Symbol("a.alpha"), :g2, :g2,
+        Symbol("a.theta"), Symbol("b.alpha"), :b, :c, Symbol("c.theta")]
     @test flat_dimension(tree) == 8
 
     x = [10.0, 11.0, 20.0, 30.0, 31.0, 40.0, 50.0, 60.0]
     nt = unflatten(tree, x)
     @test nt.g1 == (mu = 10.0, sigma = 11.0)
-    @test nt.a.shape == (z = 20.0,)
+    @test nt.a.alpha == (z = 20.0,)
     @test nt.g2 == (mu = 30.0, sigma = 31.0)
-    @test nt.a.scale == (z = 40.0,)
-    @test nt.b.shape == (z = 50.0,)
-    @test nt.c.scale == (z = 60.0,)
+    @test nt.a.theta == (z = 40.0,)
+    @test nt.b.alpha == (z = 50.0,)
+    @test nt.c.theta == (z = 60.0,)
     @test flatten(tree, nt) == x
 
     collapsed = reconstruct(tree, x)
@@ -170,22 +170,22 @@ end
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
-    # `pop` writes `scale` before `shape`, the reverse of Gamma's native
-    # (shape, scale) order; the group hyperparameter rows must still land in
+    # `pop` writes `theta` before `alpha`, the reverse of Gamma's native
+    # (alpha, theta) order; the group hyperparameter rows must still land in
     # NATIVE order (`params_table` walks `leaf_param_names`, not a
     # population's kwargs order).
     pop = uncertain(Gamma(2.0, 3.0);
-        scale = LogNormal(0.0, 0.3), shape = LogNormal(0.0, 0.3))
+        theta = LogNormal(0.0, 0.3), alpha = LogNormal(0.0, 0.3))
     tree = compose((
-        a = uncertain(Gamma(2.0, 3.0); shape = pool(:g, pop)),
-        b = uncertain(Gamma(4.0, 5.0); shape = pool(:g, pop))))
+        a = uncertain(Gamma(2.0, 3.0); alpha = pool(:g, pop)),
+        b = uncertain(Gamma(4.0, 5.0); alpha = pool(:g, pop))))
 
     table = params_table(tree)
-    @test collect(table.param)[1:2] == [:shape, :scale]
+    @test collect(table.param)[1:2] == [:alpha, :theta]
 
     x = [2.0, 3.0, 2.0, 3.0]
     nt = unflatten(tree, x)
-    @test nt.g == (shape = 2.0, scale = 3.0)
+    @test nt.g == (alpha = 2.0, theta = 3.0)
     @test flatten(tree, nt) == x
 
     collapsed = reconstruct(tree, x)
@@ -201,10 +201,10 @@ end
         resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => (Gamma(2.0, 1.5), 0.7)),
         (branch_probs = Dirichlet(ones(2)),))
     tree = compose((
-        onset = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+        onset = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
         outcome = inner))
 
-    # onset.shape (1) + the K=2 node's K-1=1 stick coordinate.
+    # onset.alpha (1) + the K=2 node's K-1=1 stick coordinate.
     @test flat_dimension(tree) == 2
 
     x = [2.2, 0.4]
@@ -226,17 +226,17 @@ end
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
-    inc = shared(:inc, uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)))
+    inc = shared(:inc, uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)))
     sel = choose(
         :index => inc,
         :sourced => compose((
             src = uncertain(LogNormal(0.5, 0.4);
                 mu = Normal(0.5, 0.3)), inc = inc)))
-    race = compete(:death => uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    race = compete(:death => uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
         :recover => Gamma(1.5, 2.0))
     tree = compose((sel = sel, race = race))
 
-    # inc.shape shared once (1) + sourced.src.mu (1) + race.death.shape (1).
+    # inc.alpha shared once (1) + sourced.src.mu (1) + race.death.alpha (1).
     @test flat_dimension(tree) == 3
 
     x = [2.6, 0.7, 2.1]
@@ -244,7 +244,7 @@ end
     @test flatten(tree, nt) == x
     @test !haskey(nt.sel, :index)
     @test !haskey(nt.sel.sourced, :inc)
-    @test nt.inc.shape == 2.6
+    @test nt.inc.alpha == 2.6
 
     collapsed = reconstruct(tree, x)
     @test collapsed == update(tree, nt)
@@ -263,10 +263,27 @@ end
 # generation-strategy swap -- the emitted flat-vector layout (which name owns
 # which `x` slot) is untouched -- so every tree already covered by the
 # `codec: property round-trip` items above must still `unflatten` to exactly
-# the same nested `NamedTuple`, both in value and in (fully concrete, still
-# `@inferred`-stable) type. This item re-collects those same trees and
-# expected results as one dedicated parity check, so a future generation-time
-# change to this file has one place that fails loudly on any drift.
+# the same nested `NamedTuple`, in both value and runtime type. This item
+# re-collects those same trees and expected results as one dedicated parity
+# check, so a future generation-time change to this file has one place that
+# fails loudly on any drift.
+#
+# Not `@inferred` any more: `leaf_param_names`'s built-in-family names came
+# from a per-type dispatch table until #345 replaced it with generic,
+# value-based derivation (matching `params(leaf)` against
+# `fieldnames(typeof(leaf))`). The table was a pure function of the leaf's
+# TYPE, so Julia's compiler could prove the exact name tuple at compile time;
+# the derivation reads actual field VALUES to decide the match, which no
+# amount of restructuring lets ordinary type inference see through (a
+# `@generated` function cannot help either -- it may only inspect argument
+# TYPES, never VALUES, and matching genuinely needs the values). So
+# `unflatten`/`flatten` on a derivation-named leaf now return a NamedTuple
+# whose VALUE and RUNTIME type are exactly as before, but whose statically
+# INFERRED type is the widened `NamedTuple{names, T} where names` -- correct
+# results, less concrete compile-time typing. This is a deliberate, accepted
+# trade of the old static table's inferability for registration-free
+# genericity (the whole point of #345), not a bug; only the `@inferred`
+# wrapping comes off; the value/runtime-type parity checks stay.
 @testitem "codec: S2 layout parity -- unflatten is unchanged on every existing \
     codec_gen test tree" begin
     using ComposedDistributions: update, unflatten, flatten
@@ -278,54 +295,54 @@ end
     let tree = compose((onset_admit = Gamma(2.0, 1.0),
             admit_death = LogNormal(0.5, 0.4)))
         x = Float64[]
-        expected = (onset_admit = (shape = 2.0, scale = 1.0),
+        expected = (onset_admit = (alpha = 2.0, theta = 1.0),
             admit_death = (mu = 0.5, sigma = 0.4))
         push!(cases, (tree, x, expected))
     end
 
     # A censored leaf's estimated parameter.
     let est = uncertain(censored(Gamma(2.0, 3.0); upper = 10.0);
-            shape = LogNormal(log(2.0), 0.2))
+            alpha = LogNormal(log(2.0), 0.2))
         tree = compose((onset = est, death = LogNormal(0.5, 0.4)))
         x = [2.5]
-        expected = (onset = (shape = 2.5, scale = 3.0),
+        expected = (onset = (alpha = 2.5, theta = 3.0),
             death = (mu = 0.5, sigma = 0.4))
         push!(cases, (tree, x, expected))
     end
 
     # Shared tags at different depths.
-    let u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    let u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
         tied1 = shared(:g, u)
         tied2 = shared(:g, u)
         sub = compose((admit = LogNormal(0.5, 0.4), tied1 = tied1))
         root = compose((
-            onset = uncertain(Gamma(1.5, 1.0); shape = LogNormal(0.0, 0.5)),
+            onset = uncertain(Gamma(1.5, 1.0); alpha = LogNormal(0.0, 0.5)),
             sub = sub,
             tied2 = tied2))
         x = [2.3, 2.9]
-        expected = (onset = (shape = 2.3, scale = 1.0),
+        expected = (onset = (alpha = 2.3, theta = 1.0),
             sub = (admit = (mu = 0.5, sigma = 0.4),),
-            g = (shape = 2.9, scale = 1.0))
+            g = (alpha = 2.9, theta = 1.0))
         push!(cases, (root, x, expected))
     end
 
     # Non-centred and centred pools together.
     let centred_pop = uncertain(Gamma(2.0, 1.0);
-            shape = truncated(Normal(2.0, 1.0); lower = 0))
+            alpha = truncated(Normal(2.0, 1.0); lower = 0))
         tree = compose((
-            north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-            east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-            a = uncertain(Gamma(3.0, 1.0); shape = pool(:g, centred_pop)),
-            b = uncertain(Gamma(3.0, 1.0); shape = pool(:g, centred_pop)),
+            north = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+            east = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+            a = uncertain(Gamma(3.0, 1.0); alpha = pool(:g, centred_pop)),
+            b = uncertain(Gamma(3.0, 1.0); alpha = pool(:g, centred_pop)),
             fixed = LogNormal(0.5, 0.4)))
         x = [0.1, 0.5, 0.3, -0.2, 2.4, 3.0, 1.5]
-        expected = (north = (shape = (z = 0.3,), scale = 1.0),
-            east = (shape = (z = -0.2,), scale = 1.0),
-            a = (shape = 3.0, scale = 1.0),
-            b = (shape = 1.5, scale = 1.0),
+        expected = (north = (alpha = (z = 0.3,), theta = 1.0),
+            east = (alpha = (z = -0.2,), theta = 1.0),
+            a = (alpha = 3.0, theta = 1.0),
+            b = (alpha = 1.5, theta = 1.0),
             fixed = (mu = 0.5, sigma = 0.4),
             district = (mu = 0.1, sigma = 0.5),
-            g = (shape = 2.4,))
+            g = (alpha = 2.4,))
         push!(cases, (tree, x, expected))
     end
 
@@ -336,44 +353,46 @@ end
             (branch_probs = Dirichlet(ones(2)),))
         tree = compose((
             onset = uncertain(
-                Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+                Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
             outcome = inner))
         x = [2.2, 0.4]
-        expected = (onset = (shape = 2.2, scale = 1.0),
-            outcome = (death = (shape = 1.5, scale = 1.0),
-                disch = (shape = 2.0, scale = 1.5),
+        expected = (onset = (alpha = 2.2, theta = 1.0),
+            outcome = (death = (alpha = 1.5, theta = 1.0),
+                disch = (alpha = 2.0, theta = 1.5),
                 branch_probs = (stick_1 = 0.4,)))
         push!(cases, (tree, x, expected))
     end
 
     # Choose alternatives with a shared tag, and Compete.
     let inc = shared(
-            :inc, uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)))
+            :inc, uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)))
         sel = choose(
             :index => inc,
             :sourced => compose((
                 src = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.3)),
                 inc = inc)))
         race = compete(
-            :death => uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+            :death => uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
             :recover => Gamma(1.5, 2.0))
         tree = compose((sel = sel, race = race))
         x = [2.6, 0.7, 2.1]
         expected = (sel = (sourced = (src = (mu = 0.7, sigma = 0.4),),),
-            race = (death = (shape = 2.1, scale = 1.0),
-                recover = (shape = 1.5, scale = 2.0)),
-            inc = (shape = 2.6, scale = 1.0))
+            race = (death = (alpha = 2.1, theta = 1.0),
+                recover = (alpha = 1.5, theta = 2.0)),
+            inc = (alpha = 2.6, theta = 1.0))
         push!(cases, (tree, x, expected))
     end
 
     for (tree, x, expected) in cases
-        nt = @inferred unflatten(tree, x)
+        nt = unflatten(tree, x)
         @test nt == expected
         @test typeof(nt) == typeof(expected)
-        # `flatten` is guarded here too, not just round-tripped: it is the
-        # direction whose inference broke silently, because a value-level
-        # round-trip stays correct while the return type widens.
-        @test @inferred(flatten(tree, nt)) == x
+        # `flatten` is guarded here too, not just round-tripped: a
+        # value-level round-trip alone would not catch the direction whose
+        # inference broke silently when this item was `@inferred` (S2); it
+        # is no longer `@inferred` (see the derivation-vs-inferability note
+        # above), so this only re-affirms the value round-trip.
+        @test flatten(tree, nt) == x
     end
 end
 
@@ -414,12 +433,12 @@ end
     leaf = uncertain(MomentLeaf((8.0, 2.0)); mean = LogNormal(log(8.0), 0.2))
     tree = compose((
         m = leaf, other = uncertain(Gamma(2.0, 1.0);
-            shape = LogNormal(0.0, 0.3))))
+            alpha = LogNormal(0.0, 0.3))))
     @test flat_dimension(tree) == 2
 
     x = [9.0, 2.5]
     nt = unflatten(tree, x)
-    @test nt == (m = (mean = 9.0, sd = 2.0), other = (shape = 2.5, scale = 1.0))
+    @test nt == (m = (mean = 9.0, sd = 2.0), other = (alpha = 2.5, theta = 1.0))
     @test isconcretetype(typeof(nt))
     @test flatten(tree, nt) == x
 

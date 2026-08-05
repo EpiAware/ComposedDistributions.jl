@@ -103,7 +103,7 @@ end
 
     tree = compose((
         onset_admit = uncertain(Gamma(2.0, 1.0);
-            shape = LogNormal(log(2.0), 0.2)),
+            alpha = LogNormal(log(2.0), 0.2)),
         admit_death = LogNormal(0.5, 0.4)))
     data = [[0.5, 2.0], [1.0, 3.0]]
     function f(x)

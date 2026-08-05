@@ -184,9 +184,9 @@ end
     # An uncertain leaf's estimated parameter is reported by
     # `required_parameters`; a fixed leaf contributes nothing.
     utree = sequential(:onset => uncertain(Gamma(2.0, 1.0);
-            shape = LogNormal(0.0, 0.3)),
+            alpha = LogNormal(0.0, 0.3)),
         :admit => LogNormal(0.5, 0.4))
-    @test required_parameters(utree) == [(edge = :onset, param = :shape)]
+    @test required_parameters(utree) == [(edge = :onset, param = :alpha)]
 end
 
 @testitem "instantiate: the convolution kernel varies with the context" begin
@@ -285,7 +285,7 @@ end
 @testitem "instantiate: a latent (sampled) parameter is just a covariate" begin
     using Distributions
 
-    # An uncertain leaf: its shape is a parameter the sampler draws, named as a
+    # An uncertain leaf: its alpha is a parameter the sampler draws, named as a
     # covariate. The same Varying/Context seam resolves it — the index is LATENT
     # (filled by the sampler) rather than OBSERVED (filled by the data). This is
     # the integration point for the uncertain-distributions work.
@@ -333,7 +333,7 @@ end
     ref_node = node_v.reference
 
     # The node interface (component_names/event_names/event_tree/probs) sees
-    # through the wrapper to the reference's own outcome shape, stable BEFORE
+    # through the wrapper to the reference's own outcome alpha, stable BEFORE
     # any `instantiate` call — not a single flat leaf slot.
     @test ComposedDistributions.component_names(node_v) ==
           ComposedDistributions.component_names(ref_node)
@@ -342,7 +342,7 @@ end
     @test probs(node_v) == probs(ref_node)
 
     # A bare draw is usable at the reference, no throw, matching the
-    # reference's own record shape exactly. `isequal` (not `==`) since a
+    # reference's own record alpha exactly. `isequal` (not `==`) since a
     # one_of record can carry `missing` in its un-fired outcome slots, and
     # `==` over `missing` propagates to `missing` rather than a Bool.
     rng = Xoshiro(1)
@@ -358,7 +358,7 @@ end
     rec = rand(Xoshiro(3), node_v)
     @test logpdf(node_v, rec) == logpdf(ref_node, rec)
 
-    # After instantiate the event-name set is unchanged in shape (stable
+    # After instantiate the event-name set is unchanged in alpha (stable
     # across resolution, per the wrapper's documented contract).
     resolved = instantiate(node_v, Context(time = 10.0))
     @test event_names(resolved) == event_names(node_v)
@@ -375,7 +375,7 @@ end
     seq_bare = Sequential(Gamma(2.0, 1.0), bare_node)
 
     # The flat value-vector slot count matches the bare (un-wrapped) case: a
-    # one_of child is one value slot (its marginal), not the record shape.
+    # one_of child is one value slot (its marginal), not the record alpha.
     @test ComposedDistributions.child_nleaves(seq_v) ==
           ComposedDistributions.child_nleaves(seq_bare)
 
@@ -411,7 +411,7 @@ end
     @test !has_varying(resolved)
 end
 
-@testitem "threshold: the below/above activation shape (#257)" begin
+@testitem "threshold: the below/above activation alpha (#257)" begin
     using Distributions
 
     below = Gamma(2.0, 1.0)

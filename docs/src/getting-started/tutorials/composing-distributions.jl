@@ -265,7 +265,7 @@ tbl.edge, tbl.param
 
 # [`build_priors`](@ref) takes that table (any Tables.jl source with `edge`,
 # `param`, `value`, `support` columns) and derives a default prior per row from
-# that leaf's support: a positive scale parameter gets a positive-truncated
+# that leaf's support: a positive theta parameter gets a positive-truncated
 # prior, a location parameter an unbounded one, a `[0, 1]` probability a
 # `Uniform(0, 1)`.
 # So `build_priors(tbl)` alone yields a complete set, defined against the table
@@ -273,21 +273,21 @@ tbl.edge, tbl.param
 
 priors = build_priors(tbl);
 
-priors.onset_admit.shape
+priors.onset_admit.alpha
 
 # ## Editing a composed tree
 #
 # [`update`](@ref) applies a set of parameter values back to a composed object,
 # returning a distribution of the same structure.
 
-updated = update(template, (onset_admit = (shape = 3.0, scale = 1.5),
+updated = update(template, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)));
 
 mean(updated)
 
 # [`update`](@ref) also replaces whole nodes, not just their values.
 # Passing `path => new_node` swaps the node at an address for a new distribution,
-# keeping the tree shape.
+# keeping the tree alpha.
 # The address is the same one [`event`](@ref) reads: a bare name, a dotted
 # `Symbol`, or a tuple of edge names.
 
@@ -295,7 +295,7 @@ replaced = update(template, :admit_death => Gamma(3.0, 1.5));
 
 event(replaced, :admit_death)
 
-# Two edits that change the tree shape are kept separate.
+# Two edits that change the tree alpha are kept separate.
 # [`prune`](@ref) drops a branch from a node (renormalising a [`Resolve`](@ref)
 # arm's remaining probabilities), and [`splice`](@ref) inserts a step around a
 # node.
@@ -333,7 +333,7 @@ unique(params_table(tied).edge)
 # ## Syntax reference
 #
 # Every public composition form on one object, with whether it preserves the
-# tree shape.
+# tree alpha.
 #
 # | Syntax | What it does | Shape |
 # |---|---|---|
@@ -348,7 +348,7 @@ unique(params_table(tied).edge)
 # | `difference(d1, d2)` | a `Difference` `X - Y` | builds |
 # | `shared(:tag, d)` | tag a leaf as a tied parameter group | leaf wrap |
 # | `tie(d, paths...; name)` | tie leaves at `paths` into one group | yes |
-# | `update(d, (a = (shape = 3,),))` | replace free parameter values | yes |
+# | `update(d, (a = (alpha = 3,),))` | replace free parameter values | yes |
 # | `update(d, path => new_node)` | replace a whole node | yes |
 # | `prune(d, path...)` | drop a branch (renormalise a `Resolve` arm) | no (topology) |
 # | `splice(d, path; before, after)` | insert a step at a node | no (topology) |
@@ -384,7 +384,7 @@ unique(params_table(tied).edge)
 # - [`params_table`](@ref) and [`build_priors`](@ref) attach parameters and
 #   support-derived priors to the same object.
 # - [`update`](@ref) edits the tree: `path => new_node` replaces nodes keeping
-#   the shape, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,
+#   the alpha, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,
 #   and [`tie`](@ref) links leaves into one parameter group.
 #
 # ## Where next

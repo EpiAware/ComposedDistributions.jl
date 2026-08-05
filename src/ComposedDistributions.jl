@@ -33,6 +33,7 @@ params_table(tree)
 module ComposedDistributions
 
 using Random: AbstractRNG, default_rng
+using Unicode: Unicode
 
 # Functions extended with new methods.
 import Distributions: params, insupport, pdf, logpdf, cdf, logcdf,

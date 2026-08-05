@@ -529,15 +529,22 @@ end
 The scalar parameter names of a leaf distribution, matched positionally to
 `params(leaf)`.
 
-Distributions.jl exposes parameter values through `params` but not their names,
-so the common families are mapped explicitly here; anything unmapped falls back
-to `:param_1, :param_2, ...`.
+Distributions.jl exposes parameter values through `params` but not their
+names, so this derives them from the leaf's own struct: `params(leaf)`
+matched against `fieldnames(typeof(leaf))` by an order-preserving,
+value-equal (`===`/`==`) assignment of each parameter slot to a distinct
+field (both walked in their own declared order, so a field beyond the
+matched set — an internal cache, say — cannot be picked out of order). A
+Greek field name (`μ`, `α`, `θ`, ...) is transliterated to its ASCII spelling
+(`mu`, `alpha`, `theta`, ...). When no such assignment exists — or more than
+one exists and they disagree on the names — this falls back to `()`, and
+[`leaf_param_names`](@ref) pads positionally (`:param_1, :param_2, ...`).
 
-A leaf type whose free parameters are not the native family's overrides this, in
-step with [`leaf_ctor`](@ref): the two together fix the coordinates that
-`params_table`, `uncertain`, `build_priors` and the flat codec work in. A
-moment-parameterised wrapper naming a mean and a standard deviation, rather than
-a shape and a scale, is the motivating case.
+A leaf type whose free parameters are not its own struct fields overrides
+this, in step with [`leaf_ctor`](@ref): the two together fix the coordinates
+that `params_table`, `uncertain`, `build_priors` and the flat codec work in.
+A moment-parameterised wrapper naming a mean and a standard deviation, rather
+than the native family's own fields, is the motivating case.
 
 # Arguments
 - the leaf distribution whose parameter names are read.
@@ -552,19 +559,128 @@ ComposedDistributions.param_names(Gamma(2.0, 1.0))
 # See also
 - [`leaf_ctor`](@ref): the matching rebuild.
 "
-param_names(::Distributions.Normal) = (:mu, :sigma)
-param_names(::Distributions.LogNormal) = (:mu, :sigma)
-param_names(::Distributions.Gamma) = (:shape, :scale)
-param_names(::Distributions.Weibull) = (:shape, :scale)
-param_names(::Distributions.Exponential) = (:scale,)
-param_names(::Distributions.Uniform) = (:lower, :upper)
-param_names(::Any) = ()
+function param_names(leaf)
+    derived = _derive_param_names(leaf)
+    return derived === nothing ? () : derived
+end
 
 # The underscored alias retained for the package's existing internal callers
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
 # makes it the same function object, so dropping the underscore is
 # source-compatible.
 const _param_names = param_names
+
+# --- generic derivation: params(leaf) <-> fieldnames(typeof(leaf)) ---------
+
+# Whether `params` has a method for `leaf`'s concrete type. A plain
+# `hasmethod` reflection (never a `try`/`catch`: a `catch` in a differentiated
+# path breaks Mooncake reverse-mode rule derivation, the same reason
+# `_ctor_has_check_args` above uses `hasmethod` rather than a guarded call),
+# so a leaf type with no `params` method falls back to `()` exactly as it did
+# before this derivation existed, instead of newly throwing. Its result is a
+# `Bool` constant with respect to the differentiated parameters, so it is
+# shielded with a Mooncake `@zero_adjoint` in `ComposedDistributionsMooncakeExt`
+# (`hasmethod` lowers to a `jl_gf_invoke_lookup` foreigncall Mooncake reverse
+# has no rule for).
+_has_params_method(leaf) = hasmethod(params, Tuple{typeof(leaf)})
+
+# Attempt to derive `leaf`'s parameter names. Returns the ASCII-transliterated
+# name tuple when exactly one order-preserving assignment exists (or every
+# assignment found agrees on the names), `nothing` otherwise.
+function _derive_param_names(leaf)
+    _has_params_method(leaf) || return nothing
+    vals = params(leaf)
+    n = length(vals)
+    n == 0 && return ()
+    fields = fieldnames(typeof(leaf))
+    m = length(fields)
+    m < n && return nothing
+    fvals = ntuple(i -> getfield(leaf, fields[i]), m)
+    assignments = _order_preserving_assignments(vals, fvals)
+    isempty(assignments) && return nothing
+    first_names = _assignment_names(first(assignments), fields)
+    for a in Iterators.drop(assignments, 1)
+        _assignment_names(a, fields) == first_names || return nothing
+    end
+    return map(_normalize_param_name, first_names)
+end
+
+# Every strictly order-preserving assignment of `vals` (walked in order) to
+# `fvals`'s indices (each slot matched to a distinct, later field than the
+# previous slot, so both sequences stay in their own declared order), as a
+# `Vector` of index tuples. Exhaustive backtracking: both tuples are short (a
+# handful of scalar parameters), so this stays cheap.
+function _order_preserving_assignments(vals::Tuple, fvals::Tuple)
+    n = length(vals)
+    out = Vector{NTuple{n, Int}}()
+    _search_assignments!(out, vals, fvals, 1, 0, ())
+    return out
+end
+
+function _search_assignments!(out::Vector, vals::Tuple, fvals::Tuple, i::Int,
+        after::Int, chosen::Tuple)
+    if i > length(vals)
+        push!(out, chosen)
+        return nothing
+    end
+    for j in (after + 1):length(fvals)
+        _val_eq(vals[i], fvals[j]) || continue
+        _search_assignments!(out, vals, fvals, i + 1, j, (chosen..., j))
+    end
+    return nothing
+end
+
+# Value equality for the assignment search: identity first (the cheap,
+# always-correct case for immutable bits values), falling back to `isequal`
+# (safe across mismatched types, e.g. comparing a scalar field to a
+# vector-valued parameter, returning `false` rather than throwing).
+_val_eq(a, b) = a === b || isequal(a, b)
+
+_assignment_names(a::NTuple{N, Int}, fields::Tuple) where {N} = ntuple(i -> fields[a[i]], N)
+
+# --- Greek-to-ASCII parameter-name transliteration --------------------------
+
+# Fixed map from a single Greek letter to its ASCII spelling, covering the
+# letters Distributions.jl's own struct fields use as shape/scale/location
+# parameters across the univariate families.
+const _GREEK_TO_ASCII = Dict{Char, String}(
+    'μ' => "mu", 'σ' => "sigma", 'α' => "alpha", 'β' => "beta",
+    'θ' => "theta", 'λ' => "lambda", 'κ' => "kappa", 'η' => "eta",
+    'ν' => "nu", 'ρ' => "rho", 'τ' => "tau", 'ω' => "omega",
+    'χ' => "chi", 'ξ' => "xi", 'π' => "pi", 'ϕ' => "phi",
+    'φ' => "phi", 'γ' => "gamma", 'δ' => "delta")
+
+# Transliterate every Greek letter in `s` to its ASCII spelling; any other
+# character passes through unchanged. Unicode NFC-normalised first, so a
+# combining-mark spelling of a Greek letter still matches the table above.
+# String character iteration has no Mooncake reverse rule (the same UTF-8
+# continuation issue `_split_edge` is shielded for), so this is shielded with
+# a Mooncake `@zero_derivative` in `ComposedDistributionsMooncakeExt`.
+function _transliterate_greek(s::AbstractString)
+    io = IOBuffer()
+    for c in Unicode.normalize(s, :NFC)
+        print(io, get(_GREEK_TO_ASCII, c, c))
+    end
+    return String(take!(io))
+end
+
+# A parameter name with any Greek letters spelled out in ASCII (`μ` -> `mu`,
+# `α` -> `alpha`, ...); any other character (or an already-ASCII name) passes
+# through unchanged. `param_names`/`_derive_param_names` apply this to a
+# matched field name so a derived name is always ASCII; `uncertain` and
+# `update` apply it to user-supplied keyword/NamedTuple keys before matching
+# (via `_normalize_kwarg_names` below), so the Greek spelling of a derived
+# name (e.g. `μ` for a `Normal`'s `mu`) is accepted alongside the ASCII one.
+# The one normalisation both directions share.
+_normalize_param_name(name::Symbol) = Symbol(_transliterate_greek(string(name)))
+
+# Normalise every key of a NamedTuple through `_normalize_param_name`, keeping
+# the values in place. The call site for the kwarg/`update`-NamedTuple
+# matching direction (`_normalize_param_name` itself is the derivation-side
+# call site, applied to a single matched field name).
+function _normalize_kwarg_names(nt::NamedTuple{names}) where {names}
+    return NamedTuple{map(_normalize_param_name, names)}(values(nt))
+end
 
 @doc raw"
 The estimable parameter names of a (possibly wrapped) leaf.
@@ -1430,9 +1546,10 @@ function _update(leaf, params::NamedTuple, shared, merge::Bool)
     tag = _shared_tag(leaf)
     if merge
         updates = tag === nothing ? params : get(shared, tag, NamedTuple())
-        return _merge_leaf(leaf, updates)
+        return _merge_leaf(leaf, _normalize_kwarg_names(updates))
     end
-    leaf_params = tag === nothing ? params : _shared_entry(shared, tag, leaf)
+    raw_params = tag === nothing ? params : _shared_entry(shared, tag, leaf)
+    leaf_params = _normalize_kwarg_names(raw_params)
     pnames = _leaf_param_names(leaf)
     # A pooled leaf reconstructs each pooled parameter from the group's shared
     # hyperparameters (read from the top-level group entry, threaded like a

@@ -205,7 +205,7 @@ uncertain(Gamma(2.0, 1.0);
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 "
 function uncertain(template::UnivariateDistribution; kwargs...)
-    nt = values(kwargs)
+    nt = _normalize_kwarg_names(values(kwargs))
     pnames = _leaf_param_names(template)
     for (k, v) in pairs(nt)
         k in pnames || throw(ArgumentError(
@@ -276,7 +276,7 @@ function uncertain(::Type{D}; kwargs...) where {D <: UnivariateDistribution}
             "$(D) has no default template; pass a concrete template " *
             "instead, e.g. uncertain($(nameof(D))(...); ...)"))
     end
-    nt = values(kwargs)
+    nt = _normalize_kwarg_names(values(kwargs))
     pnames = _leaf_param_names(probe)
     for n in pnames
         haskey(nt, n) || throw(ArgumentError(

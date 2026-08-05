@@ -18,7 +18,7 @@ The protocol splits into peel and rebuild, names, reconstruction, uncertainty, t
 | `free_leaf(leaf)` | peel to the innermost free delay |
 | `rewrap_leaf(leaf, inner)` | rebuild the wrapper around a new inner delay |
 | `component_names(node)` | a node's child names |
-| `param_names(leaf)` | the inner delay's native parameter names |
+| `param_names(leaf)` | the inner delay's native parameter names, derived |
 | `leaf_param_names(leaf)` | the estimable names, native then extra |
 | `leaf_ctor(leaf)` | the constructor that rebuilds the inner delay |
 | `uncertain_specs(leaf)` | attached priors, or `nothing` when fixed |
@@ -33,7 +33,9 @@ The peel and rebuild pair is the base of the protocol.
 A plain leaf is its own free leaf and `rewrap_leaf` returns the new inner delay, so the identity holds without a method.
 
 Names and reconstruction fix the coordinates the parameter table and the codec work in.
-`param_names` labels the native family parameters, `leaf_param_names` appends any extra names, and `leaf_ctor` rebuilds the inner delay from a positional tuple of native values.
+`param_names` labels the native family parameters; its default matches `params(leaf)` against `fieldnames(typeof(leaf))` (an order-preserving match on the field values, Greek field names transliterated to ASCII, e.g. `Gamma`'s `α`/`θ` become `alpha`/`theta`) and falls back to positional `:param_1, :param_2, ...` when no such match exists (as for `InverseGamma`, whose shape is not one of its own struct fields).
+`leaf_param_names` appends any extra names, and `leaf_ctor` rebuilds the inner delay from a positional tuple of native values.
+A leaf type whose free parameters are not its own struct fields overrides `param_names` directly, in step with `leaf_ctor`; a moment-parameterised wrapper naming a mean and a standard deviation is the motivating case.
 
 ## Extra parameters
 

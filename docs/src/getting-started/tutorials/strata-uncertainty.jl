@@ -127,7 +127,7 @@ rand(Xoshiro(1), resolved)
 # [`update`](@ref) collapses the uncertain leaf to a concrete one, and the guard
 # then passes.
 
-fitted = update(resolved, (onset_admit = (shape = 2.0, scale = 1.1),
+fitted = update(resolved, (onset_admit = (alpha = 2.0, theta = 1.1),
     admit_death = (mu = 0.6, sigma = 0.4)))
 
 (before = has_uncertain(resolved), after = has_uncertain(fitted))
@@ -175,15 +175,15 @@ promoted = uncertain(resolved)
 # other uncertain leaf. The strata are the leaves that name the same group.
 
 pooled = compose((
-    north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+    north = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    east = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:district))))
 
 # `pool(:district)` uses a default estimated-`LogNormal` population. The codec
 # lowers the group to ordinary scalar rows: the population's hyperparameters
 # `district.mu`, `district.sigma` (once), plus one latent per stratum. A
 # `LogNormal` population is reparameterised non-centred, so the latent is
-# `<stratum>.shape.z ~ Normal(0, 1)` and each stratum's shape is reconstructed as
+# `<stratum>.alpha.z ~ Normal(0, 1)` and each stratum's alpha is reconstructed as
 # `exp(mu + sigma*z_k)`.
 # So `K = 3` strata estimate `2 + 3 = 5` parameters.
 
@@ -198,24 +198,24 @@ pooled_table = params_table(pooled)
 (pool_dimension = ComposedDistributions.flat_dimension(pooled),)
 
 # Passing a different population changes how the strata relate. A general
-# (non-location-scale) population takes the centred path, with each stratum's
+# (non-location-theta) population takes the centred path, with each stratum's
 # parameter scored directly against the population.
 
 gamma_pool = compose((
     north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:district,
+        alpha = pool(:district,
             uncertain(Gamma(2.0, 1.0);
-                shape = truncated(Normal(2.0, 1.0); lower = 0),
-                scale = truncated(Normal(1.0, 1.0); lower = 0)))),
+                alpha = truncated(Normal(2.0, 1.0); lower = 0),
+                theta = truncated(Normal(1.0, 1.0); lower = 0)))),
     east = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:district,
+        alpha = pool(:district,
             uncertain(Gamma(2.0, 1.0);
-                shape = truncated(Normal(2.0, 1.0); lower = 0),
-                scale = truncated(Normal(1.0, 1.0); lower = 0))))))
+                alpha = truncated(Normal(2.0, 1.0); lower = 0),
+                theta = truncated(Normal(1.0, 1.0); lower = 0))))))
 
 (gamma_pool_dimension = ComposedDistributions.flat_dimension(gamma_pool),)
 
-# One edit to the `shape` spec moves along the whole pooling spectrum: a
+# One edit to the `alpha` spec moves along the whole pooling spectrum: a
 # [`shared`](@ref)/[`tie`](@ref) gives one tied value, an independent
 # [`uncertain`](@ref) gives unlinked per-stratum values, and [`pool`](@ref) gives
 # the population hyperparameters plus the linked per-stratum latents.

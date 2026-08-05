@@ -1,5 +1,5 @@
 # Interface-conformance suite: the contract a type must satisfy to take part in
-# composition, checked uniformly over every built-in node shape and a
+# composition, checked uniformly over every built-in node alpha and a
 # user-defined node. Drives the reusable `ComposedDistributions.TestUtils`
 # harness (shipped in `src`, ported from the CensoredDistributions interface
 # suite, EpiAware/CensoredDistributions.jl#795) over the package's own fixtures,
@@ -8,7 +8,7 @@
 # leaf-wrapper contracts). Censoring-free: this package composes any
 # `UnivariateDistribution`.
 
-@testitem "node interface conformance over every composer shape" begin
+@testitem "node interface conformance over every composer alpha" begin
     using ComposedDistributions, Distributions
     using ComposedDistributions.TestUtils: test_node_interface
 
@@ -36,7 +36,7 @@
     end
 end
 
-@testitem "public interface conformance over every composer shape" begin
+@testitem "public interface conformance over every composer alpha" begin
     using ComposedDistributions
     using ComposedDistributions.TestUtils: test_interface, example_fixtures
     import ForwardDiff
@@ -226,7 +226,7 @@ end
     tbl = params_table(tree)
     onset_rows = findall(==(:onset), tbl.edge)
     @test length(onset_rows) == 2
-    @test tbl.param[onset_rows] == [:shape, :scale]
+    @test tbl.param[onset_rows] == [:alpha, :theta]
     @test tbl.value[onset_rows] == [2.0, 3.0]
     # The support is the untruncated/uncensored Gamma's own support, not the
     # censoring bounds.

@@ -108,9 +108,14 @@ end
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = Normal(0.0, 1.0)))
 
-    ascii = update(tree, (admit_death = (mu = 2.0, sigma = 0.5),))
-    greek = update(tree, (admit_death = (μ = 2.0, σ = 0.5),))
+    # Strict update: every leaf's full parameter set, ASCII vs Greek spelling
+    # for the Normal leaf only (Gamma's alpha/theta held fixed either way).
+    ascii = update(tree, (onset_admit = (alpha = 2.0, theta = 1.0),
+        admit_death = (mu = 2.0, sigma = 0.5)))
+    greek = update(tree, (onset_admit = (α = 2.0, θ = 1.0),
+        admit_death = (μ = 2.0, σ = 0.5)))
     @test event(ascii, :admit_death) == event(greek, :admit_death)
+    @test event(ascii, :onset_admit) == event(greek, :onset_admit)
 
     promoted = uncertain(tree; onset_admit = (alpha = LogNormal(log(2.0), 0.2),))
     promoted_greek = uncertain(tree;
