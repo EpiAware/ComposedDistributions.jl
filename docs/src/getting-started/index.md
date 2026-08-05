@@ -102,7 +102,7 @@ mean(total)
 
 Fitting `admission` itself — estimating the uncertain leaf from data rather
 than pinning it by hand — is DistributionsInference.jl's job; see its
-[inference guide](https://distributionsinference.epiaware.org/dev/getting-started/inference)
+[composed-tree tutorial](https://distributionsinference.epiaware.org/dev/getting-started/tutorials/composed-distributions)
 for the full walkthrough.
 
 ## Two spellings for named children

@@ -261,9 +261,10 @@ The centred latent's prior marker, carried on the `prior` column of a centred
 pooled parameter's row.
 
 It is not a fixed distribution (the population depends on the estimated
-hyperparameters), so DistributionsInference.jl's `as_logdensity`/`logdensity`
-scores it separately ([`_pool_centred_logprior`](@ref)) and skips it in the
-fixed per-row prior sum.
+hyperparameters), so DistributionsInference.jl's
+`distribution_to_logdensity`/`logdensity` scores it separately
+([`_pool_centred_logprior`](@ref)) and skips it in the fixed per-row prior
+sum.
 A non-`nothing` entry, so the row still counts as estimated.
 
 Reached by qualified name from outside this package — DistributionsInference.jl's
@@ -596,9 +597,9 @@ end
 # That prior is parameter-dependent, so `pool_centred_logprior` scores it from
 # the reconstructed nested `NamedTuple` rather than the fixed per-row prior
 # vector. The `(path, param, pool)` rows are collected once
-# (`centred_pool_rows`, at DistributionsInference.jl's `as_logdensity`
-# construction), so a tree with only non-centred (or no) pooling adds no
-# per-evaluation cost.
+# (`centred_pool_rows`, at DistributionsInference.jl's
+# `distribution_to_logdensity` construction), so a tree with only non-centred
+# (or no) pooling adds no per-evaluation cost.
 
 # This qualified-name path for DistributionsInference.jl's fit-protocol
 # extension was settled in issue #212.
@@ -606,11 +607,12 @@ end
 
 The centred pooled parameters' `(path, param, pool)` triples, in table order.
 
-Collected once per [`params_table`](@ref) walk (typically at `as_logdensity`
-construction time), so a tree with only non-centred (or no) pooling adds no
-per-evaluation cost. Reached by qualified name from outside this package —
-DistributionsInference.jl's fit-protocol extension calls this directly to
-find the rows [`pool_centred_logprior`](@ref) needs to score.
+Collected once per [`params_table`](@ref) walk (typically at
+`distribution_to_logdensity` construction time), so a tree with only
+non-centred (or no) pooling adds no per-evaluation cost. Reached by qualified
+name from outside this package — DistributionsInference.jl's fit-protocol
+extension calls this directly to find the rows
+[`pool_centred_logprior`](@ref) needs to score.
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
@@ -748,8 +750,8 @@ const _pool_centred_logprior = pool_centred_logprior
 # Every leaf of a pooling group must declare the same population and
 # parameterisation (they are one population); the params-table walk emits the
 # group's hyperparameters from the first member it meets. `validate_pool_groups`
-# (called once at DistributionsInference.jl's `as_logdensity` construction, not
-# per gradient evaluation) rejects a mismatch eagerly.
+# (called once at DistributionsInference.jl's `distribution_to_logdensity`
+# construction, not per gradient evaluation) rejects a mismatch eagerly.
 
 @doc raw"
 
@@ -757,10 +759,10 @@ Check that every leaf of each `pool` group declares the same population
 distribution and parameterisation, throwing an `ArgumentError` on a mismatch.
 
 Called once at [`params_table`](@ref) construction time (typically at
-`as_logdensity` construction), not per gradient evaluation. Reached by
-qualified name from outside this package — DistributionsInference.jl's
-fit-protocol extension calls this directly to gate a tree before fitting
-(#212).
+`distribution_to_logdensity` construction), not per gradient evaluation.
+Reached by qualified name from outside this package —
+DistributionsInference.jl's fit-protocol extension calls this directly to
+gate a tree before fitting (#212).
 
 # Arguments
 - `d`: the composed tree whose pool groups are checked.
@@ -855,7 +857,7 @@ end
 # shared tag sharing a name silently clobber each other in that merge, and so
 # does either family sharing a name with a root edge (see #177 and the #178
 # risk list). `validate_tree_names` gates all three cross-role collisions
-# once at `as_logdensity` construction time, alongside
+# once at `distribution_to_logdensity` construction time, alongside
 # `validate_pool_groups`'s pool group consistency check, not per gradient
 # evaluation. Reusing the same tag for a deliberate tie (`shared`/`tie`, or a
 # pool group with several members) is the intended feature and is not
@@ -873,8 +875,8 @@ crossing roles would silently clobber another entry there. Reusing the same
 tag for a deliberate tie (`shared`/`tie`, or a pool group with several
 members) is the intended feature and is not flagged; only a name crossing
 roles is an error. Called once at [`params_table`](@ref) construction time
-(typically at `as_logdensity` construction), not per gradient evaluation.
-Reached by qualified name from outside this package —
+(typically at `distribution_to_logdensity` construction), not per gradient
+evaluation. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
 gate a tree before fitting (#212).
 

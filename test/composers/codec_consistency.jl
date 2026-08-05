@@ -5,10 +5,10 @@
 # rows of DATA — edges, values, supports, priors — for a specific instance)
 # and `_unflatten_expr`/`_flatten_reads!` (the generated codec, a compile-time
 # walk that EMITS EXPRESSIONS over a TYPE). They agree today, but nothing
-# catches divergence, and DistributionsInference.jl's generic `as_turing`
-# (via its ComposedDistributions fit-protocol extension) zips `params_table`'s
-# estimated rows against `flatten`'s flat vector index-for-index, assuming the
-# orderings coincide.
+# catches divergence, and DistributionsInference.jl's generic
+# `distribution_to_turing` (via its ComposedDistributions fit-protocol
+# extension) zips `params_table`'s estimated rows against `flatten`'s flat
+# vector index-for-index, assuming the orderings coincide.
 #
 # Full unification (rewriting both as one shared, pluggable walker — a
 # "collect runtime rows" instantiation and a "generate an expression" one) is
@@ -85,8 +85,9 @@ end
     # in what the table's rows MEAN (not just their values), which the
     # same-row-count comparison this helper relies on cannot express. That
     # ordering is already covered end to end, through real NUTS sampling and
-    # readback, by DistributionsInference.jl's "as_turing round-trip:
-    # Dirichlet branch_probs stick coordinate" (test/composed_ext.jl).
+    # readback, by DistributionsInference.jl's "distribution_to_turing
+    # round-trip: Dirichlet branch_probs stick coordinate"
+    # (test/composed_ext.jl).
     fixed = resolve(:a => (uncertain(Gamma(2.0, 1.0);
                 shape = LogNormal(0.0, 0.3)), 0.4),
         :b => (uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)), 0.6))

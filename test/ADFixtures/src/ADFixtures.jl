@@ -17,12 +17,13 @@ differentiating through Distributions.jl's censored `logpdf`/`logcdf`), and two
 `shared` tag's gradient accumulation, and a `Truncated`-wrapped uncertain
 leaf's wrapper registry).
 
-The scenarios that differentiated the `as_logdensity`/`logdensity` layer itself
-moved to DistributionsInference.jl with the rest of the inference layer (#185,
-#317; rehoming tracked at EpiAware/DistributionsInference.jl#70), and the
-`:latent` category went with them. The two codec scenarios stayed: they test
-this package's own `unflatten`/`update`, which `as_logdensity` only drove as a
-convenience.
+The scenarios that differentiated the
+`distribution_to_logdensity`/`logdensity` layer itself moved to
+DistributionsInference.jl with the rest of the inference layer (#185, #317;
+rehoming tracked at EpiAware/DistributionsInference.jl#70), and the `:latent`
+category went with them. The two codec scenarios stayed: they test this
+package's own `unflatten`/`update`, which `distribution_to_logdensity` only
+drove as a convenience.
 
 All scenarios run across the ForwardDiff / ReverseDiff / Enzyme / Mooncake
 backend matrix. The reference is computed with `ForwardDiff` and matched by the
@@ -231,8 +232,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # reverse-mode gradient of that one parameter must accumulate from both
     # occurrences' likelihoods, the AD-critical path for tag dedup (#96/#146).
     # Driven through `unflatten`/`update` with a hand-written likelihood rather
-    # than the (now DistributionsInference-owned) `as_logdensity`/`logdensity`
-    # layer (#185, #317).
+    # than the (now DistributionsInference-owned)
+    # `distribution_to_logdensity`/`logdensity` layer (#185, #317).
     shared_u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
     shared_tree = compose((a = shared(:g, shared_u), b = shared(:g, shared_u)))
     records = [[0.5, 2.0], [1.0, 3.0]]

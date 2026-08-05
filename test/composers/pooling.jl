@@ -4,9 +4,9 @@
 # (tie / independent / pool), the CD-aligned flat layout, the codec round-trip
 # and collapse, and a prior-predictive shrinkage check. See issue #78.
 #
-# The as_logdensity/logdensity-dependent scoring/gradient tests moved to
-# DistributionsInference.jl (EpiAware/DistributionsInference.jl#70) with the
-# rest of the inference layer (#185, #317).
+# The distribution_to_logdensity/logdensity-dependent scoring/gradient tests
+# moved to DistributionsInference.jl (EpiAware/DistributionsInference.jl#70)
+# with the rest of the inference layer (#185, #317).
 
 @testitem "pool: constructor and validation" begin
     using Distributions
