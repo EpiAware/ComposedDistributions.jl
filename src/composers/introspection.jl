@@ -605,6 +605,46 @@ function leaf_param_names(leaf)
 end
 const _leaf_param_names = leaf_param_names
 
+# The values matching `leaf_param_names(leaf)` positionally: the free delay's
+# native `params`, then each `extra_leaf_params` value, in the same order
+# `leaf_param_names` appends their names. Built entirely from the generic,
+# instance-level hooks (`free_leaf`, `Distributions.params`,
+# `extra_leaf_params`), so it is correct for any leaf type an extension
+# defines those on, with no registration step -- the seam the flat codec's
+# leaf case (`unflatten`, `flatten`) will read from in a later stage;
+# `codec_gen.jl` still walks the type-level table.
+function leaf_param_values(leaf)
+    native = params(free_leaf(leaf))
+    extras = extra_leaf_params(leaf)
+    return (native..., map(v -> v.value, values(extras))...)
+end
+
+# A leaf's `unflatten` entry: `leaf_param_names(leaf)` walked in order, taking
+# the next value from `slots` for each name present in `speckeys` (an
+# `Uncertain` node's estimated parameter names, fixed as a `Val` type
+# parameter) and the leaf's own current value from `leaf_param_values`
+# otherwise. `speckeys` membership decides *whether* a name is substituted;
+# `slots` is consumed strictly in `leaf_param_names` order, NOT `speckeys`'s
+# own order (`speckeys` holds the constructor's kwargs order, which can
+# differ), so this reproduces the layout the generated codec builds by
+# walking the same `leaf_param_names` order and advancing its slot index on
+# each match.
+function _leaf_entry(leaf, ::Val{speckeys}, slots::Tuple) where {speckeys}
+    names = leaf_param_names(leaf)
+    vals = leaf_param_values(leaf)
+    return NamedTuple{names}(_leaf_substitute(names, vals, speckeys, slots))
+end
+
+@inline _leaf_substitute(::Tuple{}, ::Tuple{}, ::Tuple, ::Tuple) = ()
+@inline function _leaf_substitute(names::Tuple, vals::Tuple, speckeys::Tuple,
+        slots::Tuple)
+    hit = names[1] in speckeys
+    v = hit ? slots[1] : vals[1]
+    rest = hit ? Base.tail(slots) : slots
+    return (v, _leaf_substitute(Base.tail(names), Base.tail(vals), speckeys,
+        rest)...)
+end
+
 # --- params_table (hand-rolled pre-order walk) -----------------------------
 
 # A thin wrapper over the flat column table so `params_table(d)` prints as an
