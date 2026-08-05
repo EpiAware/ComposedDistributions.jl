@@ -64,284 +64,6 @@ function _read_path(nt::NamedTuple, path::Tuple, param::Symbol)
     return getproperty(node, param)
 end
 
-# --- Type-level leaf-protocol companions ------------------------------------
-#
-# The existing leaf-protocol hooks (`free_leaf`, `param_names`,
-# `extra_leaf_params`, ...) dispatch on an *instance*, which the generation-time
-# walk does not have (only `typeof(d)`). These companions answer the same
-# questions from the *type* alone; they are additive (the instance-based hooks
-# are untouched) and follow the same per-family dispatch table so the two stay
-# in lockstep. A leaf-wrapper type without a `_leaf_free_type`/`_extra_names_of`
-# method here falls back to the identity/empty default, exactly like the
-# instance-based hooks do for an unmapped leaf.
-
-@doc "
-The peeled free-delay type of a (possibly wrapped) leaf type, mirroring
-`free_leaf` at the type level. The base identity is `L` itself; `Truncated`
-peels to its untruncated inner type. A *core* (in-module) leaf wrapper adds its
-own method here, in step with its instance-based `free_leaf` method -- routed
-through [`_resolve_leaf_free_type`](@ref) below rather than recursing into
-itself, so a core wrapper directly around a registered extension leaf (e.g.
-`truncated(thin(Gamma(...)))`) peels correctly too, not just the reverse
-nesting. A leaf-wrapper *package extension* (censoring, modifiers) must *not*
-add a direct dispatch method here -- see [`register_leaf_wrapper!`](@ref)
-below (#189) instead.
-" _leaf_free_type(::Type{L}) where {L} = L
-_leaf_free_type(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_leaf_free_type(D)
-_leaf_free_type(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_leaf_free_type(D)
-
-@doc "
-The native parameter name labels of a peeled free-delay type, mirroring
-`param_names` at the type level (dispatch table kept in step with it).
-Returns `()` for an unmapped family, exactly like the instance-based fallback;
-`leaf_param_names`'s positional `:param_i` padding then applies at the
-generation-time layer too.
-" _param_names_of(::Type) = ()
-_param_names_of(::Type{<:Distributions.Normal}) = (:mu, :sigma)
-_param_names_of(::Type{<:Distributions.LogNormal}) = (:mu, :sigma)
-_param_names_of(::Type{<:Distributions.Gamma}) = (:shape, :scale)
-_param_names_of(::Type{<:Distributions.Weibull}) = (:shape, :scale)
-_param_names_of(::Type{<:Distributions.Exponential}) = (:scale,)
-_param_names_of(::Type{<:Distributions.Uniform}) = (:lower, :upper)
-
-@doc "
-The extra (modifier-owned) parameter names of a leaf type, mirroring
-`extra_leaf_params`'s key set at the type level. Defaults to `()`; a *core*
-(in-module) leaf wrapper reporting a non-empty `extra_leaf_params` adds its
-own method here -- routed through [`_resolve_extra_names`](@ref) below rather
-than recursing into itself, for the same core-wraps-extension reason as
-`_leaf_free_type` above. A leaf-wrapper *package extension* (e.g.
-ModifiedDistributions' `thin(...)`) must *not* add a direct dispatch method
-here -- see [`register_leaf_wrapper!`](@ref) below (#189) instead.
-" _extra_names_of(::Type) = ()
-_extra_names_of(::Type{<:Distributions.Truncated{D}}) where {D} = _resolve_extra_names(D)
-_extra_names_of(::Type{<:Distributions.Censored{D}}) where {D} = _resolve_extra_names(D)
-
-# The native parameter arity of a peeled free-delay type: the length of
-# `Distributions.params(instance)`. Every ordinary Distributions.jl leaf
-# (Gamma, Normal, LogNormal, Weibull, Exponential, Uniform, Beta, ...) reports
-# exactly its own struct fields as `params`, so `fieldcount` reads the arity
-# straight off the type with no instance needed -- and, unlike
-# `Base.return_types`, code reflection of any kind is disallowed inside a
-# `@generated` function body, so this must be a structural (not inferential)
-# query. A leaf type whose `params` is *not* its own fields 1:1 (a custom
-# moment-parameterised wrapper, `leaf_ctor`'s motivating case) needs its own
-# `_params_arity_of` method alongside its `_param_names_of`/`leaf_ctor`
-# override.
-_params_arity_of(::Type{L}) where {L} = fieldcount(L)
-
-# --- load-order-independent leaf-wrapper registry (#189, #178 PR 4) --------
-#
-# `_leaf_free_type`/`_extra_names_of` above are ordinary generic functions, so
-# a leaf-wrapper *package extension* (ModifiedDistributions' `Affine`/`Weighted`/
-# `Transformed`/`Modified`) could in principle add its own dispatch method to
-# each, mirroring how `Truncated` does it in-module. It CANNOT safely do so:
-# both hooks are called from a `@generated` function's generator (reached from
-# `unflatten`/`flat_dimension`/`flatten`'s generator bodies), and calling *any*
-# user-defined function or closure from within a generator -- dispatched or
-# not, and regardless of `Base.invokelatest` -- can hit a world-age wall
-# ("MethodError: ...may be too new") once the generator's own constituent
-# functions have been JIT-compiled against an earlier world. This is a
-# confirmed, empirically-reproduced Julia semantics gap specific to
-# `@generated` function generators (reproduces with `--compiled-modules=no`;
-# not fixable by adding more `invokelatest` calls anywhere in the chain --
-# tried, including wrapping a registry-stored closure itself, which fails
-# exactly the same way). See #188/#189.
-#
-# The fix that actually holds: the registry stores no callables at all, only
-# plain data -- a type-parameter index (`Int`) for the one-level peel, and a
-# fixed `NTuple{N,Symbol}` for a wrapper's own extra names (empty = "no
-# extras, keep peeling"). Reading `L.parameters[idx]` and a struct field are
-# both pure, non-dispatching, world-age-free operations (`.parameters` access
-# is a language-level introspection primitive, not a generic-function call),
-# and the registry lookup itself (`L <: e.pattern`) is the `<:` operator, a
-# compiler primitive rather than ordinary multiple dispatch -- so *none* of
-# the registry-consulting code below ever needs `Base.invokelatest`, and none
-# of it can be invalidated by a load-order timing gap: there is no user code
-# being called at all, only type introspection.
-#
-# Because a wrapper family can need a conditional answer (`Transformed`'s
-# `ThinOp` case owns an extra and does not peel further; every other
-# `Transformed` owns none and does peel through), a family that needs this
-# registers one entry per case, most specific pattern first in the scan order
-# (`register_leaf_wrapper!(Transformed{D, <:ThinOp} where D; ...)` ahead of
-# the general `register_leaf_wrapper!(Transformed; ...)`) -- ordinary type
-# specificity via `<:`, not a closure branching at call time.
-#
-# An extension calls `register_leaf_wrapper!` from its own `__init__` (not at
-# module top level: `__init__` runs once Julia actually *activates* the
-# extension, i.e. as soon as every one of its trigger packages is loaded,
-# strictly before any downstream code could construct one of its leaf types,
-# let alone place one in a composed tree) -- so the registry is fully
-# populated before the first possible use, by construction (a leaf type from
-# an extension cannot exist before that extension is loaded).
-#
-# A *core* (in-module) leaf wrapper (`Truncated`, `Distributions.Censored`)
-# still adds its own direct-dispatch `_leaf_free_type`/`_extra_names_of`
-# method (defined in this module, compiled alongside the generator itself, so
-# there is no cross-module load-order hazard for it) -- but that method now
-# routes its own recursion through `_resolve_leaf_free_type`/
-# `_resolve_extra_names` below rather than calling itself, so a core wrapper
-# placed directly around a registered extension leaf (e.g. a hypothetical
-# `truncated(thin(Gamma(...)))`, core wrapping extension -- not just the
-# supported `thin(truncated(Gamma(...)))`, extension wrapping core) peels
-# correctly too. The registry is consulted as a first-choice check ahead of
-# the core dispatch chain, and the core chain's own recursion is registry-aware
-# in turn, so the two compose in either nesting order and any depth of mixing.
-
-# One registered leaf-wrapper case: `pattern` is what a concrete leaf type is
-# matched against (`<:`); `free_index` is the type-parameter position holding
-# the one-level peeled inner type; `own_extra_names` is this case's own extra
-# parameter names (empty = none, keep peeling). All plain data -- no
-# callables -- so nothing here is ever `Base.invokelatest`-sensitive.
-#
-# Do not add a `Function`/callable field to this struct. That was the first
-# design tried here (a `free_type`/`extra_names` closure pair) and it does not
-# work: calling a stored closure from within the generator hits the exact
-# same world-age wall a direct dispatch method does, `Base.invokelatest`
-# included -- see the comment above this section. `_LeafCodecEntry` stays
-# plain data specifically so nothing it holds is ever called.
-struct _LeafCodecEntry
-    pattern::Type
-    free_index::Int
-    own_extra_names::Tuple{Vararg{Symbol}}
-end
-
-const _LEAF_CODEC_REGISTRY = _LeafCodecEntry[]
-
-@doc "
-Register a leaf-wrapper case's type-level codec hooks with the generated
-codec's load-order-independent registry (#189).
-
-`register_leaf_wrapper!(pattern; free_index, extra_names = ())` tells the
-generated codec how to peel a leaf-wrapper type matching `pattern` (matched
-against a concrete leaf's type with `<:`) without dispatching on it at
-generation time: `free_index` is the position, among `pattern`'s type
-parameters, of the one-level peeled inner type (mirroring [`free_leaf`](@ref)
-at the type level -- the resolver recurses through further layers itself, so
-this need not peel more than one level even for a leaf nested under several
-wrappers), and `extra_names` is this case's own extra (modifier-owned)
-parameter names, or `()` (the default) to mean \"this case owns no extras,
-keep peeling\" (mirroring [`extra_leaf_params`](@ref)'s key set at the type
-level).
-
-A wrapper family whose answer depends on a further type parameter (a
-`Transformed` carrying a `ThinOp` owns a `:thin` extra and does not peel
-further; every other `Transformed` owns none and does peel through) registers
-one entry per case, most specific `pattern` registered last (later entries are
-checked first, so a later, more specific registration takes precedence over an
-earlier, more general one already covering the same types).
-
-Call this from an extension's `__init__`, never at module top level:
-`__init__` runs once the extension is actually activated, which is exactly
-when this registry needs to be populated (see the comment above this
-docstring for why that guarantees no load-order hazard, and why this hook
-takes plain data rather than a callable). Registering the same `pattern` twice
-replaces the earlier entry.
-
-# Arguments
-- `pattern`: the leaf-wrapper type a direct dispatch method would otherwise
-  have targeted (e.g. `ModifiedDistributions.Affine`, or a more specific case
-  such as `Transformed{D, <:ThinOp} where D`), matched via `<:` against a
-  concrete leaf's type.
-
-# Keyword Arguments
-- `free_index`: the position of `pattern`'s type parameter holding the
-  one-level peeled inner type.
-- `extra_names`: this case's own extra parameter names (default `()`, meaning
-  \"no extras, keep peeling\").
-
-# Examples
-```@example
-using ComposedDistributions
-
-# A toy wrapper family with one extra parameter of its own, no further
-# peeling (a stand-in for how a real leaf-wrapper extension would register).
-struct ToyWrap{D}
-    dist::D
-    extra::Float64
-end
-ComposedDistributions.register_leaf_wrapper!(ToyWrap;
-    free_index = 1, extra_names = (:toy_extra,))
-ComposedDistributions._resolve_extra_names(ToyWrap{Float64})
-```
-
-# See also
-- [`free_leaf`](@ref), [`extra_leaf_params`](@ref): the matching instance-level hooks.
-"
-function register_leaf_wrapper!(pattern::Type; free_index::Int,
-        extra_names::Tuple{Vararg{Symbol}} = ())
-    filter!(e -> e.pattern != pattern, _LEAF_CODEC_REGISTRY)
-    push!(_LEAF_CODEC_REGISTRY, _LeafCodecEntry(pattern, free_index, extra_names))
-    return nothing
-end
-
-# The last-registered entry whose pattern matches `L` (so a more specific,
-# later registration wins over an earlier, more general one for the same
-# type -- see `register_leaf_wrapper!`'s docstring), or `nothing` for a core
-# (unregistered) type. A plain reverse linear scan over a handful of entries,
-# run only at generation time (once per distinct tree type, never per
-# gradient evaluation), so no faster structure is warranted.
-function _registered_leaf_entry(::Type{L}) where {L}
-    for e in Iterators.reverse(_LEAF_CODEC_REGISTRY)
-        L <: e.pattern && return e
-    end
-    return nothing
-end
-
-@doc "
-Peel a (possibly wrapped) leaf type to its free delay type, registry-first.
-
-The load-order-independent counterpart of [`free_leaf`](@ref) at the type
-level: checks the [`register_leaf_wrapper!`](@ref) registry first (a plain,
-world-age-free type-parameter read, never a dispatched call) and recurses
-through however many further layers remain -- core, registered, or a mix --
-until reaching a fixed point (a type whose peel is itself); falls back to the
-existing in-module dispatch chain (`_leaf_free_type`) for a type with no
-registry entry.
-" function _resolve_leaf_free_type(::Type{L}) where {L}
-    entry = _registered_leaf_entry(L)
-    next = entry === nothing ? Base.invokelatest(_leaf_free_type, L) :
-           L.parameters[entry.free_index]
-    next === L && return L
-    return _resolve_leaf_free_type(next)
-end
-
-@doc "
-The extra (modifier-owned) parameter names of a (possibly wrapped) leaf type,
-registry-first.
-
-The load-order-independent counterpart of [`extra_leaf_params`](@ref)'s key
-set at the type level: a registered entry either owns its own extras (a
-non-empty `own_extra_names`, matching a `Transformed`/`ThinOp`'s
-instance-level short-circuit) or peels through (empty, recursing on the
-type-parameter at `free_index`); a type with no registry entry falls back to
-the existing in-module dispatch chain (`_extra_names_of`), which already
-peels core wrappers on its own.
-" function _resolve_extra_names(::Type{L}) where {L}
-    entry = _registered_leaf_entry(L)
-    entry === nothing && return Base.invokelatest(_extra_names_of, L)
-    isempty(entry.own_extra_names) || return entry.own_extra_names
-    return _resolve_extra_names(L.parameters[entry.free_index])
-end
-
-# The full (native..., extra...) parameter name tuple of a (possibly wrapped)
-# leaf type `L`, mirroring `leaf_param_names` at the type level exactly:
-# native names come from the *peeled* free delay (padding unmapped names
-# positionally), but extras are read off `L` itself, *unpeeled* -- an extra
-# parameter (e.g. `thin`'s reporting probability) is owned by the wrapper, not
-# the inner free delay, exactly as `extra_leaf_params(leaf)` (not
-# `extra_leaf_params(free_leaf(leaf))`) reads it at the instance level.
-function _leaf_type_param_names(::Type{L}) where {L}
-    freeL = _resolve_leaf_free_type(L)
-    base = Base.invokelatest(_param_names_of, freeL)
-    n = Base.invokelatest(_params_arity_of, freeL)
-    native = ntuple(n) do i
-        i <= length(base) ? base[i] : Symbol(:param_, i)
-    end
-    return (native..., _resolve_extra_names(L)...)
-end
-
 # --- generation-time layout context -----------------------------------------
 #
 # Mutable, generation-time-only bookkeeping threaded through the whole type
@@ -471,17 +193,45 @@ end
 # Leaf case: peels a `Shared` tag (root-lift + dedup) and an `Uncertain`
 # wrapper (spec keys, including a `Pool` spec), then builds the leaf's own
 # `(native..., extra...)` NamedTuple entry by calling the runtime seam
-# (`_leaf_entry`, introspection.jl, #189/S1) with the estimated slot values --
+# (`_leaf_entry`, introspection.jl, S1) with the estimated slot values --
 # fixed parameters are read from the current instance inside `_leaf_entry`
 # itself (via `leaf_param_values`, entirely generic hooks), so a leaf-wrapper
-# extension whose `params` is not its own fields 1:1 needs no
-# `_param_names_of`/`_params_arity_of` override for its *fixed* values to come
-# out right. This generation-time walk still fixes which names are estimated
-# and in what order their `x`/pool slots are allocated (the type-level
-# `allnames` companion below, #189's mirror of `leaf_param_names`) -- only the
-# per-field *value* codegen for a fixed entry is gone. Every leaf gets an
-# entry (fixed or not), matching the old row walk, which emitted a fixed
-# leaf's rows too.
+# extension whose `params` is not its own fields 1:1 needs no type-level
+# override for its *fixed* values to come out right (#189's motivating case;
+# see `ext_demo`-derived regression test in codec_gen.jl).
+#
+# `_leaf_entry`'s own substitution contract (introspection.jl) consumes
+# `slots` positionally IN `leaf_param_names(leaf)` ORDER, not `speckeys`'s own
+# kwargs order (a user can write `uncertain(Gamma(2, 1); scale = ..., shape =
+# ...)`, scale first, while Gamma's native order is `(shape, scale)`). Since
+# S3 removed the type-level table this generator once used to compute that
+# order at generation time, this walk cannot bake per-name literal `x`
+# indices in `leaf_param_names` order any more -- so it does not try to:
+# `slot_exprs` below is simply the RAW, CONSECUTIVE `k = length(speckeys)`
+# positions this leaf occupies in `x`, in NO particular per-name order, and
+# `_leaf_entry` resolves the name<->slot correspondence itself at RUNTIME
+# (calling `leaf_param_names(leaf)` on the actual instance it is handed,
+# ordinary dispatch, no world-age concern since this runs from the returned
+# CODE, not the generator). `flatten`'s `_leaf_flatten_reads!` reads the same
+# `k`-length block back out in the same runtime-resolved order via
+# `_leaf_flatten_values`, so the two stay in lockstep without either knowing
+# the order at generation time.
+#
+# A `Pool` spec needs more than that, though: `_walk_rows!`/`_pool_rows!`
+# (introspection.jl/Pool.jl) insert a first-seen group's hyperparameter rows
+# at the POOLED PARAMETER'S OWN native-order position within this leaf's row
+# sequence -- not hoisted before this leaf's other params (which native-order
+# ignorance would otherwise force). `speckeys`/`specvaltypes` are still walked
+# directly here to decide WHICH groups this leaf-visit must materialise
+# (`ctx.seen_groups` dedup, order-independent) and WHICH spec'd names are
+# `Pool`-noncentred (order-independent, by name), and to size the `x` block
+# (`_pool_hyper_count`, a population's spec'd-parameter COUNT, not its order --
+# generation-time-safe). The actual per-name interleaving -- this leaf's own
+# `leaf_param_names` order AND each materialising population's own native
+# order -- is resolved from the real instances at RUNTIME, exactly
+# `_leaf_entry`'s trick, by `_leaf_entry_grouped` (Pool.jl), so a leaf
+# touching no first-seen group keeps using the plain `_leaf_entry` seam above
+# unchanged.
 function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
     if L <: Shared
         tag = L.parameters[1]::Symbol
@@ -496,73 +246,73 @@ function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
     end
 
     if L <: Uncertain
-        Ltempl = L.parameters[2]
         S = L.parameters[3]
         speckeys = S.parameters[1]::Tuple
         specvaltypes = Tuple(S.parameters[2].parameters)
     else
-        Ltempl = L
         speckeys = ()
         specvaltypes = ()
     end
-    # `allnames` fixes the walk order slots are allocated/consumed in
-    # (`leaf_param_names` order), matching `_leaf_entry`'s own substitution
-    # contract exactly (slots are consumed in that order, not `speckeys`'s
-    # own kwargs order -- see `_leaf_entry`'s docstring).
-    allnames = _leaf_type_param_names(Ltempl)
+    pool_names, materialize, materialize_groups, extra_slots = _leaf_pool_layout!(
+        ctx, speckeys, specvaltypes)
     slot_exprs = Any[]
-    for pname in allnames
-        j = findfirst(==(pname), speckeys)
-        j === nothing && continue
-        specT = specvaltypes[j]
-        if specT <: Pool
-            group = specT.parameters[1]::Symbol
-            noncentred = specT.parameters[2]::Bool
-            if !(group in ctx.seen_groups)
-                push!(ctx.seen_groups, group)
-                hyper_expr = _pool_hyper_unflatten_expr(specT, ctx)
-                push!(ctx.group_keys, group)
-                push!(ctx.group_vals, hyper_expr)
-            end
-            ctx.idx += 1
-            push!(slot_exprs,
-                noncentred ? :((z = x[$(ctx.idx)],)) : :(x[$(ctx.idx)]))
-        else
-            ctx.idx += 1
-            push!(slot_exprs, :(x[$(ctx.idx)]))
-        end
+    for _ in 1:(length(speckeys) + extra_slots)
+        ctx.idx += 1
+        push!(slot_exprs, :(x[$(ctx.idx)]))
     end
-    return :(ComposedDistributions._leaf_entry(
-        $access, Val($speckeys), ($(slot_exprs...),)))
+
+    if isempty(materialize)
+        entry_expr = :(ComposedDistributions._leaf_entry(
+            $access, Val($speckeys), ($(slot_exprs...),)))
+        isempty(pool_names) && return entry_expr
+        return :(ComposedDistributions._wrap_pool_entries(
+            $entry_expr, Val($(Tuple(pool_names)))))
+    end
+
+    call_expr = :(ComposedDistributions._leaf_entry_grouped(
+        $access, Val($speckeys), Val($(Tuple(pool_names))),
+        Val($(Tuple(materialize))), ($(slot_exprs...),)))
+    for group in materialize_groups
+        push!(ctx.group_keys, group)
+        push!(ctx.group_vals, :(last($call_expr).$group))
+    end
+    return :(first($call_expr))
 end
 
-# A pooling group's hyperparameter entry (root-lifted, emitted once at the
-# group's first member): the population's own spec'd parameter names, in
-# population-param order, each consuming one `x` slot. A population with no
-# uncertain specs (fully fixed) contributes an empty NamedTuple, mirroring
-# `_pool_hyper_rows!`. Deliberately NOT routed through `_leaf_entry` like
-# `_leaf_unflatten_expr` above: every entry here is already spec'd (a fixed
-# population hyperparameter contributes no row at all, per
-# `_pool_hyper_rows!`), so there is no fixed-value fallback to delegate to a
-# runtime instance -- and no runtime population instance is reachable from
-# this call site to read one from anyway (`Ptempl` is a type parameter, not a
-# value).
-function _pool_hyper_unflatten_expr(specT::Type{<:Pool}, ctx::_CodecCtx)
-    P = specT.parameters[3]
-    P <: Uncertain || return :(NamedTuple())
-    Ptempl = P.parameters[2]
-    PS = P.parameters[3]
-    speckeys = PS.parameters[1]::Tuple
-    pnames = _leaf_type_param_names(Ptempl)
-    keys_out = Symbol[]
-    vals_out = Any[]
-    for pname in pnames
-        pname in speckeys || continue
-        ctx.idx += 1
-        push!(keys_out, pname)
-        push!(vals_out, :(x[$(ctx.idx)]))
+# Shared by `_leaf_unflatten_expr`/`_leaf_flatten_reads!`: walks a leaf's
+# `speckeys`/`specvaltypes` once to decide (1) `pool_names`, the spec'd names
+# that are `Pool`-noncentred (order-independent, by name -- unchanged from
+# before this function existed), (2) `materialize`/`materialize_groups`, the
+# subset of `speckeys` (and, paired 1:1, their group names) whose pool group
+# is first-seen ACROSS THE WHOLE TREE (`ctx.seen_groups` dedup, mutated here
+# so a later leaf naming the same group sees it already registered -- kept as
+# a SEPARATE parallel vector, not re-derived from `speckeys`/`specvaltypes`
+# with `findfirst`, since a `findfirst` result JET cannot prove non-`nothing`
+# would poison the caller's indexing), and (3) `extra_slots`, the total
+# `x`-slot count every materialising group's population contributes
+# (`_pool_hyper_count`, a count only -- see `_leaf_unflatten_expr`'s comment
+# for why no order is needed here). `unflatten` and `flatten` call this
+# identically so `ctx.seen_groups` advances in lockstep between the two
+# generated walks.
+function _leaf_pool_layout!(
+        ctx::_CodecCtx, speckeys::Tuple, specvaltypes::Tuple)
+    pool_names = Symbol[]
+    materialize = Symbol[]
+    materialize_groups = Symbol[]
+    extra_slots = 0
+    for (pname, specT) in zip(speckeys, specvaltypes)
+        specT <: Pool || continue
+        group = specT.parameters[1]::Symbol
+        noncentred = specT.parameters[2]::Bool
+        if !(group in ctx.seen_groups)
+            push!(ctx.seen_groups, group)
+            push!(materialize, pname)
+            push!(materialize_groups, group)
+            extra_slots += _pool_hyper_count(specT)
+        end
+        noncentred && push!(pool_names, pname)
     end
-    return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
+    return pool_names, materialize, materialize_groups, extra_slots
 end
 
 # Merge the root node's own NamedTuple with the root-lifted tag/group entries
@@ -692,51 +442,66 @@ end
 # `unflatten` places it, regardless of how deep the tagged/pooled leaf sits
 # structurally. Since the generated function's argument is always named `nt`,
 # that root reference needs no extra bookkeeping to thread through the walk.
+#
+# `d_access` is threaded alongside `nt_access`, mirroring `_unflatten_expr`'s
+# own `access` parameter exactly (same child-access expressions at every
+# composer/resolve/composite level): since S3 removed the type-level name
+# table, the leaf case needs a reachable instance of the ACTUAL leaf to call
+# the instance-level `leaf_param_names` on at runtime (`_leaf_flatten_values`,
+# introspection.jl) -- `flatten(d::T, nt::NamedTuple)` already receives `d`,
+# this walk just needed to carry an access path into it down to each leaf.
 
-function _flatten_reads!(exprs::Vector, nt_access, ::Type{T},
+function _flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{T},
         ctx::_CodecCtx) where {T}
-    if T <: Union{Sequential, Parallel, Choose, Compete}
-        _composer_flatten_reads!(exprs, nt_access, T, ctx)
+    if T <: Sequential || T <: Parallel
+        _composer_flatten_reads!(exprs, d_access, :components, nt_access, T, ctx)
+    elseif T <: Choose
+        _composer_flatten_reads!(exprs, d_access, :alternatives, nt_access, T, ctx)
     elseif T <: Resolve
-        _resolve_flatten_reads!(exprs, nt_access, T, ctx)
+        _resolve_flatten_reads!(exprs, d_access, nt_access, T, ctx)
+    elseif T <: Compete
+        _composer_flatten_reads!(exprs, d_access, :delays, nt_access, T, ctx)
     elseif T <: Union{Convolved, Difference}
-        _composite_flatten_reads!(exprs, nt_access, T, ctx)
+        _composite_flatten_reads!(exprs, d_access, nt_access, T, ctx)
     else
-        _leaf_flatten_reads!(exprs, nt_access, T, ctx)
+        _leaf_flatten_reads!(exprs, d_access, nt_access, T, ctx)
     end
     return nothing
 end
 
 function _composite_flatten_reads!(
-        exprs::Vector, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
+        exprs::Vector, d_access, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
     ctypes = _composite_child_types(T)
     for i in eachindex(ctypes)
-        _flatten_reads!(
-            exprs, :($nt_access.$(Symbol(:component_, i))), ctypes[i], ctx)
+        child_access = :(ComposedDistributions._node_children($d_access)[$i])
+        _flatten_reads!(exprs, child_access,
+            :($nt_access.$(Symbol(:component_, i))), ctypes[i], ctx)
     end
     return nothing
 end
 
-function _composer_flatten_reads!(
-        exprs::Vector, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
+function _composer_flatten_reads!(exprs::Vector, d_access, field::Symbol,
+        nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
     names = T.parameters[1]::Tuple
     C = T.parameters[2]
     ctypes = C.parameters
     for i in eachindex(names)
-        _flatten_reads!(exprs, :($nt_access.$(names[i])), ctypes[i], ctx)
+        _flatten_reads!(exprs, :($d_access.$field[$i]),
+            :($nt_access.$(names[i])), ctypes[i], ctx)
     end
     return nothing
 end
 
 function _resolve_flatten_reads!(
-        exprs::Vector, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
+        exprs::Vector, d_access, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
     names = T.parameters[1]::Tuple
     D = T.parameters[2]
     S = T.parameters[4]
     dtypes = D.parameters
     for i in eachindex(names)
         dtypes[i] <: NoEvent && continue
-        _flatten_reads!(exprs, :($nt_access.$(names[i])), dtypes[i], ctx)
+        _flatten_reads!(exprs, :($d_access.delays[$i]),
+            :($nt_access.$(names[i])), dtypes[i], ctx)
     end
     if S <: Distributions.Dirichlet
         K = length(names)
@@ -749,82 +514,65 @@ function _resolve_flatten_reads!(
     return nothing
 end
 
-# Leaf case: a naive `child_access` is passed in even for a `Shared` child
-# (built by the caller as if it owned a positional key); when `L <: Shared`
-# that access is simply never used below -- a first occurrence reads off the
-# literal root `nt.$tag` instead, and a later occurrence returns immediately
-# without emitting anything, matching `unflatten`'s suppression exactly.
+# Leaf case: a naive `child_access`/`d_access` is passed in even for a
+# `Shared` child (built by the caller as if it owned a positional key); when
+# `L <: Shared` those accesses are simply never used below -- a first
+# occurrence reads off the literal root `nt.$tag` instead (peeling `d_access`
+# to `.dist` for the recursion, mirroring `_leaf_unflatten_expr`'s own
+# `inner_access`), and a later occurrence returns immediately without emitting
+# anything, matching `unflatten`'s suppression exactly.
 #
-# Deliberately NOT swapped to a `_leaf_entry`-style runtime call like
-# `_leaf_unflatten_expr` above: this direction never reads a fixed value in
-# the first place (only spec'd entries are pushed to `exprs` at all), so
-# there is no fixed-value codegen here to delegate to a leaf instance --
-# and `flatten`'s generated function only threads `nt`'s generic
-# `NamedTuple` type through the walk, not a per-node access into the tree
-# `d` itself, so no leaf instance is reachable from this call site to pass
-# to `_leaf_entry` even if there were. `allnames` (unchanged) still fixes
-# the walk order this reads `nt_access` in, kept in lockstep with
-# `_leaf_unflatten_expr`'s own `allnames` walk and `_leaf_entry`'s
-# `leaf_param_names`-order substitution contract.
-function _leaf_flatten_reads!(exprs::Vector, nt_access, ::Type{L},
+# Routed through the runtime seam (`_leaf_flatten_values`, introspection.jl),
+# the read-direction counterpart of `_leaf_unflatten_expr`'s `_leaf_entry`
+# call: it calls `leaf_param_names($d_access)` at RUNTIME (ordinary dispatch
+# on the actual leaf instance, not the generator, so no world-age concern) to
+# resolve the same name<->slot correspondence `unflatten`'s `_leaf_entry` used,
+# and unwraps a `Pool`-noncentred slot's `z` field the same way
+# `_wrap_pool_entries` wrapped it.
+#
+# A leaf that materialises a pool group (mirroring `_leaf_unflatten_expr`'s
+# `_leaf_entry_grouped` branch exactly, including reusing `_leaf_pool_layout!`
+# so `ctx.seen_groups` advances identically to `unflatten`'s walk) is instead
+# routed through `_leaf_flatten_grouped` (Pool.jl), the read-direction
+# counterpart: it reads each materialising group's hyper `NamedTuple` off the
+# literal root `nt.<group>` (exactly where `unflatten` root-lifts it) and
+# interleaves those values with this leaf's own, in `leaf_param_names`
+# native order, so the flat sequence this leaf-visit contributes lines up
+# `_leaf_entry_grouped`'s consumption order value-for-value.
+function _leaf_flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{L},
         ctx::_CodecCtx) where {L}
     if L <: Shared
         tag = L.parameters[1]::Symbol
         D = L.parameters[2]
         tag in ctx.seen_tags && return nothing
         push!(ctx.seen_tags, tag)
-        _flatten_reads!(exprs, :(nt.$tag), D, ctx)
+        _flatten_reads!(exprs, :($d_access.dist), :(nt.$tag), D, ctx)
         return nothing
     end
 
     if L <: Uncertain
-        Ltempl = L.parameters[2]
         S = L.parameters[3]
         speckeys = S.parameters[1]::Tuple
         specvaltypes = Tuple(S.parameters[2].parameters)
     else
-        Ltempl = L
         speckeys = ()
         specvaltypes = ()
     end
-    allnames = _leaf_type_param_names(Ltempl)
-    for pname in allnames
-        j = findfirst(==(pname), speckeys)
-        j === nothing && continue
-        specT = specvaltypes[j]
-        access = :($nt_access.$pname)
-        if specT <: Pool
-            group = specT.parameters[1]::Symbol
-            noncentred = specT.parameters[2]::Bool
-            if !(group in ctx.seen_groups)
-                push!(ctx.seen_groups, group)
-                _pool_hyper_flatten_reads!(exprs, group, specT, ctx)
-            end
-            ctx.idx += 1
-            push!(exprs, noncentred ? :($access.z) : access)
-        else
-            ctx.idx += 1
-            push!(exprs, access)
-        end
-    end
-    return nothing
-end
+    isempty(speckeys) && return nothing
+    pool_names, materialize, _, extra_slots = _leaf_pool_layout!(
+        ctx, speckeys, specvaltypes)
+    ctx.idx += length(speckeys) + extra_slots
 
-# A pooling group's hyperparameters, read off the literal root `nt.<group>`
-# (exactly where `unflatten` root-lifts them), in the same population-param
-# order `_pool_hyper_unflatten_expr` writes them in.
-function _pool_hyper_flatten_reads!(
-        exprs::Vector, group::Symbol, specT::Type{<:Pool}, ctx::_CodecCtx)
-    P = specT.parameters[3]
-    P <: Uncertain || return nothing
-    Ptempl = P.parameters[2]
-    PS = P.parameters[3]
-    speckeys = PS.parameters[1]::Tuple
-    pnames = _leaf_type_param_names(Ptempl)
-    for pname in pnames
-        pname in speckeys || continue
-        ctx.idx += 1
-        push!(exprs, :(nt.$group.$pname))
+    if isempty(materialize)
+        push!(exprs,
+            :(ComposedDistributions._leaf_flatten_values(
+                $d_access, Val($speckeys), Val($(Tuple(pool_names))),
+                $nt_access)...))
+    else
+        push!(exprs,
+            :(ComposedDistributions._leaf_flatten_grouped(
+                $d_access, Val($speckeys), Val($(Tuple(pool_names))),
+                Val($(Tuple(materialize))), $nt_access, nt)...))
     end
     return nothing
 end
@@ -867,7 +615,7 @@ ComposedDistributions.flatten(tree, nt)
                                                          AbstractComposedDistribution}
     ctx = _CodecCtx()
     exprs = Any[]
-    _flatten_reads!(exprs, :nt, T, ctx)
+    _flatten_reads!(exprs, :d, :nt, T, ctx)
     body = :(Base.vect($(exprs...)))
     return quote
         _reject_varying(d, "flatten")

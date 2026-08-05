@@ -96,10 +96,3 @@ public TestUtils
 # log-density/extensions (`as_logdensity`/`as_turing`) generically over this
 # core via the fit protocol (`parameter_rows`/`reconstruct`).
 public flat_dimension, flatten, unflatten, reconstruct
-
-# The load-order-independent leaf-wrapper registry (#189, #178 PR 4): a
-# leaf-wrapper package extension (censoring, modifiers) registers its type-level
-# codec hooks here (in its own `__init__`) instead of adding a direct dispatch
-# method to `_leaf_free_type`/`_extra_names_of`, which the generated codec's
-# `@generated` generator cannot see reliably once loaded after the fact.
-public register_leaf_wrapper!
