@@ -470,10 +470,18 @@ end
 
 # Leaf case: peels a `Shared` tag (root-lift + dedup) and an `Uncertain`
 # wrapper (spec keys, including a `Pool` spec), then builds the leaf's own
-# `(native..., extra...)` NamedTuple entry -- fixed parameters read from the
-# current instance at runtime, estimated ones from the next `x` slot(s). Every
-# leaf gets an entry (fixed or not), matching the old row walk, which emitted a
-# fixed leaf's rows too.
+# `(native..., extra...)` NamedTuple entry by calling the runtime seam
+# (`_leaf_entry`, introspection.jl, #189/S1) with the estimated slot values --
+# fixed parameters are read from the current instance inside `_leaf_entry`
+# itself (via `leaf_param_values`, entirely generic hooks), so a leaf-wrapper
+# extension whose `params` is not its own fields 1:1 needs no
+# `_param_names_of`/`_params_arity_of` override for its *fixed* values to come
+# out right. This generation-time walk still fixes which names are estimated
+# and in what order their `x`/pool slots are allocated (the type-level
+# `allnames` companion below, #189's mirror of `leaf_param_names`) -- only the
+# per-field *value* codegen for a fixed entry is gone. Every leaf gets an
+# entry (fixed or not), matching the old row walk, which emitted a fixed
+# leaf's rows too.
 function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
     if L <: Shared
         tag = L.parameters[1]::Symbol
@@ -497,20 +505,15 @@ function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
         speckeys = ()
         specvaltypes = ()
     end
-    # Registry-aware peel (matches `_leaf_type_param_names`'s own resolution
-    # exactly, #189) -- this `n` and that function's internal `n` must agree,
-    # since both fix where the native/extra boundary falls in `allnames`.
-    n = Base.invokelatest(_params_arity_of, _resolve_leaf_free_type(Ltempl))
+    # `allnames` fixes the walk order slots are allocated/consumed in
+    # (`leaf_param_names` order), matching `_leaf_entry`'s own substitution
+    # contract exactly (slots are consumed in that order, not `speckeys`'s
+    # own kwargs order -- see `_leaf_entry`'s docstring).
     allnames = _leaf_type_param_names(Ltempl)
-    vals = Vector{Any}(undef, length(allnames))
-    for (i, pname) in enumerate(allnames)
+    slot_exprs = Any[]
+    for pname in allnames
         j = findfirst(==(pname), speckeys)
-        if j === nothing
-            vals[i] = i <= n ?
-                      :(Distributions.params(ComposedDistributions.free_leaf($access))[$i]) :
-                      :(ComposedDistributions.extra_leaf_params($access)[$(QuoteNode(pname))].value)
-            continue
-        end
+        j === nothing && continue
         specT = specvaltypes[j]
         if specT <: Pool
             group = specT.parameters[1]::Symbol
@@ -522,20 +525,28 @@ function _leaf_unflatten_expr(access, ::Type{L}, ctx::_CodecCtx) where {L}
                 push!(ctx.group_vals, hyper_expr)
             end
             ctx.idx += 1
-            vals[i] = noncentred ? :((z = x[$(ctx.idx)],)) : :(x[$(ctx.idx)])
+            push!(slot_exprs,
+                noncentred ? :((z = x[$(ctx.idx)],)) : :(x[$(ctx.idx)]))
         else
             ctx.idx += 1
-            vals[i] = :(x[$(ctx.idx)])
+            push!(slot_exprs, :(x[$(ctx.idx)]))
         end
     end
-    return :(NamedTuple{$allnames}(($(vals...),)))
+    return :(ComposedDistributions._leaf_entry(
+        $access, Val($speckeys), ($(slot_exprs...),)))
 end
 
 # A pooling group's hyperparameter entry (root-lifted, emitted once at the
 # group's first member): the population's own spec'd parameter names, in
 # population-param order, each consuming one `x` slot. A population with no
 # uncertain specs (fully fixed) contributes an empty NamedTuple, mirroring
-# `_pool_hyper_rows!`.
+# `_pool_hyper_rows!`. Deliberately NOT routed through `_leaf_entry` like
+# `_leaf_unflatten_expr` above: every entry here is already spec'd (a fixed
+# population hyperparameter contributes no row at all, per
+# `_pool_hyper_rows!`), so there is no fixed-value fallback to delegate to a
+# runtime instance -- and no runtime population instance is reachable from
+# this call site to read one from anyway (`Ptempl` is a type parameter, not a
+# value).
 function _pool_hyper_unflatten_expr(specT::Type{<:Pool}, ctx::_CodecCtx)
     P = specT.parameters[3]
     P <: Uncertain || return :(NamedTuple())
@@ -743,6 +754,18 @@ end
 # that access is simply never used below -- a first occurrence reads off the
 # literal root `nt.$tag` instead, and a later occurrence returns immediately
 # without emitting anything, matching `unflatten`'s suppression exactly.
+#
+# Deliberately NOT swapped to a `_leaf_entry`-style runtime call like
+# `_leaf_unflatten_expr` above: this direction never reads a fixed value in
+# the first place (only spec'd entries are pushed to `exprs` at all), so
+# there is no fixed-value codegen here to delegate to a leaf instance --
+# and `flatten`'s generated function only threads `nt`'s generic
+# `NamedTuple` type through the walk, not a per-node access into the tree
+# `d` itself, so no leaf instance is reachable from this call site to pass
+# to `_leaf_entry` even if there were. `allnames` (unchanged) still fixes
+# the walk order this reads `nt_access` in, kept in lockstep with
+# `_leaf_unflatten_expr`'s own `allnames` walk and `_leaf_entry`'s
+# `leaf_param_names`-order substitution contract.
 function _leaf_flatten_reads!(exprs::Vector, nt_access, ::Type{L},
         ctx::_CodecCtx) where {L}
     if L <: Shared
