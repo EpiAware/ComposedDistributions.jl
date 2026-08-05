@@ -90,8 +90,8 @@ end
 # intrinsic), fixing issue #146. This tree has no shared/pooled parameters, so
 # it does not touch the separate Mooncake-reverse wrong-gradient issue on
 # pooled reconstructions (#99). Drives `unflatten`/`update` directly rather
-# than through the (now DistributionsInference-owned) `as_logdensity`/
-# `logdensity` log-density layer (#185, #317).
+# than through the (now DistributionsInference-owned)
+# `distribution_to_logdensity`/`logdensity` log-density layer (#185, #317).
 @testitem "Mooncake differentiates unflatten/update past the length guard (#146)" tags=[
     :ad, :mooncake, :mooncake_reverse] begin
     using ADTypes: AutoMooncake, AutoMooncakeForward, AutoForwardDiff

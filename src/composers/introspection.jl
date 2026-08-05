@@ -1062,10 +1062,11 @@ coordinates (as read back from a chain) collapses the node to concrete
 probabilities summing to one (read them with `Distributions.probs`). Promote
 attaches a flat `Dirichlet(ones(K))` per `Resolve`.
 
-Read a fitted chain back onto a template with `DistributionsInference.readback`
-(or `readback_draws` for every draw) — this package stays fit-protocol-
-agnostic, so chain readback lives in DistributionsInference.jl rather than
-here; the NamedTuple it returns pairs directly with `update`.
+Read a fitted chain back onto a template with
+`DistributionsInference.point_estimate` (or `readback_draws` for every draw)
+— this package stays fit-protocol-agnostic, so chain readback lives in
+DistributionsInference.jl rather than here; the NamedTuple it returns pairs
+directly with `update`.
 
 ## Arguments
 - `d`: the composed distribution (or bare leaf) to update.
@@ -1676,8 +1677,8 @@ default_prior((; edge = :onset_admit, param = :scale,
     value = 1.0, support = (0.0, Inf)))
 ```
 
-!!! note \"DistributionsInference's `distribution_priors`\"
-    `DistributionsInference.distribution_priors` applies the
+!!! note \"DistributionsInference's `with_priors`\"
+    `DistributionsInference.with_priors` applies the
     same support-derived heuristic generically, over any fit-protocol
     object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
     `ComposedDistributions` tree. It is a separate implementation, not a

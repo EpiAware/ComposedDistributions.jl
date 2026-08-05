@@ -317,10 +317,11 @@ end
 
 # Merge the root node's own NamedTuple with the root-lifted tag/group entries
 # (each keyed by tag/group name), matching the old Dict walk's flat top-level
-# namespace. `validate_tree_names` (called once at `as_logdensity`
-# construction, not here) is what actually guards against a name collision
-# across the three namespaces; a collision here just silently prefers the
-# later `merge` argument, exactly as the old `Dict` insert did.
+# namespace. `validate_tree_names` (called once at
+# `distribution_to_logdensity` construction, not here) is what actually
+# guards against a name collision across the three namespaces; a collision
+# here just silently prefers the later `merge` argument, exactly as the old
+# `Dict` insert did.
 function _root_merge_expr(root_expr, ctx::_CodecCtx)
     parts = Any[root_expr]
     if !isempty(ctx.tag_keys)
@@ -631,7 +632,8 @@ Rebuild a composed distribution straight from its estimated flat vector.
 each fixed parameter at its template value. It is
 `update(d, `[`unflatten`](@ref)`(d, x))` named as one verb, and is the
 flat-vector primary a per-gradient hot path routes through
-(DistributionsInference.jl's `as_logdensity`/`as_turing`).
+(DistributionsInference.jl's `distribution_to_logdensity` and
+`distribution_to_turing`).
 
 Being that composition rather than a generated function of its own,
 `reconstruct` is not independently shown `@inferred`-concrete; the guarantee

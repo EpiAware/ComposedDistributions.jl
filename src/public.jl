@@ -52,8 +52,8 @@ public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
 
 # The pooling gate surface (#325): DistributionsInference.jl's fit-protocol
 # extension calls `validate_pool_groups` and `validate_tree_names` directly
-# to gate a composed tree once at `as_logdensity` construction, before
-# `params_table`/`build_priors` walk it per gradient evaluation.
+# to gate a composed tree once at `distribution_to_logdensity` construction,
+# before `params_table`/`build_priors` walk it per gradient evaluation.
 # `validate_pool_groups` checks every leaf of a pool group agrees on
 # population and parameterisation; `validate_tree_names` checks that no pool
 # group, shared tag, or top-level edge name collides with one from another of
@@ -93,6 +93,7 @@ public TestUtils
 # rebuilt-distribution primary (`reconstruct`, #178 PR 2). No
 # LogDensityProblems/DynamicPPL dependency here or anywhere in this
 # package (#220, #233): DistributionsInference.jl hosts the PPL-facing
-# log-density/extensions (`as_logdensity`/`as_turing`) generically over this
-# core via the fit protocol (`parameter_rows`/`reconstruct`).
+# log-density/extensions (`distribution_to_logdensity` and
+# `distribution_to_turing`) generically over this core via the fit protocol
+# (`parameter_rows`/`reconstruct`).
 public flat_dimension, flatten, unflatten, reconstruct
