@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Logo for ComposedDistributions.jl: three density-curve nodes wired into
+     a small composition tree, coloured with the Julia palette. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"
+     viewBox="0 0 400 300" role="img"
+     aria-label="ComposedDistributions.jl logo">
+  <title>ComposedDistributions.jl</title>
+  <g fill="none" stroke="#94a3b8" stroke-width="6" stroke-linecap="round">
+    <line x1="200" y1="70" x2="100" y2="180"/>
+    <line x1="200" y1="70" x2="300" y2="180"/>
+    <line x1="300" y1="180" x2="300" y2="266"/>
+  </g>
+  <g stroke="none">
+    <circle cx="200" cy="70" r="40" fill="#4063d8"/>
+    <circle cx="100" cy="180" r="34" fill="#9558b2"/>
+    <circle cx="300" cy="180" r="34" fill="#389826"/>
+    <circle cx="300" cy="266" r="26" fill="#cb3c33"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M 182,82 Q 191,82 194,68 Q 197,56 200,56
+             Q 203,56 206,68 Q 209,82 218,82"/>
+    <path d="M 84,192 Q 91,192 93,181 Q 96,170 100,170
+             Q 104,170 107,181 Q 109,192 116,192"/>
+    <path d="M 284,192 Q 291,192 293,181 Q 296,170 300,170
+             Q 304,170 307,181 Q 309,192 316,192"/>
+    <path d="M 287,275 Q 292,275 294,266 Q 296,258 300,258
+             Q 304,258 306,266 Q 308,275 313,275"/>
+  </g>
+</svg>
