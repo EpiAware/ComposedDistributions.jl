@@ -142,10 +142,10 @@ logpdf(fitted, rand(Xoshiro(2), fitted))
 # with this prior": the spec is the prior and the declaration in one, and every
 # parameter without a spec stays fixed.
 # The estimation layer keys off exactly these specs.
-# [`flatten`](@ref) / [`unflatten`](@ref) / `flat_dimension` and `as_logdensity`
-# target the spec'd parameters only, so a tree with no uncertain leaves estimates
-# nothing (a pure likelihood at the fixed tree), and the flat table is a derived
-# view.
+# [`flatten`](@ref) / [`unflatten`](@ref) / `flat_dimension` and
+# `distribution_to_logdensity` target the spec'd parameters only, so a tree with
+# no uncertain leaves estimates nothing (a pure likelihood at the fixed tree),
+# and the flat table is a derived view.
 
 flat = ComposedDistributions.flat_dimension(resolved)
 (estimated_parameters = flat,)
