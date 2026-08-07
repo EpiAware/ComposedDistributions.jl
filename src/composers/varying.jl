@@ -290,12 +290,11 @@ probs(d::Varying) = probs(d.reference)
 # The varying map is fixed structure; the reference carries the free parameters.
 # Peel/rewrap through the wrapper so `params_table` / `update` see the inner free
 # delay and a parameter update rebuilds the same varying leaf around it.
-free_leaf(d::Varying) = free_leaf(d.reference)
+inner_dist(d::Varying) = d.reference
 function rewrap_leaf(d::Varying, inner)
     return Varying(d.f, d.covariate, rewrap_leaf(d.reference, inner))
 end
 _shared_tag(d::Varying) = _shared_tag(d.reference)
-extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 
 @doc "
 
