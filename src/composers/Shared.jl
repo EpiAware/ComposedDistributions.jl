@@ -222,13 +222,10 @@ _tie_path(p::Symbol) = _split_edge(p)
 _is_composer_node(::Union{Sequential, Parallel, AbstractOneOf, Choose}) = true
 _is_composer_node(::Any) = false
 
-# The (family, param-names) signature a tie groups by: tied leaves become one
-# free parameter, so they must share an inner free-delay family and parameter
-# structure. Uses the same `free_leaf`/`_leaf_param_names` the params interface
-# inventories with, so "compatible" means "the params table would treat them
-# alike".
+# The tie-identity signature a tie groups by; delegates to the public
+# `leaf_signature` hook (the egal-stability contract lives on its docstring).
 function _tie_signature(leaf)
-    return (leaf_ctor(leaf), _leaf_param_names(leaf))
+    return leaf_signature(leaf)
 end
 
 @doc "
