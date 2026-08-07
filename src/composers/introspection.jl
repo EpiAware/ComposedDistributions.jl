@@ -312,9 +312,69 @@ free_leaf(truncated(Gamma(2.0, 1.0); upper = 10.0))
 
 # See also
 - [`rewrap_leaf`](@ref): the inverse rebuild.
+- [`inner_dist`](@ref): the single-layer peel hook this recurses through.
 "
-free_leaf(leaf) = leaf
-free_leaf(d::Truncated) = free_leaf(d.untruncated)
+
+@doc raw"
+
+The next inner distribution layer of a (possibly wrapped) leaf.
+
+The single peel hook the read-through leaf-wrapper hooks recurse through:
+a wrapper type (censoring in CensoredDistributions, the modifiers in
+ModifiedDistributions, or ComposedDistributions' own `Truncated`/`Shared`/
+`Uncertain`/`Varying`) defines ONE method here returning its inner
+distribution, and every read-through hook (`free_leaf`, `uncertain_specs`,
+`extra_leaf_params`, `shared_tag`) that simply forwards through the wrapper
+gets that forwarding for free. A plain leaf's inner is itself — the base
+identity is the terminal that stops the peel.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+inner_dist(Gamma(2.0, 1.0)) === Gamma(2.0, 1.0)
+inner_dist(truncated(Gamma(2.0, 1.0); upper = 10.0))
+```
+
+# See also
+- [`free_leaf`](@ref): reach the innermost free delay via this hook.
+- [`rewrap_leaf`](@ref): the inverse rebuild.
+"
+inner_dist(leaf) = leaf
+inner_dist(d::Truncated) = d.untruncated
+
+@doc raw"
+
+Innermost free delay of a (possibly wrapped) leaf.
+
+The base identity contract: a plain leaf is its own free leaf, and a wrapper
+peels one [`inner_dist`](@ref) layer at a time to the inner free delay. A
+wrapper type (censoring in CensoredDistributions, the modifiers in
+ModifiedDistributions) defines [`inner_dist`](@ref) on its own type and the
+peel follows automatically. Pair with [`rewrap_leaf`](@ref), which rebuilds
+the same wrapper around a new inner delay.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution to peel.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+free_leaf(truncated(Gamma(2.0, 1.0); upper = 10.0))
+```
+
+# See also
+- [`rewrap_leaf`](@ref): the inverse rebuild.
+- [`inner_dist`](@ref): the single-layer peel hook this recurses through.
+"
+@inline function free_leaf(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? leaf : free_leaf(inner)
+end
 
 @doc raw"
 
@@ -439,8 +499,10 @@ ComposedDistributions.uncertain_specs(Gamma(2.0, 1.0)) === nothing
   rendering.
 - [`has_uncertain`](@ref): the boolean check built on this protocol.
 "
-uncertain_specs(leaf) = nothing
-uncertain_specs(d::Truncated) = uncertain_specs(d.untruncated)
+@inline function uncertain_specs(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? nothing : uncertain_specs(inner)
+end
 
 # The underscored alias retained for the package's existing internal callers
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
@@ -476,8 +538,10 @@ ComposedDistributions.extra_leaf_params(Gamma(2.0, 1.0))
 - [`set_extra_leaf_params`](@ref): the setter dual that rebuilds the leaf.
 - [`leaf_param_names`](@ref): appends the extra names after the native ones.
 "
-extra_leaf_params(leaf) = (;)
-extra_leaf_params(d::Truncated) = extra_leaf_params(d.untruncated)
+@inline function extra_leaf_params(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? (;) : extra_leaf_params(inner)
+end
 
 @doc raw"
 Set a leaf's extra, modifier-owned parameters by name and rebuild the leaf.
