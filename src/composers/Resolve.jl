@@ -187,6 +187,15 @@ end
 
 component_names(::Resolve{names}) where {names} = names
 
+# The attached `branch_prob_prior` (an uncertain node's `Dirichlet`) is fixed
+# structure at the node itself, not a per-outcome free parameter (its K-1
+# stick coordinates ride the node's own `:param` rows separately). A fixed
+# node (no attached prior) reports no attributes.
+function node_attributes(c::Resolve)
+    return c.branch_prob_prior === nothing ? (;) :
+           (; branch_prob_prior = c.branch_prob_prior)
+end
+
 # A `Resolve` with no attached prior is fixed structure; this three-argument
 # form keeps every existing construction path (the `Pair...` constructor,
 # `_rebuild`, `prune`, equality round-trips) building a fixed node unchanged.
@@ -221,7 +230,8 @@ end
 # backend) and needs only K-1 free dimensions (the simplex dimension).
 
 # The stick-coordinate parameter name for coordinate `k` (`:stick_k`), the label
-# a fitted chain and `params_table` carry for the estimated branch-prob simplex.
+# a fitted chain and `composed_to_table` carry for the estimated branch-prob
+# simplex.
 _stick_name(k::Int) = Symbol(:stick_, k)
 
 # The K-1 stick-coordinate names for a `k`-outcome node.

@@ -146,7 +146,7 @@ convolve the concrete result.
     [`has_varying`](@ref).
 
 The varying map `f` is fixed structure (like a truncation bound or a censoring
-window), so the introspection interface ([`params_table`](@ref), [`update`](@ref))
+window), so the introspection interface ([`composed_to_table`](@ref), [`update`](@ref))
 treats the `reference`'s parameters as the free parameters and peels/rewraps
 through the wrapper; the coefficients of `f` are not (yet) inventoried (see the
 design note's open questions).
@@ -288,12 +288,20 @@ logpdf(d::Varying, x::NamedTuple) = logpdf(d.reference, x)
 probs(d::Varying) = probs(d.reference)
 
 # The varying map is fixed structure; the reference carries the free parameters.
-# Peel/rewrap through the wrapper so `params_table` / `update` see the inner free
-# delay and a parameter update rebuilds the same varying leaf around it.
+# Peel/rewrap through the wrapper so `composed_to_table` / `update` see the
+# inner free delay and a parameter update rebuilds the same varying leaf
+# around it.
 free_leaf(d::Varying) = free_leaf(d.reference)
 function rewrap_leaf(d::Varying, inner)
     return Varying(d.f, d.covariate, rewrap_leaf(d.reference, inner))
 end
+
+# The covariate map is fixed structure (an `:attribute` row; `map` carries a
+# live function object, so composed_to_table's in-memory round trip only, no
+# CSV), and `Varying` is a wrapper layer of its own, peeling to the
+# reference's layers.
+node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
+leaf_layers(d::Varying) = (d, leaf_layers(d.reference)...)
 _shared_tag(d::Varying) = _shared_tag(d.reference)
 extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 
@@ -525,7 +533,7 @@ end
 # fitting loop can validate a data source's columns up front rather than
 # discovering a gap reactively, one covariate at a time, mid-`instantiate`.
 # A dedicated tree walk (not routed through `_node_children`) since it needs
-# per-position edge names (`component_names`), like `params_table`'s walk.
+# per-position edge names (`component_names`), like `composed_to_table`'s walk.
 
 @doc "
 
@@ -536,7 +544,7 @@ that read them.
 Returns a `Dict{Symbol, Vector{Symbol}}`: each key is a covariate name a
 [`Varying`](@ref) leaf's `covariate` field or a [`Choose`](@ref)'s `selector`
 names, and each value is the dotted edge path (the same `edge` namespace
-[`params_table`](@ref) uses) of every node that reads it. A stationary tree
+[`composed_to_table`](@ref) uses) of every node that reads it. A stationary tree
 (no `Varying` leaf, no data-selected `Choose`) returns an empty `Dict`.
 
 Pair with [`missing_covariates`](@ref) to check a [`Context`](@ref) up front,
@@ -576,8 +584,8 @@ end
 # A `Choose` itself reads a covariate (its `selector`, a data-selected
 # disjunction) in addition to whatever its alternatives read; its own
 # requirement is labelled with a `:selector` suffix (mirroring how
-# `params_table` labels a `Resolve`'s own `branch_probs` row), so a root-level
-# `Choose` reports a real edge name instead of an empty path.
+# `composed_to_table` labels a `Resolve`'s own `branch_probs` row), so a
+# root-level `Choose` reports a real edge name instead of an empty path.
 function _walk_covariates!(acc, d::Choose, path)
     push!(get!(acc, d.selector, Symbol[]), _join_path((path..., :selector)))
     for (name, alt) in zip(component_names(d), d.alternatives)
@@ -612,13 +620,17 @@ _walk_covariates!(acc, ::UnivariateDistribution, path) = nothing
 @doc "
 
 The unpinned (estimated) parameters a composed distribution's
-[`params_table`](@ref) still needs, as `(edge, param)` pairs.
+[`composed_to_table`](@ref) still needs, as `(edge, param)` pairs.
 
 The symmetric sibling of [`required_covariates`](@ref): where that lists the
 covariate columns a tree's [`Varying`](@ref)/[`Choose`](@ref) leaves still
 need from a [`Context`](@ref), this lists the parameters an [`uncertain`](@ref)
-leaf still needs a value for (every [`params_table`](@ref) row whose `prior`
-is not `nothing`). A fully concrete (pinned) tree returns an empty vector.
+leaf still needs a value for (every `:param` row whose `prior` is not
+`nothing`). A fully concrete (pinned) tree returns an empty vector.
+
+A bare leaf (`d` is not wrapped in a composer) has no name path, so its edge
+is the empty `Symbol` (`Symbol(\"\")`) — the same root-row convention
+[`composed_to_table`](@ref) uses for a leaf at the tree root.
 
 # Arguments
 - `d`: the composed distribution, node, or leaf to inspect.
@@ -634,12 +646,13 @@ required_parameters(tree)
 
 # See also
 - [`required_covariates`](@ref): the symmetric sibling over covariate columns.
-- [`params_table`](@ref): the full parameter inventory this reads.
+- [`composed_to_table`](@ref): the full structural inventory this reads.
 "
 function required_parameters(d)
-    tbl = params_table(d)
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), d, ())
     return [(edge = e, param = p)
-            for (e, p, prior) in zip(tbl.edge, tbl.param, tbl.prior)
+            for (e, p, prior) in zip(s.edge, s.param, s.prior)
             if prior !== nothing]
 end
 

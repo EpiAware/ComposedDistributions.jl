@@ -165,10 +165,10 @@ Nested, name-keyed parameters of the branches.
 Returns a `NamedTuple` keyed by the branch names, each value the `params` of that
 branch (recursing into nested composers; a leaf delegates to its standard/
 extended `Distributions.params`). This nested form is for prior introspection
-via [`params_table`](@ref); a composed distribution reconstructs through
+via [`composed_to_table`](@ref); a composed distribution reconstructs through
 [`compose`](@ref), not through `Distribution(params...)`.
 
-See also: [`params_table`](@ref), [`event_names`](@ref), [`event`](@ref)
+See also: [`composed_to_table`](@ref), [`event_names`](@ref), [`event`](@ref)
 "
 params(d::Parallel) = _composed_params(d)
 
