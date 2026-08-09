@@ -79,13 +79,18 @@ leaf = Gamma(2.0, 1.0)
 ```
 
 A truncated leaf peels its fixed structure to the inner delay, so the parameter table lists only the inner free parameters, and `leaf_mean` reports the truncated moment (not the inner delay's), because `Truncated` overrides it.
+`truncated(Normal(0.0, 1.0); lower = 0.0)` has a Distributions.jl closed-form
+truncated mean, so the difference from the untruncated `Normal(0.0, 1.0)`
+mean (`0.0`) is visible below, unlike a family such as `Gamma` with no
+closed-form truncated moment, where `leaf_mean` falls back to the untruncated
+one and the two would look the same.
 
 ```@example extending
-inner = ComposedDistributions.free_leaf(truncated(Gamma(2.0, 1.0); upper = 10.0))
-rebuilt = ComposedDistributions.rewrap_leaf(
-    truncated(Gamma(2.0, 1.0); upper = 10.0), Gamma(3.0, 1.5))
+tr = truncated(Normal(0.0, 1.0); lower = 0.0)
+inner = ComposedDistributions.free_leaf(tr)
+rebuilt = ComposedDistributions.rewrap_leaf(tr, Normal(1.0, 2.0))
 (inner = inner, rebuilt = rebuilt,
-    mean = ComposedDistributions.leaf_mean(truncated(Gamma(2.0, 1.0); upper = 10.0)))
+    mean = ComposedDistributions.leaf_mean(tr))
 ```
 
 ### Steps
