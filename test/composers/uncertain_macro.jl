@@ -27,8 +27,11 @@ end
     @test tbl.prior[shape_idx] == Normal(0.7, 0.2)
     @test tbl.prior[scale_idx] === nothing
 
-    priors = build_priors(tbl)
-    @test priors.onset.shape == Normal(0.7, 0.2)
+    # Bare uncertain(tree) keeps the attached spec and marks scale no_prior().
+    promoted = uncertain(tree)
+    ptbl = params_table(promoted)
+    @test ptbl.prior[shape_idx] == Normal(0.7, 0.2)
+    @test ptbl.prior[scale_idx] == no_prior()
 end
 
 @testitem "@uncertain: rewrites leaves inside a composed tree" begin

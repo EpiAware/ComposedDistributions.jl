@@ -250,11 +250,12 @@ end
 
 # The nested-params entry for the branch probabilities: the raw probability
 # tuple for a fixed node, or the K-1 stick coordinates (keyed `:stick_k`) when
-# the node carries an attached `Dirichlet`, so `flatten`/`unflatten` round-trip
-# the estimated stick subset.
+# the node carries an attached `Dirichlet` or `no_prior()` marker, so
+# `flatten`/`unflatten` round-trip the estimated stick subset.
 _branch_prob_params(c::Resolve) = _branch_prob_params(c, c.branch_prob_prior)
 _branch_prob_params(c::Resolve, ::Nothing) = c.branch_probs
-function _branch_prob_params(c::Resolve, ::Distributions.Dirichlet)
+function _branch_prob_params(c::Resolve,
+        ::Union{Distributions.Dirichlet, NoPrior})
     v = _simplex_to_stick(collect(c.branch_probs))
     names = _stick_param_names(length(component_names(c)))
     return NamedTuple{names}(Tuple(v))
@@ -419,9 +420,8 @@ its own specs (see Uncertain.jl), and a leaf-wrapper type (censoring in
 CensoredDistributions, the modifiers in ModifiedDistributions) adds its own
 method dispatching on its own type and forwarding to its inner delay's specs,
 so an uncertain prior attached under a wrapper still reaches
-[`params_table`](@ref)'s `prior` column and [`build_priors`](@ref). Without a
-forwarding method the attached prior is silently dropped and the parameter is
-treated as fixed.
+[`params_table`](@ref)'s `prior` column. Without a forwarding method the
+attached prior is silently dropped and the parameter is treated as fixed.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution to inspect.
@@ -535,9 +535,9 @@ to `:param_1, :param_2, ...`.
 
 A leaf type whose free parameters are not the native family's overrides this, in
 step with [`leaf_ctor`](@ref): the two together fix the coordinates that
-`params_table`, `uncertain`, `build_priors` and the flat codec work in. A
-moment-parameterised wrapper naming a mean and a standard deviation, rather than
-a shape and a scale, is the motivating case.
+`params_table`, `uncertain` and the flat codec work in. A moment-parameterised
+wrapper naming a mean and a standard deviation, rather than a shape and a
+scale, is the motivating case.
 
 # Arguments
 - the leaf distribution whose parameter names are read.
@@ -575,7 +575,7 @@ then the names of any [`extra_leaf_params`](@ref) appended in order. A censored
 or modified leaf delegates to its free delay (`free_leaf`), so the fixed wrapper
 structure never appears, while a thinning modifier's `:thin` factor rides the
 trailing extra-parameter slot. These names are the coordinates
-[`params_table`](@ref), [`uncertain`](@ref) and [`build_priors`](@ref) key on.
+[`params_table`](@ref) and [`uncertain`](@ref) key on.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution whose parameter names are
@@ -722,10 +722,10 @@ The value [`params_table`](@ref) returns: a Tables.jl source (a column table)
 that prints as a padded `edge | param | value | support | prior` table. It is a thin
 wrapper over a `NamedTuple` of equal-length column vectors, forwarding the whole
 Tables.jl column interface and column access (`tbl.edge`, `tbl.param`, ...), so
-`Tables.istable`, `Tables.columns`, `Tables.getcolumn`, `DataFrame(tbl)` and
-[`build_priors`](@ref) all consume it unchanged; only its display is customised.
+`Tables.istable`, `Tables.columns`, `Tables.getcolumn` and `DataFrame(tbl)`
+all consume it unchanged; only its display is customised.
 
-See also: [`params_table`](@ref), [`build_priors`](@ref).
+See also: [`params_table`](@ref), [`update`](@ref)`(tree, table)`.
 "
 struct ParamsTable{C <: NamedTuple}
     columns::C
@@ -807,13 +807,15 @@ of the composed distribution `d`, with columns:
 - `support`: the `(minimum, maximum)` variate support of that edge's
   distribution, the domain a prior over the edge must respect (from `minimum`/
   `maximum`/`support`).
-- `prior`: the attached prior of an [`uncertain`](@ref) parameter (its spec
-  distribution), or `nothing` for a fixed parameter. [`build_priors`](@ref)
-  uses a non-`nothing` entry ahead of its per-row default.
+- `prior`: the attached spec of an [`uncertain`](@ref) parameter — a
+  distribution, a [`pool`](@ref)`(...)` group, or the [`no_prior`](@ref)`()`
+  marker (free, no prior yet) — or `nothing` for a fixed parameter.
 
-Define priors against the rows of this table instead of hand-matching parameter
-names. Built from [`params`](@ref) (nested, name-keyed values) plus the edge
-distributions' support.
+Read parameter structure off the rows of this table instead of hand-matching
+names, and write priors back onto it (edit `prior`, then
+[`update`](@ref)`(tree, table)`) instead of hand-matching the tree. Built from
+[`params`](@ref) (nested, name-keyed values) plus the edge distributions'
+support.
 
 For a [`Choose`](@ref) node the alternatives' independent per-branch params are
 namespaced per alternative (`index.…` / `sourced.…`), one row-group per
@@ -889,10 +891,11 @@ end
 
 # The branch-probability rows. A fixed node lists one informational row per
 # outcome probability (no attached prior, so it is not estimated). An uncertain
-# node (an attached `Dirichlet`) lists its K-1 stick coordinates instead: each a
-# scalar estimated parameter `:stick_k` in (0, 1) carrying its stick-breaking
-# `Beta` prior, so the codec flattens the simplex through the existing per-row
-# scoring with no special-casing.
+# node (an attached `Dirichlet`, or the `no_prior()` marker) lists its K-1
+# stick coordinates instead: each a scalar estimated parameter `:stick_k` in
+# (0, 1) carrying its stick-breaking `Beta` prior (or `no_prior()`, unresolved),
+# so the codec flattens the simplex through the existing per-row scoring with
+# no special-casing.
 function _branch_prob_rows!(edges, params_col, values, supports, priors,
         c::Resolve, edge, ::Nothing)
     sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
@@ -922,6 +925,23 @@ function _branch_prob_rows!(edges, params_col, values, supports, priors,
     return nothing
 end
 
+# The marker case: same stick-coordinate rows, but with no `Dirichlet` to
+# factor into per-stick `Beta`s, so every row's `prior` is the marker itself
+# (free, no prior chosen yet).
+function _branch_prob_rows!(edges, params_col, values, supports, priors,
+        c::Resolve, edge, ::NoPrior)
+    v = _simplex_to_stick(collect(c.branch_probs))
+    names = _stick_param_names(length(component_names(c)))
+    for k in eachindex(names)
+        push!(edges, edge)
+        push!(params_col, names[k])
+        push!(values, v[k])
+        push!(supports, (0.0, 1.0))
+        push!(priors, NoPrior())
+    end
+    return nothing
+end
+
 # A racing-hazard node emits only its outcome delays' parameter rows; there is
 # no branch-probability block (the winning probability is derived, not free).
 function _walk_rows!(edges, params_col, values, supports, priors, seen,
@@ -939,8 +959,7 @@ end
 # (`_shared_tag`) is inventoried once under its tag as the edge: the first
 # occurrence emits the rows, later occurrences with the same tag are skipped so
 # the tied parameter is listed once. An uncertain leaf's attached spec rides
-# each row's `prior` entry (`nothing` for a fully fixed parameter), so
-# `build_priors` picks the attached prior up without an explicit override.
+# each row's `prior` entry (`nothing` for a fully fixed parameter).
 function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
         path)
     tag = _shared_tag(leaf)
@@ -1042,25 +1061,28 @@ spelling of \"distribution in the slot = estimate, value = fix\"):
   Passing distributions switches to a partial update: only the named parameters
   change (an absent parameter keeps its current spec or fixed value), so
   `update(tree, (onset = (shape = LogNormal(log(2), 0.2),),))` makes just
-  `onset`'s `shape` uncertain. Promote a whole tree to uncertainty over its
-  free parameters with default priors via `update(tree, `
-  [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path;
+  `onset`'s `shape` uncertain;
+- an **[`no_prior`](@ref)`()` marker** makes the parameter uncertain with no
+  prior chosen yet. `uncertain(tree)` (bare) is the whole-tree escape hatch
+  built on this: it marks every currently-fixed free parameter this way,
+  including a [`Resolve`](@ref)'s branch-probability simplex;
 - a **[`pool`](@ref) spec** makes the parameter partially pooled across the
   leaves that name the same group (also a partial update), e.g.
   `update(tree, (onset = (shape = pool(:district),),))`.
 
 A [`Resolve`](@ref) node's `branch_probs` are a node-level parameter, not a
-leaf: attach a simplex-valued `Distributions.Dirichlet` at the `branch_probs`
-slot to make them uncertain,
-`update(node, (branch_probs = Dirichlet(ones(K)),))`. The `Dirichlet` is the
-prior you write; the codec estimates the node through the `Dirichlet`'s K-1
-stick-breaking coordinates (labelled `:stick_1 … :stick_{K-1}` in
-[`params_table`](@ref) and a fitted chain), each a `Beta` in (0, 1), so every
-draw lands on the probability simplex and the gradient is well-defined. The
-probabilities are recovered from any draw: a strict `update` from the stick
-coordinates (as read back from a chain) collapses the node to concrete
-probabilities summing to one (read them with `Distributions.probs`). Promote
-attaches a flat `Dirichlet(ones(K))` per `Resolve`.
+leaf: attach a simplex-valued `Distributions.Dirichlet` (or the
+[`no_prior`](@ref)`()` marker) at the `branch_probs` slot to make them
+uncertain, `update(node, (branch_probs = Dirichlet(ones(K)),))`. The
+`Dirichlet` is the prior you write; the codec estimates the node through the
+`Dirichlet`'s K-1 stick-breaking coordinates (labelled `:stick_1 …
+:stick_{K-1}` in [`params_table`](@ref) and a fitted chain), each a `Beta` in
+(0, 1), so every draw lands on the probability simplex and the gradient is
+well-defined. The probabilities are recovered from any draw: a strict `update`
+from the stick coordinates (as read back from a chain) collapses the node to
+concrete probabilities summing to one (read them with `Distributions.probs`).
+`uncertain(tree)` (bare) marks the simplex `no_prior()` per `Resolve`, no
+prior chosen.
 
 Read a fitted chain back onto a template with
 `DistributionsInference.point_estimate` (or `readback_draws` for every draw)
@@ -1170,7 +1192,7 @@ update(tree, params_table(tree))   # a no-op round-trip here
 - [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point built on
   the same merge-mode pipeline as this docstring's distribution-valued forms
 - [`params_table`](@ref): the flat inventory whose `param` names key the leaves
-- [`param_priors`](@ref): default priors for the promote path
+- [`no_prior`](@ref): the marker `uncertain(tree)` (bare) applies
 - [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
@@ -1264,16 +1286,19 @@ function update(d::AbstractComposedDistribution, table)
     return update(d, _table_to_nested_updates(table))
 end
 
-# Whether an `update` NamedTuple carries any distribution-valued parameter,
-# which switches `update` to *merge* mode: a distribution introduces an uncertain
+# Whether an `update` NamedTuple carries any spec-valued parameter, which
+# switches `update` to *merge* mode: a spec (a distribution, `pool(...)`, or
+# `no_prior()` — see `_is_spec_value`, `Uncertain.jl`) introduces an uncertain
 # spec, a `Real` pins (collapsing any spec), and an absent parameter keeps the
 # leaf's current spec or fixed value (so a partial NamedTuple targets only the
-# named parameters). Without a distribution anywhere the update is a plain
-# concrete replacement (*strict* mode, exact cover), the original behaviour.
-# Any distribution counts: a `UnivariateDistribution` spec makes a leaf
-# parameter uncertain, and a multivariate simplex prior (a `Dirichlet` at a
+# named parameters). Without a spec anywhere the update is a plain concrete
+# replacement (*strict* mode, exact cover), the original behaviour. Any spec
+# counts: a `UnivariateDistribution`/`no_prior()` makes a leaf parameter
+# uncertain, and a multivariate simplex prior (a `Dirichlet`/`no_prior()` at a
 # `Resolve`'s `branch_probs`) makes the branch probabilities uncertain, so a
-# lone `Dirichlet` update also switches to merge mode.
+# lone `branch_probs` update also switches to merge mode. `Pool`/`NoPrior`
+# extend this generic (their own files, `Pool.jl`/`no_prior.jl`) rather than
+# widening the `Union` here, since neither is a `Distribution`.
 _has_distribution_value(x::Distribution) = true
 _has_distribution_value(x::NamedTuple) = any(_has_distribution_value, values(x))
 _has_distribution_value(::Any) = false
@@ -1328,12 +1353,14 @@ end
 # Rebuild the `Resolve` with updated delays, resolving the branch probabilities
 # and their attached prior from the update NamedTuple:
 #
-# - *merge* mode with a `branch_probs = Dirichlet(...)` entry attaches that prior,
-#   making the simplex uncertain (the probabilities stay as the point). Without
-#   a `branch_probs` entry the node's probabilities and prior are kept.
-# - *strict* mode on a node that carries a prior reconstructs the probabilities
-#   from the stick coordinates supplied (a draw from the sampler) and collapses
-#   the node to concrete structure (drops the prior), mirroring a leaf collapse.
+# - *merge* mode with a `branch_probs = Dirichlet(...)` or
+#   `branch_probs = no_prior()` entry attaches that spec, making the simplex
+#   uncertain (the probabilities stay as the point). Without a `branch_probs`
+#   entry the node's probabilities and prior are kept.
+# - *strict* mode on a node that carries a prior/marker reconstructs the
+#   probabilities from the stick coordinates supplied (a draw from the
+#   sampler) and collapses the node to concrete structure (drops the
+#   prior/marker), mirroring a leaf collapse.
 # - *strict* mode on a fixed node replaces the probabilities from concrete
 #   per-outcome values, as before.
 function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
@@ -1343,8 +1370,9 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         haskey(params, :branch_probs) || return Resolve(names, delays,
             c.branch_probs, c.branch_prob_prior)
         bp = params.branch_probs
-        # A `Dirichlet` attaches a prior, making the simplex uncertain.
-        bp isa Distributions.Dirichlet &&
+        # A `Dirichlet`/`no_prior()` attaches a spec, making the simplex
+        # uncertain.
+        bp isa Union{Distributions.Dirichlet, NoPrior} &&
             return Resolve(names, delays, c.branch_probs, bp)
         # A concrete `NamedTuple` pins the probabilities, exactly as a `Real`
         # value pins a leaf parameter in merge mode: set them from the supplied
@@ -1357,8 +1385,8 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         bp isa NamedTuple && return _update_branch_probs_strict(c, delays, bp)
         throw(ArgumentError(
             "update(Resolve, ...): a `branch_probs` update in merge mode must " *
-            "be a `Dirichlet` over the outcomes (making the simplex " *
-            "uncertain) or a per-outcome `NamedTuple` (pinning fixed " *
+            "be a `Dirichlet` over the outcomes or `no_prior()` (making the " *
+            "simplex uncertain) or a per-outcome `NamedTuple` (pinning fixed " *
             "probabilities); got a $(typeof(bp))"))
     end
     haskey(params, :branch_probs) || return Resolve(names, delays,
@@ -1447,8 +1475,9 @@ function _update(leaf, params::NamedTuple, shared, merge::Bool)
 end
 
 # Validate a merge NamedTuple: every key must be a parameter of the leaf, and
-# every value a `Real` (fix) or a `UnivariateDistribution` (make uncertain). A
-# missing key is fine (that parameter is left untouched).
+# every value a `Real` (fix) or a spec (`_is_spec_value`, `Uncertain.jl`: a
+# `UnivariateDistribution`, a `pool(...)` group, or `no_prior()`). A missing
+# key is fine (that parameter is left untouched).
 function _check_merge_keys(updates::NamedTuple, expected::Tuple, what)
     for k in keys(updates)
         k in expected || throw(ArgumentError(
@@ -1456,10 +1485,12 @@ function _check_merge_keys(updates::NamedTuple, expected::Tuple, what)
             "expected $(collect(expected))"))
     end
     for (k, v) in pairs(updates)
-        v isa Union{Real, UnivariateDistribution, Pool} || throw(ArgumentError(
-            "update($what, ...): the value for $(repr(k)) must be a Real " *
-            "(a fixed value), a UnivariateDistribution (an uncertain spec), " *
-            "or a `pool(...)` spec (partial pooling); got $(typeof(v))"))
+        v isa Real || _is_spec_value(v) ||
+            throw(ArgumentError(
+                "update($what, ...): the value for $(repr(k)) must be a " *
+                "Real (a fixed value), a UnivariateDistribution (an " *
+                "uncertain spec), a `pool(...)` spec (partial pooling), " *
+                "or `no_prior()` (free, no prior yet); got $(typeof(v))"))
     end
     return nothing
 end
@@ -1538,7 +1569,12 @@ _node_children(d::Union{Sequential, Parallel}) = d.components
 _node_children(c::AbstractOneOf) = c.delays
 _node_children(d::Choose) = d.alternatives
 
-# --- build_priors: params_table + flat priors -> nested NamedTuple ----------
+# --- nested-tree assembly: flat table rows -> nested NamedTuple ------------
+#
+# Shared by `_table_to_nested_updates` (`update(d, table)`) and `_estimate_all`
+# (bare `uncertain(tree)`, below): both walk a `params_table`-shaped set of
+# rows and assemble the identical nested-`NamedTuple` shape `update`/
+# `uncertain` consume, differing only in which value each row contributes.
 
 # Split a dotted edge `Symbol` (`:a.b`) back into its name path (`(:a, :b)`).
 # The dotted ("." separator) parameter-path namespace (inverse of `_join_path`),
@@ -1571,12 +1607,12 @@ end
 # --- update(d, table): a Tables.jl table folded to a nested update NamedTuple
 
 # `update(d, table)`'s reader: a `params_table`-shaped Tables.jl table ->
-# the nested NamedTuple `update`/`_update` consume. Reuses the exact
-# `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `build_priors` uses,
-# so the table -> tree shape is identical; only the per-row value picked
-# differs (a row's own `prior`/`value`, no override/default machinery — this
-# is a plain bulk write, not prior assembly). Requires `Tables.istable` and
-# `edge`/`param` columns, erroring by column name on either miss so a
+# the nested NamedTuple `update`/`_update` consume, via the same
+# `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `_estimate_all` uses
+# below — only the per-row value picked differs (a row's own `prior`/`value`,
+# a plain bulk write, not the estimate-everything marker). Requires
+# `Tables.istable` and `edge`/`param` columns, erroring by column name on
+# either miss so a
 # differently-shaped row table (e.g. DistributionsInference's dotted-`name`
 # `parameter_rows` convention, DI#20) is refused loudly rather than silently
 # misread — both shapes are `Tables.istable`, so this check is the only thing
@@ -1615,300 +1651,78 @@ function _table_to_nested_updates(table)
     return _freeze_tree(tree)
 end
 
-# --- parameter-derived default priors (brms-style family defaults) ----------
+# --- uncertain(tree): the estimate-everything front door -------------------
 #
-# The default prior is classified from the parameter's own natural domain, not
-# the leaf's variate support: a location-family delay (`Normal`, `Affine(Normal)`)
-# has unbounded variate support, but its scale parameter still lives on the
-# positive half-line, so a `minimum(dist)`/`maximum(dist)` rule would wrongly
-# give it an unconstrained prior with mass on negative scale.
+# ComposedDistributions does not choose priors (that is
+# DistributionsInference.jl's job; see the package docstring), so bare
+# `uncertain(tree)` (Uncertain.jl) needs a way to mark every currently-fixed
+# free parameter estimated with no prior guessed. `_estimate_all` builds that
+# nested NamedTuple, mirroring the former default-prior assembly's shape
+# (walk `params_table`, `_nest_insert!` each unset row) but inserting the
+# `NoPrior` marker unconditionally rather than picking a distribution.
 
-# Location parameters live on the whole line (a `Normal`/`LogNormal` `mu`, a
-# `Uniform` bound), so they get an unconstrained default.
-function _is_location_param(p::Symbol)
-    p === :mu || p === :location || p === :loc || p === :lower || p === :upper
-end
-
-# Scale/shape/rate-type parameters are positive by construction (the `sigma` of a
-# `Normal`/`LogNormal`, the `shape`/`scale` of a `Gamma`/`Weibull`, the `scale`
-# of an `Exponential`, and the common positive parameter names of related
-# families), so they get a positive-truncated default regardless of the leaf's
-# variate support.
-function _is_positive_param(p::Symbol)
-    p === :sigma || p === :scale || p === :rate || p === :shape ||
-        p === :alpha || p === :beta || p === :theta || p === :nu ||
-        p === :k || p === :df || p === :mean || p === :sd
-end
-
-@doc "
-
-Pick a default prior for a parameter row, brms-style.
-
-`default_prior(row)` is the per-row default [`build_priors`](@ref) uses for rows
-the user does not override. `row` is a `(; edge, param, value, support)`
-NamedTuple (a [`params_table`](@ref) row); the prior family follows the
-parameter's own natural domain (classified by name), not the leaf's variate
-support:
-
-- a probability parameter, support `[0, 1]` (a `branch_probs` row) ->
-  `Uniform(0, 1)`.
-- a scale/shape/rate-type parameter (`:sigma`, `:scale`, `:shape`, `:rate`, ...)
-  -> `truncated(Normal(value, scale); lower = 0)`, positive by construction even
-  for a location-family delay (a `Normal`/`Affine(Normal)` `sigma`).
-- a location parameter (`:mu`, `:location`, a `Uniform` bound) ->
-  `Normal(value, scale)`, unconstrained since the location lives on the whole
-  line even for a positive-support delay.
-- otherwise, an unmapped name falls back to the variate support: a non-negative
-  support -> `truncated(Normal(value, scale); lower = 0)`, else
-  `Normal(value, scale)`.
-
-The spread `scale` defaults to `max(abs(value), 1)`, a weakly-informative width
-that scales with the parameter's magnitude.
-
-# Arguments
-- `row`: a [`params_table`](@ref) row `(; edge, param, value, support)`.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-# A positive scale parameter -> a positive-truncated default.
-default_prior((; edge = :onset_admit, param = :scale,
-    value = 1.0, support = (0.0, Inf)))
-```
-
-!!! note \"DistributionsInference's `with_priors`\"
-    `DistributionsInference.with_priors` applies the
-    same support-derived heuristic generically, over any fit-protocol
-    object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
-    `ComposedDistributions` tree. It is a separate implementation, not a
-    thin wrapper over this one: `DistributionsInference` depends on
-    `ComposedDistributions`, not the reverse, so this package's own
-    `default_prior`/[`build_priors`](@ref) cannot delegate to it without
-    inverting that dependency. The two stay independent, parallel
-    implementations of the same heuristic for their respective row shapes.
-
-# See also
-- [`build_priors`](@ref): assembles the nested prior NamedTuple, using this as
-  the per-row default and accepting overrides.
-"
-function default_prior(row)
-    lo, hi = row.support
-    scale = max(abs(float(row.value)), one(float(row.value)))
-    if lo == 0 && hi == 1
-        return Distributions.Uniform(0, 1)
-    elseif _is_positive_param(row.param)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
-    elseif _is_location_param(row.param)
-        return Distributions.Normal(row.value, scale)
-    elseif lo >= 0 && isinf(hi)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
-    else
-        return Distributions.Normal(row.value, scale)
-    end
-end
-
-@doc "
-
-Assemble the nested prior `NamedTuple` from a [`params_table`](@ref) inventory.
-
-`build_priors(table; priors, default)` turns the flat parameter table into the
-nested `NamedTuple` that a downstream `composed_parameters_model` (and
-[`update`](@ref)) expect, so users define priors against the flat table rows
-rather than by hand-matching the tree.
-
-For each row the prior is chosen in order:
-1. a user `priors` override for that `(edge, param)`, if present, else
-2. the row's attached `prior` (an [`uncertain`](@ref) parameter's spec rides
-   the table's `prior` column), if present, else
-3. `default(row)`, the per-row default (support-derived [`default_prior`](@ref)
-   unless a different `default` function is given).
-
-By default every row gets a sensible support-derived prior, so
-`build_priors(params_table(tree))` alone yields a complete prior NamedTuple. A
-user overrides only the parameters they care about (brms-style partial override)
-through `priors`.
-
-`row` is a `NamedTuple` `(; edge, param, value, support)` (the table's columns
-for that row), so a custom `default` can pick a prior from the parameter's
-`support`.
-
-# Arguments
-- `table`: a [`params_table`](@ref) inventory (any Tables.jl column table with
-  `edge`, `param`, `value`, `support` columns).
-
-# Keyword Arguments
-- `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
-  (e.g. a `Dict`) or a nested `NamedTuple` keyed like the tree
-  (`(onset_admit = (shape = prior,),)`); only the listed parameters are
-  overridden (default: empty).
-- `default`: a function `row -> prior` for rows not overridden (default:
-  [`default_prior`](@ref), deriving the prior family from the parameter's
-  support).
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-tbl = params_table(tree)
-# Support-derived defaults everywhere, overriding only one parameter.
-nested = build_priors(tbl;
-    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),),))
-nested.onset_admit.shape
-```
-
-# See also
-- [`params_table`](@ref): the flat inventory keyed against.
-- [`default_prior`](@ref): the support-derived per-row default.
-- `composed_parameters_model` (downstream), [`update`](@ref): consume the result.
-"
-function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
-        default = default_prior)
-    edges = Tables.getcolumn(table, :edge)
-    params_col = Tables.getcolumn(table, :param)
-    values = Tables.getcolumn(table, :value)
-    supports = Tables.getcolumn(table, :support)
-    # The attached-prior column (an uncertain parameter's spec); tolerate its
-    # absence so a hand-built four-column table keeps working.
-    cols = Tables.columns(table)
-    attached = :prior in Tables.columnnames(cols) ?
-               Tables.getcolumn(cols, :prior) : nothing
+# One `no_prior()` marker per currently-fixed row (`prior === nothing`); an
+# already-estimated row (a real prior, `pool(...)`, or an existing `no_prior()`
+# marker) is left untouched, so the result promotes only what is left to
+# promote.
+function _estimate_all(d::AbstractComposedDistribution)
+    tbl = params_table(d)
+    edges = Tables.getcolumn(tbl, :edge)
+    params_col = Tables.getcolumn(tbl, :param)
+    priors = Tables.getcolumn(tbl, :prior)
     tree = Dict{Symbol, Any}()
     for i in eachindex(edges)
-        edge = edges[i]
-        param = params_col[i]
-        ovr = _prior_override(priors, edge, param)
-        prior = if ovr !== nothing
-            ovr
-        elseif attached !== nothing && attached[i] !== nothing
-            attached[i]
-        elseif default !== nothing
-            row = (; edge = edge, param = param,
-                value = values[i], support = supports[i])
-            default(row)
-        else
-            throw(ArgumentError(
-                "no prior for ($edge, $param) and no default supplied"))
-        end
-        _nest_insert!(tree, _split_edge(edge), param, prior)
+        priors[i] === nothing || continue
+        _nest_insert!(tree, _split_edge(edges[i]), params_col[i], NoPrior())
     end
-    return _freeze_tree(tree)
+    nt = _freeze_tree(tree)
+    return _attach_branch_prob_estimates(nt, d)
 end
 
-# A user override for `(edge, param)`, or `nothing` if none. Accepts a mapping
-# keyed by the `(edge, param)` pair (a `Dict`) or a nested `NamedTuple` keyed
-# like the tree (descend the edge path, then the param). Missing keys return
-# `nothing` so the row falls through to the default.
-function _prior_override(priors::NamedTuple, edge::Symbol, param::Symbol)
-    node = priors
-    for name in _split_edge(edge)
-        node isa NamedTuple && haskey(node, name) || return nothing
-        node = node[name]
-    end
-    node isa NamedTuple && haskey(node, param) || return nothing
-    return node[param]
-end
-
-function _prior_override(priors, edge::Symbol, param::Symbol)
-    key = (edge, param)
-    return haskey(priors, key) ? priors[key] : nothing
-end
-
-@doc "
-
-Build the nested prior `NamedTuple` straight from a composed distribution.
-
-`param_priors(tree; priors, default)` is a thin convenience over
-[`build_priors`](@ref)`(`[`params_table`](@ref)`(tree))`: it reads the
-parameter inventory of the composed distribution `tree` and assembles the
-nested prior `NamedTuple` in one call, forwarding the same keyword surface.
-It adds no prior logic of its own.
-
-The result is spec-shaped (a nested NamedTuple of distributions keyed like the
-tree), so it feeds [`update`](@ref) directly: `update(tree, param_priors(tree))`
-promotes every free parameter to [`uncertain`](@ref) with its default prior —
-the explicit estimate-everything path under uncertain-first (a bare tree
-estimates nothing). Pass `priors` to swap in your own spec for named
-parameters.
-
-# Arguments
-- `tree`: a composed distribution from [`compose`](@ref).
-
-# Keyword Arguments
-- `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
-  or a nested `NamedTuple` keyed like the tree; only the listed parameters are
-  overridden (default: empty).
-- `default`: a function `row -> prior` for rows not overridden (default:
-  [`default_prior`](@ref)).
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-priors = param_priors(tree)
-priors.onset_admit.shape
-```
-
-# See also
-- [`build_priors`](@ref): the underlying table-based assembly.
-- [`params_table`](@ref): the parameter inventory read internally.
-"
-function param_priors(tree; kwargs...)
-    priors = build_priors(params_table(tree); kwargs...)
-    return _attach_branch_prob_priors(priors, tree)
-end
-
-# The nested prior NamedTuple carries no node identity, so the flat `Dirichlet`
-# default for an uncertain branch-probability simplex is injected by walking the
-# tree alongside the built priors: at each `Resolve` the `branch_probs` entry is
-# set to the node's own attached `Dirichlet` if it has one, else a flat
-# `Dirichlet(ones(K))`, so `update(tree, param_priors(tree))` promotes the
-# simplex to uncertain with a sensible default (the branch probabilities are
-# recovered from any draw). `Compete` (winning probability derived) and `Choose`
-# (data-selected) have no node-level probability parameter, so nothing is
-# injected for them.
-function _attach_branch_prob_priors(nt::NamedTuple, d)
+# A `Resolve`'s `branch_probs` is a node-level parameter, not a leaf row: the
+# generic per-row walk above marks its per-outcome informational rows
+# individually (one `no_prior()` per outcome, mirroring how a fixed node's
+# rows are laid out — see `_branch_prob_rows!`), which is the wrong SHAPE for
+# `update`'s merge mode (it expects one marker/prior at the whole
+# `branch_probs` slot, not a NamedTuple keyed by outcome). This pass walks the
+# tree alongside the assembled NamedTuple and replaces that sub-object with
+# the single `no_prior()` marker at each `Resolve` with no attached spec,
+# leaving an already-uncertain node's spec (and hence no `branch_probs` key in
+# `nt` at all, since none of its stick rows are unset) untouched. `Compete`
+# (winning probability derived) and `Choose` (data-selected) have no
+# node-level probability parameter, so nothing is touched for them.
+function _attach_branch_prob_estimates(nt::NamedTuple, d)
     ks = keys(nt)
     vals = map(ks) do k
         if k === :branch_probs && d isa Resolve
-            _promote_branch_prior(d)
+            d.branch_prob_prior === nothing ? NoPrior() : nt[k]
         else
-            child = _prior_child_node(d, k)
-            child === nothing ? nt[k] : _attach_branch_prob_priors(nt[k], child)
+            child = _composer_child_node(d, k)
+            child === nothing ? nt[k] :
+            _attach_branch_prob_estimates(nt[k], child)
         end
     end
     return NamedTuple{ks}(vals)
 end
-_attach_branch_prob_priors(x, d) = x
+_attach_branch_prob_estimates(x, d) = x
 
-function _promote_branch_prior(c::Resolve)
-    return c.branch_prob_prior === nothing ?
-           Distributions.Dirichlet(ones(length(component_names(c)))) :
-           c.branch_prob_prior
-end
-
-# The child tree node under name `k` for the prior walk, or `nothing` when `k`
-# is a leaf parameter name (not a child node), so the walk stops descending.
-function _prior_child_node(d::Union{Sequential, Parallel}, k::Symbol)
+# The child tree node under name `k`, or `nothing` when `k` is a leaf
+# parameter name (not a child node), so the estimate-everything walk above
+# stops descending.
+function _composer_child_node(d::Union{Sequential, Parallel}, k::Symbol)
     names = component_names(d)
     i = findfirst(==(k), names)
     return i === nothing ? nothing : d.components[i]
 end
-function _prior_child_node(c::AbstractOneOf, k::Symbol)
+function _composer_child_node(c::AbstractOneOf, k::Symbol)
     i = findfirst(==(k), component_names(c))
     return i === nothing ? nothing : c.delays[i]
 end
-function _prior_child_node(d::Choose, k::Symbol)
+function _composer_child_node(d::Choose, k::Symbol)
     i = findfirst(==(k), component_names(d))
     return i === nothing ? nothing : d.alternatives[i]
 end
-_prior_child_node(::Any, ::Symbol) = nothing
+_composer_child_node(::Any, ::Symbol) = nothing
 
 # --- name introspection ----------------------------------------------------
 

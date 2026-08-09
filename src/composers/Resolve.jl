@@ -109,7 +109,8 @@ Being univariate, a `Resolve` nests as a child of [`Sequential`](@ref) or
 selection and censoring are not part of this type.
 
 The branch probabilities are ordinarily fixed structure. To estimate them,
-attach a simplex-valued `Distributions.Dirichlet` prior with
+attach a simplex-valued `Distributions.Dirichlet` prior (or the
+[`no_prior`](@ref)`()` marker, free with no prior chosen yet) with
 [`update`](@ref)`(node, (branch_probs = Dirichlet(α),))`: the `Dirichlet` is
 what you write, but the codec estimates the node through the `Dirichlet`'s K-1
 stick-breaking coordinates (`:stick_1 … :stick_{K-1}`, each a `Beta`, so every
@@ -122,12 +123,14 @@ probabilities are recovered from any draw (via [`update`](@ref) /
   (read with [`component_names`](@ref)).
 - `delays`: tuple of the one_of outcome delay distributions.
 - `branch_probs`: tuple of the branch probabilities, summing to one.
-- `branch_prob_prior`: the attached `Dirichlet` prior when the branch
-  probabilities are uncertain, else `nothing` (fixed structure).
+- `branch_prob_prior`: the attached `Dirichlet` prior (or [`no_prior`](@ref)
+  marker) when the branch probabilities are uncertain, else `nothing` (fixed
+  structure).
 
 # See also
 - [`as_mixture`](@ref): the `MixtureModel` lowering
-- [`update`](@ref): attach a `Dirichlet` to estimate the branch probabilities
+- [`update`](@ref): attach a `Dirichlet`/`no_prior()` to estimate the branch
+  probabilities
 - [`Sequential`](@ref): a chain of additive steps
 - [`Parallel`](@ref): independent branches
 "
@@ -137,9 +140,10 @@ struct Resolve{names, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     "Tuple of the branch probabilities, summing to one."
     branch_probs::P
     "The attached simplex-valued prior over the branch probabilities (a
-    `Distributions.Dirichlet`), or `nothing` when the probabilities are fixed
-    structure. When present the branch probabilities are estimated through the
-    stick-breaking codec: the user writes the `Dirichlet`, K-1 stick
+    `Distributions.Dirichlet`, or the `no_prior()` marker), or `nothing` when
+    the probabilities are fixed structure. When present the branch
+    probabilities are estimated through the stick-breaking codec: the user
+    writes the `Dirichlet` (or marks it `no_prior()`), K-1 stick
     coordinates are what the sampler estimates, and the probabilities are
     recovered from any draw (see [`update`](@ref))."
     branch_prob_prior::S
@@ -196,12 +200,16 @@ end
 
 # A fixed node has no branch-probability prior. An attached prior must be a
 # `Distributions.Dirichlet` over the `k` outcomes (one weight per outcome); it
-# is decomposed into K-1 stick-breaking `Beta`s by the codec.
+# is decomposed into K-1 stick-breaking `Beta`s by the codec. `NoPrior`
+# (`no_prior.jl`) marks the simplex estimated with no prior chosen yet — the
+# marker carries no outcome count of its own, so it skips the length check a
+# `Dirichlet` needs.
 _validate_branch_prob_prior(::Nothing, ::Int) = nothing
+_validate_branch_prob_prior(::NoPrior, ::Int) = nothing
 function _validate_branch_prob_prior(prior, k::Int)
     prior isa Distributions.Dirichlet || throw(ArgumentError(
         "the branch-probability prior must be a `Dirichlet` over the $k " *
-        "outcomes; got a $(typeof(prior))"))
+        "outcomes, or no_prior() (free, no prior yet); got a $(typeof(prior))"))
     length(prior) == k || throw(ArgumentError(
         "the branch-probability `Dirichlet` prior must have one weight per " *
         "outcome (length $k); got length $(length(prior))"))

@@ -354,7 +354,7 @@ end
 @testitem "pool: prior-predictive draws shrink toward the population" begin
     using ComposedDistributions: update
     using Distributions, Random, Statistics
-    using ComposedDistributions: unflatten, flatten
+    using ComposedDistributions: unflatten
 
     # A tight population scale, so pooled strata cluster; the unpooled strata
     # each carry the full spread.
@@ -371,12 +371,13 @@ end
 
     # Draw the joint prior-predictive by sampling the flat priors (the pooled
     # population is shared across strata within each draw) and reconstructing.
-    # `default = _ -> nothing` gives every unspec'd row a `nothing` placeholder
-    # instead of a default prior; `flatten` only ever reads the spec'd rows, so
-    # a fixed row's placeholder is unused.
+    # `params_table`'s row order is the codec's own flat-slot order (the
+    # codec/params_table consistency invariant, codec_consistency.jl), so the
+    # estimated rows' `prior` column, filtered in table order, IS the flat
+    # prior vector `flatten`/`unflatten` work with — no nested reassembly
+    # needed.
     function within_draw_spread(tree, rng, n)
-        priors = build_priors(params_table(tree); default = _ -> nothing)
-        fp = flatten(tree, priors)
+        fp = filter(!isnothing, collect(params_table(tree).prior))
         spreads = Float64[]
         for _ in 1:n
             x = [rand(rng, fp[i]) for i in eachindex(fp)]

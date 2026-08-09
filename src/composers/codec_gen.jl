@@ -155,9 +155,9 @@ end
 
 # `Resolve{names, D, P, S}`: the outcome delays (skipping a `NoEvent` branch,
 # which carries no parameters and no entry, mirroring `_walk_rows!`), plus a
-# `branch_probs` entry: the K-1 stick coordinates when `S <: Dirichlet` (the
-# node's simplex is estimated), else the current fixed per-outcome
-# probabilities (read at runtime, not baked in).
+# `branch_probs` entry: the K-1 stick coordinates when `S <: Dirichlet` or
+# `S <: NoPrior` (the node's simplex is estimated), else the current fixed
+# per-outcome probabilities (read at runtime, not baked in).
 function _resolve_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
     names = T.parameters[1]::Tuple
     D = T.parameters[2]
@@ -173,7 +173,7 @@ function _resolve_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
         push!(keys_out, names[i])
         push!(vals_out, e)
     end
-    bp_expr = if S <: Distributions.Dirichlet
+    bp_expr = if S <: Union{Distributions.Dirichlet, NoPrior}
         K = length(names)
         stick_names = ntuple(k -> Symbol(:stick_, k), K - 1)
         stick_vals = map(1:(K - 1)) do _
@@ -504,7 +504,7 @@ function _resolve_flatten_reads!(
         _flatten_reads!(exprs, :($d_access.delays[$i]),
             :($nt_access.$(names[i])), dtypes[i], ctx)
     end
-    if S <: Distributions.Dirichlet
+    if S <: Union{Distributions.Dirichlet, NoPrior}
         K = length(names)
         bp_access = :($nt_access.branch_probs)
         for k in 1:(K - 1)

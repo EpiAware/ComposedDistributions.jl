@@ -34,8 +34,8 @@ that alternative's leaf count; every alternative must share that leaf count for
 the nested `Choose` to occupy one fixed flat slot, or the parent's width query
 errors.
 
-For prior introspection ([`params_table`](@ref), [`build_priors`](@ref),
-[`update`](@ref)) the alternatives' parameters are namespaced per alternative:
+For parameter introspection ([`params_table`](@ref), [`update`](@ref)) the
+alternatives' parameters are namespaced per alternative:
 independent per-branch params live under their alternative name (`index.…` /
 `sourced.…`), so each branch's parameters are inventoried and sampled separately.
 A parameter tied across alternatives via [`shared`](@ref)`(:tag, ...)` is keyed

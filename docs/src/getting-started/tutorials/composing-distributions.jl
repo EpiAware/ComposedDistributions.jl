@@ -18,8 +18,8 @@
 #    [`Resolve`](@ref), [`Compete`](@ref), [`Choose`](@ref)) and see how they
 #    nest.
 # 3. Score and simulate from one composed object.
-# 4. Attach parameters and priors with [`params_table`](@ref) and
-#    [`build_priors`](@ref).
+# 4. Read parameters and attach priors with [`params_table`](@ref) and
+#    [`update`](@ref).
 # 5. Edit an assembled tree with [`update`](@ref), [`prune`](@ref) and
 #    [`splice`](@ref).
 #
@@ -263,17 +263,26 @@ tbl = params_table(template)
 
 tbl.edge, tbl.param
 
-# [`build_priors`](@ref) takes that table (any Tables.jl source with `edge`,
-# `param`, `value`, `support` columns) and derives a default prior per row from
-# that leaf's support: a positive scale parameter gets a positive-truncated
-# prior, a location parameter an unbounded one, a `[0, 1]` probability a
-# `Uniform(0, 1)`.
-# So `build_priors(tbl)` alone yields a complete set, defined against the table
-# rather than by hand-matching the tree.
+# ComposedDistributions does not guess a prior from a parameter's name or
+# support — an `InverseGaussian`'s `mu` is positive, a `GEV`'s `shape` is
+# signed, so no single per-name rule is right for every family.
+# Bare [`uncertain`](@ref)`(tree)` marks every free parameter
+# [`no_prior`](@ref)`()` instead: free, with no prior chosen.
 
-priors = build_priors(tbl);
+everything = uncertain(template)
 
-priors.onset_admit.shape
+params_table(everything).prior
+
+# Attach real priors with [`uncertain`](@ref)`(tree; ...)`, naming one per
+# parameter against the table's own edge/param names.
+
+priored = uncertain(template;
+    onset_admit = (shape = truncated(Normal(2.0, 0.5); lower = 0),
+        scale = truncated(Normal(1.0, 1.0); lower = 0)),
+    admit_death = (mu = Normal(0.5, 1.0),
+        sigma = truncated(Normal(0.4, 1.0); lower = 0)));
+
+params_table(priored).prior
 
 # ## Editing a composed tree
 #
@@ -381,8 +390,8 @@ unique(params_table(tied).edge)
 #   delays algebraically.
 # - `mean` and `var` read the composed marginal moments, and
 #   [`observed_distribution`](@ref) collapses a chain to its convolved total.
-# - [`params_table`](@ref) and [`build_priors`](@ref) attach parameters and
-#   support-derived priors to the same object.
+# - [`params_table`](@ref) reads the free-parameter inventory, and
+#   [`uncertain`](@ref) attaches priors (or [`no_prior`](@ref)`()`) to it.
 # - [`update`](@ref) edits the tree: `path => new_node` replaces nodes keeping
 #   the shape, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,
 #   and [`tie`](@ref) links leaves into one parameter group.

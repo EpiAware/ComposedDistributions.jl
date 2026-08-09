@@ -105,7 +105,7 @@ end
     # stick-reconstructed simplex always sums to one, so folding a flat draw
     # back through `update` still passes. (This is the path the inner
     # constructor's skip exists for.)
-    promoted = update(tree, param_priors(tree))
+    promoted = uncertain(tree)
     @test has_uncertain(promoted)
     back = update(promoted, fill(0.5, flat_dimension(promoted)))
     @test sum(event(back, :resolution).branch_probs) ≈ 1

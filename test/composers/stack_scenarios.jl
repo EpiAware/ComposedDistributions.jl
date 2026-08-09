@@ -62,14 +62,11 @@
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
     @test tbl.param == [:shape, :scale, :mu, :sigma]
 
-    # build_priors produces a prior per free parameter (four params, four
-    # priors; no Resolve simplex to fold here).
-    priors = build_priors(tbl)
-    @test priors.onset_admit.shape isa Distribution
-    @test priors.onset_admit.scale isa Distribution
-    @test priors.admit_death.mu isa Distribution
-    @test priors.admit_death.sigma isa Distribution
-    @test param_priors(chain) == priors
+    # Bare uncertain(tree) marks every free parameter no_prior() (four params;
+    # no Resolve simplex to fold here).
+    promoted = uncertain(chain)
+    ptbl = params_table(promoted)
+    @test all(==(no_prior()), ptbl.prior)
 
     # update replaces the values; rand/logpdf reflect the change.
     tuned = update(chain, (onset_admit = (shape = 3.0, scale = 1.5),
@@ -126,15 +123,15 @@ end
     @test mean(notify) ≈ m.notify atol = 0.05  # m.notify == 1.5
     @test var(hosp) ≈ v.hosp rtol = 0.06
 
-    # params_table names each branch with a dotted edge path; build_priors gives
-    # a prior per free parameter.
+    # params_table names each branch with a dotted edge path; bare
+    # uncertain(tree) marks every free parameter no_prior().
     tbl = params_table(par)
     @test tbl.edge == [Symbol("hosp.onset_admit"), Symbol("hosp.onset_admit"),
         Symbol("hosp.admit_disch"), Symbol("hosp.admit_disch"),
         :notify, :notify]
-    priors = param_priors(par)
-    @test priors.hosp.onset_admit.shape isa Distribution
-    @test priors.notify.shape isa Distribution
+    promoted = uncertain(par)
+    ptbl = params_table(promoted)
+    @test all(==(no_prior()), ptbl.prior)
 
     # One ForwardDiff gradient over the three-value observation, finite.
     g = ForwardDiff.gradient(v -> logpdf(par, v), collect(values(draw)))
@@ -204,10 +201,12 @@ end
             branch_probs = (death = 0.6, disch = 0.4)))
     @test probs(reweighted) == (death = 0.6, disch = 0.4)
 
-    # param_priors: a prior per delay parameter and a Dirichlet over the simplex.
-    priors = param_priors(res)
-    @test priors.death.shape isa Distribution
-    @test priors.branch_probs isa Dirichlet
+    # Bare uncertain(tree) marks every delay parameter and the simplex
+    # no_prior() (free, no prior guessed).
+    promoted = uncertain(res)
+    ptbl = params_table(promoted)
+    @test all(==(no_prior()), ptbl.prior)
+    @test any(==(:stick_1), ptbl.param)
 
     # One ForwardDiff derivative of the marginal logpdf w.r.t. the time, finite.
     g = ForwardDiff.derivative(t -> logpdf(res, t), 2.0)
@@ -465,10 +464,11 @@ end
     # params_table dedups the tied leaves to one row-group under the tag.
     @test unique(params_table(tied).edge) == [:incubation]
 
-    # build_priors produces a single prior for the tied group.
-    priors = param_priors(tied)
-    @test keys(priors) == (:incubation,)
-    @test priors.incubation.shape isa Distribution
+    # Bare uncertain(tree) marks a single no_prior() for the tied group.
+    promoted = uncertain(tied)
+    ptbl = params_table(promoted)
+    @test unique(ptbl.edge) == [:incubation]
+    @test all(==(no_prior()), ptbl.prior)
 
     # update propagates the shared value to both leaves.
     updated = update(tied, (incubation = (shape = 4.0, scale = 0.5),))

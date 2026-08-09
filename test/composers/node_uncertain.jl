@@ -126,14 +126,14 @@ end
     @test acc ./ N ≈ alpha ./ sum(alpha) atol = 0.02
 end
 
-@testitem "branch_probs: promote attaches a flat Dirichlet" begin
+@testitem "branch_probs: bare uncertain(tree) marks simplex no_prior()" begin
     using ComposedDistributions: update
     using Distributions
     using ComposedDistributions: flat_dimension
 
     tree = compose((resolution = resolve(:death => (Gamma(1.5, 1.0), 0.3),
         :disch => (Gamma(2.0, 1.5), 0.7)),))
-    promoted = update(tree, param_priors(tree))
+    promoted = uncertain(tree)
 
     @test has_uncertain(promoted)
     res = event(promoted, :resolution)
@@ -141,12 +141,13 @@ end
     # The two delays' params (2 each) plus one stick coordinate (K - 1 = 1).
     @test flat_dimension(promoted) == 5
 
-    # The attached branch-prob prior is the flat Dirichlet.
+    # No prior is guessed: the branch-prob stick row carries the no_prior()
+    # marker, not a real distribution.
     tbl = params_table(promoted)
     stick = findall(i -> tbl.edge[i] == Symbol("resolution.branch_probs"),
         eachindex(tbl.edge))
     @test length(stick) == 1
-    @test tbl.prior[stick[1]] == Beta(1.0, 1.0)
+    @test tbl.prior[stick[1]] == no_prior()
 end
 
 @testitem "Compete has no node-level free parameter" begin
@@ -162,7 +163,7 @@ end
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:stick_1), tbl.param)
 
-    promoted = update(c, param_priors(c))
+    promoted = uncertain(c)
     # Only the two Gamma delays' shape/scale: four parameters, no node dim.
     @test flat_dimension(promoted) == 4
 end
@@ -180,7 +181,7 @@ end
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:weights), tbl.param)
 
-    promoted = update(ch, param_priors(ch))
+    promoted = uncertain(ch)
     @test flat_dimension(promoted) == 4
 end
 
@@ -197,14 +198,14 @@ end
     # A mixed tree: a Resolve (uncertain branch_probs via promote), a Convolved
     # composite leaf (see-through component fitting, #81), and a plain leaf.
     # Promote must make all three estimable together, descending past the
-    # composite without disturbing the branch-probability injection.
+    # composite without disturbing the branch-probability marker.
     total = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     tree = compose((
         resolution = resolve(:death => (Gamma(1.5, 1.0), 0.3),
             :disch => (Gamma(2.0, 1.5), 0.7)),
         total = total,
         report = LogNormal(0.5, 0.4)))
-    promoted = update(tree, param_priors(tree))
+    promoted = uncertain(tree)
 
     @test has_uncertain(promoted)
     @test has_uncertain(event(promoted, :resolution))
@@ -237,8 +238,14 @@ end
     r2 = update(r, merge(full, (branch_probs = (death = 0.4, disch = 0.6),)))
     @test !has_uncertain(r2)
     @test collect(values(probs(r2))) ≈ [0.4, 0.6]
-    # Direct construction with a non-Dirichlet prior is rejected.
+    # Direct construction with a non-Dirichlet, non-marker prior is rejected.
     @test_throws "branch-probability prior must be a `Dirichlet`" Resolve(
         (:a, :b), (Gamma(1.0, 1.0), Gamma(1.0, 1.0)), (0.3, 0.7),
         Normal(0.0, 1.0))
+    # The no_prior() marker attaches in merge mode exactly like a Dirichlet.
+    ur = update(r, (branch_probs = no_prior(),))
+    @test has_uncertain(ur)
+    tbl = params_table(ur)
+    stick = findall(==(:stick_1), tbl.param)
+    @test tbl.prior[only(stick)] == no_prior()
 end

@@ -204,7 +204,7 @@ end
 # same tie done at the tree level: given a composed `d` and the paths of two or
 # more leaves, it walks to each named leaf and wraps it in `Shared(name, leaf)`,
 # producing the exact artefact a hand-written `shared(name, dist)` would. Every
-# tag consumer (`params_table`, `build_priors`, `update`,
+# tag consumer (`params_table`, `update`,
 # `composed_parameters_model`, the compute-reuse) reads the tag, not how it was
 # placed, so a `tie`d tree and a hand-`shared`d tree are identical. The walk
 # reuses `_edit_at` (the `update` path machinery); paths take the
@@ -240,7 +240,7 @@ by `paths` and wraps it in a [`Shared`](@ref) group tagged `name`, returning the
 rebuilt composed distribution. This is the tree-level, path-based spelling of
 [`shared`](@ref): `tie(d, p1, p2; name = :inc)` produces the exact same artefact
 as building `d` with `shared(:inc, leaf)` at each of those leaves, so every tag
-consumer ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), a
+consumer ([`params_table`](@ref), [`update`](@ref), a
 downstream `composed_parameters_model`) inventories, samples and updates the
 tied leaves as a single free parameter.
 

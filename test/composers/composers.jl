@@ -605,38 +605,33 @@ end
     @test_throws ArgumentError event(d, :nope)
 end
 
-@testitem "build_priors and default_prior" begin
+@testitem "bare uncertain(tree) marks every free parameter no_prior()" begin
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
-    nested = build_priors(tbl)
-    @test nested.onset_admit.shape isa Truncated
-    @test nested.admit_death.mu isa Normal
-    # A user override wins over the default.
-    ov = build_priors(tbl;
-        priors = (onset_admit = (shape = truncated(Normal(2, 0.5);
-            lower = 0),),))
-    @test ov.onset_admit.shape == truncated(Normal(2, 0.5); lower = 0)
-    # Probability parameter default is Uniform(0, 1).
-    dp = default_prior((; edge = :r, param = :death, value = 0.3,
-        support = (0.0, 1.0)))
-    @test dp == Uniform(0, 1)
-end
+    everything = uncertain(tree)
+    @test has_uncertain(everything)
+    tbl = params_table(everything)
+    # ComposedDistributions guesses no prior: every previously-fixed row is
+    # the no_prior() marker, not a real distribution.
+    @test all(==(no_prior()), tbl.prior)
+    @test ComposedDistributions.flat_dimension(everything) == length(tbl.edge)
 
-@testitem "param_priors is a thin front-door over build_priors(params_table(...))" begin
-    using Distributions
-
-    tree = compose((onset_admit = Gamma(2.0, 1.0),
+    # A parameter already carrying a real prior is left untouched; only the
+    # rest is marked.
+    partial = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            shape = LogNormal(log(2.0), 0.2)),
         admit_death = LogNormal(0.5, 0.4)))
+    promoted = uncertain(partial)
+    ptbl = params_table(promoted)
+    shape_idx = findfirst(==(:shape), ptbl.param)
+    @test ptbl.prior[shape_idx] == LogNormal(log(2.0), 0.2)
+    @test count(==(no_prior()), ptbl.prior) == 3
 
-    @test param_priors(tree) == build_priors(params_table(tree))
-    # The keyword surface is forwarded unchanged.
-    shape_prior = Normal(2, 0.5)
-    @test param_priors(tree; priors = Dict((:onset_admit, :shape) => shape_prior)) ==
-          build_priors(params_table(tree);
-        priors = Dict((:onset_admit, :shape) => shape_prior))
+    # A fully already-uncertain tree: bare uncertain(tree) is a no-op.
+    @test uncertain(promoted) == promoted
 end
 
 @testitem "Composer show is compact; inspect gives detail" begin

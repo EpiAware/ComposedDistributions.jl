@@ -6,7 +6,7 @@ Any `Distributions.jl` distribution is a valid leaf with no extra work, so a pla
 A wrapper leaf, a type that carries fixed structure or extra parameters around an inner delay (censoring in CensoredDistributions, the modifiers in ModifiedDistributions), implements the methods below so the introspection and reconstruction layers see through the wrapper to the inner free delay.
 
 The names are `public` but not exported, so a downstream package reaches them by the qualified name (`ComposedDistributions.free_leaf` and friends) and adds methods dispatching on its own wrapper type.
-Extending only `free_leaf` and `rewrap_leaf` is enough for a fixed-structure wrapper; a wrapper that attaches priors or owns extra parameters extends the rest so those reach `params_table` and `build_priors`.
+Extending only `free_leaf` and `rewrap_leaf` is enough for a fixed-structure wrapper; a wrapper that attaches specs or owns extra parameters extends the rest so those reach `params_table`.
 Every method here dispatches on an instance, and the flat-vector codec (`flat_dimension`, `unflatten`, `flatten`, `reconstruct`) reads the same instance-level hooks at call time, so there is no separate type-level table to keep in step and no further registration step.
 
 ## The methods
@@ -75,4 +75,4 @@ rebuilt = ComposedDistributions.rewrap_leaf(
 5. Add a `leaf_detail_lines` method when the wrapper's raw struct dump would clutter an `inspect` tree.
 
 The docstrings for each method, with runnable examples, are in the public API reference.
-Steps 1-5 are all a leaf-wrapper package needs: `params_table`, `build_priors` and the generated flat-vector codec (`flat_dimension`/`unflatten`/`flatten`/`reconstruct`) all read the same instance-level hooks, so there is no separate codec-specific registration step.
+Steps 1-5 are all a leaf-wrapper package needs: `params_table` and the generated flat-vector codec (`flat_dimension`/`unflatten`/`flatten`/`reconstruct`) all read the same instance-level hooks, so there is no separate codec-specific registration step.

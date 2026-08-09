@@ -111,7 +111,7 @@ resolved = instantiate(est_template, Context(time = 5.0))
 (has_varying = has_varying(resolved), has_uncertain = has_uncertain(resolved))
 
 # [`params_table`](@ref) carries the uncertain parameter's prior on its `prior`
-# column, so [`build_priors`](@ref) picks it up with no separate override.
+# column.
 
 tbl = params_table(resolved)
 (edge = tbl.edge, param = tbl.param, prior = tbl.prior)
@@ -152,10 +152,11 @@ flat = ComposedDistributions.flat_dimension(resolved)
 
 # [`uncertain`](@ref) is the verb that moves the estimation boundary on an
 # already-built tree: `uncertain(tree, params)` promotes just the named
-# parameters
-# (a targeted promotion, built on `update`'s merge mode); bare `uncertain(tree)`
-# promotes every free parameter with support-derived default priors, the
-# explicit estimate-everything path.
+# parameters (a targeted promotion, built on `update`'s merge mode); bare
+# `uncertain(tree)` marks every free parameter [`no_prior`](@ref)`()` instead
+# — free, no prior chosen — the explicit estimate-everything path.
+# ComposedDistributions does not guess a prior; attach one afterwards with a
+# targeted `uncertain(tree; param = prior, ...)` call.
 
 promoted = uncertain(resolved)
 (before = ComposedDistributions.flat_dimension(resolved),
