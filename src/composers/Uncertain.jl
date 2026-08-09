@@ -583,9 +583,13 @@ Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # --- has-uncertainty predicate ----------------------------------------------
 
-# The composer nodes recurse through the shared `_node_children` accessor,
+# The composer nodes recurse through the shared `node_children` accessor,
 # mirroring `has_varying` (the two deferred-leaf guards share one walk); the
 # leaf base case reports a spec via the `_uncertain_specs` routing hook.
+# Structural dispatch against the public `AbstractComposedDistribution` root,
+# not a closed list of the built-in types (`has_varying` in `varying.jl`
+# mirrors this exactly, including the `Multivariate`/`AbstractOneOf` split
+# that keeps the two methods below from colliding on a univariate one_of node).
 
 @doc "
 
@@ -630,9 +634,10 @@ has_uncertain(collapsed)   # resolved: false
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 - [`has_varying`](@ref): the same guard for the observed (varying) case.
 "
-function has_uncertain(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    return any(has_uncertain, _node_children(d))
+function has_uncertain(d::AbstractComposedDistribution{Multivariate})
+    return any(has_uncertain, node_children(d))
 end
+has_uncertain(d::AbstractOneOf) = any(has_uncertain, node_children(d))
 # A `Resolve` is also uncertain when its branch probabilities carry an attached
 # simplex prior (a node-level uncertain parameter, not a leaf), so a tree with
 # an uncertain branch-probability simplex but fully fixed delays is still seen.

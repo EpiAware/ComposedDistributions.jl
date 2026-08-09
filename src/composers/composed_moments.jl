@@ -6,6 +6,28 @@
 
 # --- per-leaf moment (free-delay transparent) ------------------------------
 
+# `Truncated`/`Censored`'s own `mean`/`var` is the correct wrapped moment when
+# Distributions.jl provides it, but Distributions.jl only defines a closed
+# form for some inner families (measured: `Truncated{Normal}` and
+# `Truncated{Exponential}` have one, `Truncated{Gamma}` does not and falls
+# through to `Statistics.mean`'s generic iterator method, which is not
+# applicable to a `Distribution` and throws a confusing `iterate`
+# `MethodError` rather than a clean "not implemented"). `leaf_mean`/`leaf_var`
+# are not on the AD-differentiated path (only the flat codec and `logpdf`
+# are), so trying the wrapper's own moment first and catching that failure is
+# safe here; on failure the old inner-delay approximation is still reported
+# rather than erroring, since a `leaf_mean` caller usually wants a scalar
+# summary, not a hard failure over a family Distributions.jl has not
+# implemented yet.
+function _wrapper_moment(f, leaf)
+    try
+        v = f(leaf)
+        v isa Real && isfinite(v) && return v
+    catch
+    end
+    return f(free_leaf(leaf))
+end
+
 @doc raw"
 Mean of a (possibly wrapped) leaf, seen through its fixed wrapper structure.
 
@@ -13,8 +35,13 @@ The default is that of the inner free delay (`mean(free_leaf(leaf))`): a plain
 leaf is its own free leaf, a `Convolved` free-leafs to itself and reuses its
 additive `mean`, and an `Uncertain` leaf free-leafs to its template (so a tree
 containing one reports the template moment; guard with [`has_uncertain`](@ref)
-first if that matters). A modifier whose transform changes the moment (an
-`Affine` scale/shift) overrides this to report its own analytic moment.
+first if that matters). A wrapper whose fixed structure changes the moment
+(`Truncated`, `Distributions.Censored`, or a modifier's `Affine` scale/shift)
+overrides this to report its own analytic moment instead of the untransformed
+inner one when Distributions.jl provides one — peeling past a moment-changing
+layer to its `free_leaf` silently reports the wrong number (measured:
+`leaf_mean` on `truncated(Normal(0, 1); lower = 0.0)` gave `0.0`, the
+untruncated `Normal` mean, against a true truncated mean of `0.7979`).
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution whose mean is read.
@@ -30,13 +57,26 @@ ComposedDistributions.leaf_mean(Gamma(2.0, 1.0))
 - [`leaf_var`](@ref): the matching per-leaf variance.
 "
 leaf_mean(leaf) = mean(free_leaf(leaf))
+# `Truncated`/`Censored` change the moment relative to the inner free delay;
+# see `_wrapper_moment` above for why this prefers the wrapper's own `mean`
+# but falls back rather than erroring. Dispatches on the outermost type only:
+# a wrapper nesting one of these one level further in (e.g. an `Uncertain`
+# template that is itself `Truncated`) still peels through the general
+# default below — tracked as a follow-up, since fixing it generically needs a
+# per-layer walk this package does not yet have (see the PR discussion for
+# the design).
+leaf_mean(leaf::Truncated) = _wrapper_moment(mean, leaf)
+leaf_mean(leaf::Distributions.Censored) = _wrapper_moment(mean, leaf)
 
 @doc raw"
 Variance of a (possibly wrapped) leaf, seen through its fixed wrapper structure.
 
 The variance dual of [`leaf_mean`](@ref): the inner free delay's variance by
-default (`var(free_leaf(leaf))`), overridden by a modifier whose transform
-changes the moment (an `Affine`).
+default (`var(free_leaf(leaf))`), overridden for `Truncated`/`Censored` (and by
+a modifier whose transform changes the moment, such as an `Affine`) to report
+the wrapper's own variance rather than the untransformed inner one, when
+Distributions.jl provides one (see [`leaf_mean`](@ref)'s docstring for the
+fallback rule).
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution whose variance is read.
@@ -52,6 +92,8 @@ ComposedDistributions.leaf_var(Gamma(2.0, 1.0))
 - [`leaf_mean`](@ref): the matching per-leaf mean.
 "
 leaf_var(leaf) = var(free_leaf(leaf))
+leaf_var(leaf::Truncated) = _wrapper_moment(var, leaf)
+leaf_var(leaf::Distributions.Censored) = _wrapper_moment(var, leaf)
 # The underscored aliases retained for internal callers and the modifier
 # extension's overrides; `const` makes each the same function object.
 const _leaf_mean = leaf_mean

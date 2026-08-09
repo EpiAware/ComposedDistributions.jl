@@ -5,22 +5,32 @@
 # tree. These helpers do the flat-slice recursion shared by `Sequential` and
 # `Parallel`. This layer adds no censored-internal behaviour.
 
-# A composable child is any univariate distribution (a leaf or a `Resolve`), a
-# nested `Sequential` / `Parallel` / `Choose`. Used to validate composer
-# components and `Choose` alternatives.
+# A composable child is any univariate distribution (a leaf, a `Resolve`, or a
+# downstream one_of node) or a multivariate `AbstractComposedDistribution`
+# subtype (`Sequential` / `Parallel` / `Choose`, or a downstream composer
+# node). This is a structural check against the public abstract root, not a
+# closed list of the built-in types, so a third-party node satisfying the
+# `child_nleaves` / `child_logpdf` / `child_rand!` contract and subtyping
+# `AbstractComposedDistribution` composes with no registration.
+# The `Multivariate` parameter on the second method keeps it disjoint from the
+# first: `AbstractComposedDistribution{Univariate, S} <: UnivariateDistribution{S}`
+# already, so a univariate composer node (the one_of family) is covered by the
+# first method alone and no method-ambiguity is introduced for it. Used to
+# validate composer components and `Choose` alternatives.
 _is_composable(::UnivariateDistribution) = true
-_is_composable(::Union{Sequential, Parallel}) = true
-_is_composable(::Choose) = true
+_is_composable(::AbstractComposedDistribution{Multivariate}) = true
 _is_composable(::Any) = false
 
 # Whether a value is admissible as a one_of outcome delay: a univariate leaf
-# (a plain delay, the `NoEvent` marker, or a nested `Resolve`) or a composer
-# subtree (`Sequential` / `Parallel` / `Choose`, the non-terminal branch of #466
-# Feature 3). Used by the `one_of` / `Resolve` / `Compete`
-# constructors to validate a branch payload without referencing the later-loaded
-# composer types in their method signatures.
+# (a plain delay, the `NoEvent` marker, or a nested `Resolve`) or a
+# multivariate composer subtree (`Sequential` / `Parallel` / `Choose`, the
+# non-terminal branch of #466 Feature 3, or a downstream composer node). Used
+# by the `one_of` / `Resolve` / `Compete` constructors to validate a branch
+# payload without referencing the later-loaded composer types in their method
+# signatures. See `_is_composable` above for why the two methods do not
+# collide on a univariate one_of node.
 _is_one_of_branch(::UnivariateDistribution) = true
-_is_one_of_branch(::Union{Sequential, Parallel, Choose}) = true
+_is_one_of_branch(::AbstractComposedDistribution{Multivariate}) = true
 _is_one_of_branch(::Any) = false
 
 # Whether an outcome's payload is itself a composer subtree (a non-terminal

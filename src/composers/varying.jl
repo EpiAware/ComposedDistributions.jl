@@ -511,12 +511,18 @@ has_varying(d::Varying) = true
 has_varying(::UnivariateDistribution) = false
 has_varying(d::Truncated) = has_varying(d.untruncated)
 has_varying(d::Shared) = has_varying(d.dist)
-# The composer nodes recurse through the shared `_node_children` accessor (the
-# one `instantiate` also rebuilds through), so the guard is not a hand-rolled
-# per-node walk; `has_uncertain` mirrors this.
-function has_varying(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    return any(has_varying, _node_children(d))
+# Structural dispatch against the public `AbstractComposedDistribution` root
+# (the one `instantiate` also rebuilds through via `node_children`), not a
+# closed list of the built-in types, so a downstream composer node gets this
+# for free once it defines `node_children` — `has_uncertain` mirrors this.
+# `AbstractOneOf` dispatches on its own line since it is univariate (already
+# matched by the `UnivariateDistribution` method above): parameterising the
+# generic method on `Multivariate` keeps the two from colliding the way
+# `_is_composable` documents (`nesting.jl`).
+function has_varying(d::AbstractComposedDistribution{Multivariate})
+    return any(has_varying, node_children(d))
 end
+has_varying(d::AbstractOneOf) = any(has_varying, node_children(d))
 
 # --- required_covariates / missing_covariates -------------------------------
 #

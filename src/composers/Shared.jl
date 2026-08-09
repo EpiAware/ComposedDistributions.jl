@@ -218,8 +218,10 @@ _tie_path(p::Tuple) = p
 _tie_path(p::Symbol) = _split_edge(p)
 
 # True for the composer (non-leaf) nodes a path can run through; a path that
-# resolves to one of these is pointing at a subtree, not a tieable leaf.
-_is_composer_node(::Union{Sequential, Parallel, AbstractOneOf, Choose}) = true
+# resolves to one of these is pointing at a subtree, not a tieable leaf. A
+# structural check against the public abstract root, not a closed list, so a
+# downstream composer node is recognised with no registration.
+_is_composer_node(::AbstractComposedDistribution) = true
 _is_composer_node(::Any) = false
 
 # The (family, param-names) signature a tie groups by: tied leaves become one
