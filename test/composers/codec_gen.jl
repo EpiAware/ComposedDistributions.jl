@@ -418,10 +418,15 @@ end
     @test flat_dimension(tree) == 2
 
     x = [9.0, 2.5]
-    nt = unflatten(tree, x)
+    # `isconcretetype(typeof(nt))` used to stand in for a type-stability
+    # check here, but `typeof` of any runtime value is always concrete --
+    # that assertion could never fail, even if `unflatten`'s inferred return
+    # type had widened. `@inferred`, as the S2 parity item above already
+    # uses, checks the thing the comment above intends: that the CALL infers
+    # concretely, not just that its result happens to be a value.
+    nt = @inferred unflatten(tree, x)
     @test nt == (m = (mean = 9.0, sd = 2.0), other = (shape = 2.5, scale = 1.0))
-    @test isconcretetype(typeof(nt))
-    @test flatten(tree, nt) == x
+    @test @inferred(flatten(tree, nt)) == x
 
     collapsed = reconstruct(tree, x)
     @test collapsed == update(tree, nt)
