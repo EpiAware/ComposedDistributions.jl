@@ -159,6 +159,56 @@ end
     @test params(event(rc, :b))[1] ≈ 0.2 + 0.4 * -1.0
 end
 
+# #352: `_leaf_flatten_grouped`/`_leaf_flatten_walk_grouped` used to call
+# `leaf_param_names(leaf)` at runtime and recurse over the result as a plain
+# `Tuple`. For every BUILT-IN leaf this happened to `@inferred`-fold anyway
+# (`param_names` is a literal-tuple return for each of them), which is why
+# the existing pooling and S2 codec-parity tests never caught it. A leaf
+# whose parameter names come from anything the compiler cannot constant-fold
+# (here, a `Ref` read -- a realistic stand-in for a third-party distribution
+# that just implements the plain Distributions.jl contract) breaks the fold:
+# `pname` stops being a `Core.Const`, `specs[pname]` can no longer resolve
+# which field of the (heterogeneous) spec `NamedTuple` it needs, and the walk
+# -- and `flatten` after it -- silently widens to `Union`/`Any`. Fixed by
+# driving the recursion off `Val{names}` (mirroring `_leaf_extract` in
+# introspection.jl and `_hyper_flatten_walk` just below in this file) so
+# `pname`'s value lives in the TYPE at every step, regardless of whether
+# `leaf_param_names` itself folds.
+#
+# `unflatten`'s dual (`_leaf_entry_grouped`/`_leaf_walk_grouped`) has the
+# same runtime-name-walk shape and is NOT `@inferred` below -- it is out of
+# this item's scope (#352 names only the flatten-direction walker) and is
+# left for a follow-up.
+@testitem "pool: flatten stays inferred when a leaf's param names are not \
+    compile-time constants" begin
+    using ComposedDistributions: flatten, unflatten
+    using Distributions
+
+    struct NonFoldableNameLeaf <: Distributions.ContinuousUnivariateDistribution
+        mean::Float64
+        sd::Float64
+    end
+    Distributions.params(m::NonFoldableNameLeaf) = (m.mean, m.sd)
+    Distributions.logpdf(m::NonFoldableNameLeaf, x::Real) = logpdf(Normal(m.mean, m.sd), x)
+    Base.minimum(::NonFoldableNameLeaf) = -Inf
+    Base.maximum(::NonFoldableNameLeaf) = Inf
+    # A `Ref` read is not effect-free, so this can't constant-fold even
+    # though `leaf_param_names` still infers the concrete `Tuple{Symbol,
+    # Symbol}` type -- exactly the "concrete type but not `Core.Const`" gap
+    # the runtime name walk depended on being absent.
+    names_ref = Ref{Tuple{Symbol, Symbol}}((:mean, :sd))
+    ComposedDistributions.param_names(::NonFoldableNameLeaf) = names_ref[]
+    ComposedDistributions.leaf_ctor(::NonFoldableNameLeaf) = (a, b) -> NonFoldableNameLeaf(a, b)
+
+    tree = compose((
+        a = uncertain(NonFoldableNameLeaf(1.0, 2.0); mean = pool(:grp)),
+        b = uncertain(NonFoldableNameLeaf(1.0, 2.0); mean = pool(:grp))))
+
+    x = [0.3, -0.1, 0.5, 0.2]      # z_a, z_b, mu, sigma
+    nt = unflatten(tree, x)
+    @test @inferred(flatten(tree, nt)) == x
+end
+
 @testitem "pool: centred general population" begin
     using ComposedDistributions: update
     using Distributions
