@@ -1,5 +1,30 @@
 ## Unreleased
 
+- **breaking:** `param_names`/`leaf_param_names` derive a leaf's parameter
+  names from the leaf's own type (the first `N` fieldnames of `typeof(leaf)`,
+  transliterated, where `N` is the arity of `params(leaf)`) instead of a
+  curated table of six families. Any Distributions.jl-conforming leaf whose
+  fields line up 1:1 with its `params`, in order, now gets real names with no
+  method of its own; a leaf whose fields do not line up falls back to
+  `:param_1, :param_2, ...` as before. This moves 57 families off positional
+  names and renames four: Gamma/Weibull `(:shape, :scale)` →
+  `(:alpha, :theta)`, Exponential `(:scale,)` → `(:theta,)`, Uniform
+  `(:lower, :upper)` → `(:a, :b)`. Normal/LogNormal are unchanged. Every
+  dotted flat coordinate keyed on the old names moves with them (e.g.
+  `onset_admit.shape` → `onset_admit.alpha`, a pooled stratum's
+  `<stratum>.shape.z` → `<stratum>.alpha.z`). **A chain or posterior stored
+  against a 0.1.x template cannot be read back onto 0.2.0.** A leaf type
+  whose fields do not line up with its `params` in order now either derives
+  wrong labels (a type-only rule cannot see a field/params order mismatch on
+  its own) or, if it reaches `uncertain(...)`, is rejected there with an
+  error naming `ComposedDistributions.param_names` and `leaf_ctor` as the
+  fix; define `param_names` explicitly for such a type. `default_prior`'s
+  support-derived defaults shift for a handful of families as a consequence
+  (Cauchy `sigma`, Laplace/Logistic `theta`, TDist `nu` move to a
+  positive-truncated default; InverseGaussian `mu`, SkewNormal `alpha` and
+  NormalInverseGaussian `beta` are now misclassified by the unchanged
+  `_is_positive_param`/`_is_location_param` heuristic) — tracked as a
+  follow-up, not re-engineered here (#372).
 - **breaking:** `params_table(d)` is removed. `composed_to_table(d)` is now
   the single table surface: it returns the full node/attribute/parameter
   inventory of a composed tree — one row per composer node, per leaf

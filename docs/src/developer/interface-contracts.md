@@ -49,6 +49,7 @@ A node delegates to each child by the same three methods, passing each child its
 
 A univariate leaf is the base case: it occupies one slot (`child_nleaves == 1`), `child_rand!` writes its single draw, and `child_logpdf` scores `x[offset + 1]`.
 Any `Distributions.jl` distribution is therefore a valid leaf with no package-specific hooks.
+Its estimable parameter names are derived from its own fields (see [the leaf protocol](@ref leaf-protocol)'s "Parameter names" section); a leaf whose fields do not line up with its `params`, in order, is the one case that needs a method of its own.
 
 ### Adding a valid composer node
 

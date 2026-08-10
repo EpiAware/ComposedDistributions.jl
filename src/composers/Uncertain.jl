@@ -112,6 +112,7 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
             "uncertain instead — build the composite from uncertain components, " *
             "or target one via `update(tree, (leaf = (component_1 = " *
             "(param = prior,),),))`"))
+        _check_leaf_param_alignment(free_leaf(template))
         pnames = _leaf_param_names(template)
         for (k, v) in pairs(specs)
             k in pnames || throw(ArgumentError(
@@ -188,16 +189,16 @@ sees through a composite leaf to its component parameters).
 ```@example
 using ComposedDistributions, Distributions
 
-# A literature-reported Gamma delay with an uncertain shape.
-u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+# A literature-reported Gamma delay with an uncertain alpha.
+u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 rand(u)
 
-# The positional family form: shape uncertain, scale fixed at 1.0.
+# The positional family form: alpha uncertain, theta fixed at 1.0.
 uncertain(Gamma, LogNormal(log(2.0), 0.2), 1.0)
 
-# Nested: the shape's prior location is itself uncertain.
+# Nested: the alpha's prior location is itself uncertain.
 uncertain(Gamma(2.0, 1.0);
-    shape = uncertain(LogNormal(log(2.0), 0.2); mu = Normal(log(2.0), 0.1)))
+    alpha = uncertain(LogNormal(log(2.0), 0.2); mu = Normal(log(2.0), 0.1)))
 ```
 
 # See also
@@ -341,7 +342,7 @@ whether it promotes anything.
   `params`, with at least one distribution-valued entry.
 
 # Keyword Arguments
-- `kwargs...`: the same targeting, as keywords (`onset_admit = (shape = ...,)`).
+- `kwargs...`: the same targeting, as keywords (`onset_admit = (alpha = ...,)`).
 
 # Examples
 ```@example
@@ -350,8 +351,8 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 
-# Targeted promotion: only onset_admit.shape becomes uncertain.
-u = uncertain(tree; onset_admit = (shape = LogNormal(log(2.0), 0.2),))
+# Targeted promotion: only onset_admit.alpha becomes uncertain.
+u = uncertain(tree; onset_admit = (alpha = LogNormal(log(2.0), 0.2),))
 has_uncertain(u)
 
 # Promote every free parameter with a default prior.
@@ -621,11 +622,11 @@ hook so a `shared`/modifier-wrapped uncertain leaf is still seen) and returns
 ```@example
 using ComposedDistributions, Distributions
 
-u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
 has_uncertain(tree)   # an uncertain leaf remains
 
-collapsed = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+collapsed = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)))
 has_uncertain(collapsed)   # resolved: false
 ```

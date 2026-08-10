@@ -39,6 +39,33 @@ A plain leaf is its own inner distribution and `rewrap_leaf` returns the new inn
 Names and reconstruction fix the coordinates the parameter table and the codec work in.
 `param_names` labels the native family parameters, `leaf_param_names` appends any extra names, and `leaf_ctor` rebuilds the inner delay from a positional tuple of native values.
 
+## Parameter names
+
+`param_names(leaf)` derives its answer from the leaf's own type, with no method required for the common case.
+The names are the first `N` fieldnames of `typeof(free_leaf(leaf))`, transliterated (Greek letters to their English spelling), where `N` is the arity of `params(leaf)`.
+This works whenever a family's fields line up 1:1 with its `params`, in order, which is true of every Distributions.jl-conforming family whose author declared its fields in `params` order — the common case, and the reason steer 1 holds for names too.
+A leaf whose fields fall short of `N`, or whose declared field type at some slot disagrees with the matching `params` slot, or whose transliterated names collide, falls back to positional `:param_1, :param_2, ...` rather than guessing.
+
+A leaf type whose fields do not line up with its `params`, in order, overrides `param_names` explicitly, in step with `leaf_ctor`.
+The motivating case is a moment-parameterised wrapper naming a mean and a standard deviation rather than a shape and a scale — see the worked example below.
+`uncertain(...)` checks the alignment at construction time for any leaf whose derivation used the fieldname branch, restricted to `Real`-valued parameter slots, and throws naming `ComposedDistributions.param_names` and `leaf_ctor` as the fix when a field's value does not match its corresponding `params` slot.
+`TestUtils.test_interface`/`test_node_interface` run the same check over every real leaf of a tree, so a conformance run catches the mismatch too.
+
+A leaf's `params` must be type-stable: the derivation reads `typeof(params(leaf))`, so a type-unstable `params` widens every codec return type built from that leaf.
+
+```@example leaf-protocol
+struct MomentLeaf{D} <: ContinuousUnivariateDistribution
+    vals::Tuple{Float64, Float64}
+end
+Distributions.params(d::MomentLeaf) = d.vals
+ComposedDistributions.param_names(::MomentLeaf) = (:mean, :sd)
+function ComposedDistributions.leaf_ctor(::MomentLeaf{D}) where {D}
+    return (vals...) -> MomentLeaf{D}((vals[1], vals[2]))
+end
+
+ComposedDistributions.leaf_param_names(MomentLeaf{LogNormal}((8.0, 2.0)))
+```
+
 ## Extra parameters
 
 Most wrappers carry only fixed structure, so their extra-parameter map is empty and `composed_to_table`'s `:param` rows show just the inner delay's parameters.
