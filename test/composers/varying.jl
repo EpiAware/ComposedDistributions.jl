@@ -184,15 +184,15 @@ end
     # An uncertain leaf's estimated parameter is reported by
     # `required_parameters`; a fixed leaf contributes nothing.
     utree = sequential(:onset => uncertain(Gamma(2.0, 1.0);
-            shape = LogNormal(0.0, 0.3)),
+            alpha = LogNormal(0.0, 0.3)),
         :admit => LogNormal(0.5, 0.4))
-    @test required_parameters(utree) == [(edge = :onset, param = :shape)]
+    @test required_parameters(utree) == [(edge = :onset, param = :alpha)]
 
     # A bare uncertain leaf (no enclosing composer) has no name path, so its
     # edge is the empty `Symbol` — the same root-row convention
     # `composed_to_table` uses for a leaf at the tree root.
-    bare = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3))
-    @test required_parameters(bare) == [(edge = Symbol(""), param = :shape)]
+    bare = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3))
+    @test required_parameters(bare) == [(edge = Symbol(""), param = :alpha)]
 end
 
 @testitem "instantiate: the convolution kernel varies with the context" begin

@@ -579,7 +579,7 @@ end
         admit_death = Gamma(2.0, 1.0)))
     tbl = _param_rows(tree)
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
-    @test tbl.param == [:mu, :sigma, :shape, :scale]
+    @test tbl.param == [:mu, :sigma, :alpha, :theta]
     @test event_names(tree) == (:onset, :admit, :death)
     nested = compose((
         admit_path = compose((onset_admit = Gamma(2.0, 1.0),
@@ -613,13 +613,13 @@ end
         admit_death = LogNormal(0.5, 0.4)))
     tbl = composed_to_table(tree)
     nested = build_priors(tbl)
-    @test nested.onset_admit.shape isa Truncated
+    @test nested.onset_admit.alpha isa Truncated
     @test nested.admit_death.mu isa Normal
     # A user override wins over the default.
     ov = build_priors(tbl;
-        priors = (onset_admit = (shape = truncated(Normal(2, 0.5);
+        priors = (onset_admit = (alpha = truncated(Normal(2, 0.5);
             lower = 0),),))
-    @test ov.onset_admit.shape == truncated(Normal(2, 0.5); lower = 0)
+    @test ov.onset_admit.alpha == truncated(Normal(2, 0.5); lower = 0)
     # Probability parameter default is Uniform(0, 1).
     dp = default_prior((; edge = :r, param = :death, value = 0.3,
         support = (0.0, 1.0)))
@@ -634,10 +634,10 @@ end
 
     @test param_priors(tree) == build_priors(composed_to_table(tree))
     # The keyword surface is forwarded unchanged.
-    shape_prior = Normal(2, 0.5)
-    @test param_priors(tree; priors = Dict((:onset_admit, :shape) => shape_prior)) ==
+    alpha_prior = Normal(2, 0.5)
+    @test param_priors(tree; priors = Dict((:onset_admit, :alpha) => alpha_prior)) ==
           build_priors(composed_to_table(tree);
-        priors = Dict((:onset_admit, :shape) => shape_prior))
+        priors = Dict((:onset_admit, :alpha) => alpha_prior))
 end
 
 @testitem "Composer show is compact; inspect gives detail" begin
@@ -708,7 +708,7 @@ end
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+    tree2 = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tree2, :onset_admit) == Gamma(3.0, 1.5)
     @test event(tree2, :admit_death) == LogNormal(0.7, 0.5)
@@ -1108,7 +1108,7 @@ end
     # the moment leaf is rebuilt from moment coordinates, the native leaf from
     # its own.
     bumped = update(tree, (onset_admit = (mean = 10.0, sd = 3.0),
-        admit_death = (shape = 2.0, scale = 1.0)))
+        admit_death = (alpha = 2.0, theta = 1.0)))
     @test params(bumped).onset_admit == (10.0, 3.0)
     @test logpdf(bumped, [2.0, 1.5]) ≈
           logpdf(MomentLeaf{LogNormal}((10.0, 3.0)), 2.0) +
@@ -1134,7 +1134,7 @@ end
         :admit_death => Gamma(2.0, 1.0))
     bumped_trunc = update(trunc_tree,
         (onset_admit = (mean = 10.0, sd = 3.0),
-            admit_death = (shape = 2.0, scale = 1.0)))
+            admit_death = (alpha = 2.0, theta = 1.0)))
     # A truncated leaf reports its inner params followed by its bounds: the
     # moments were rebuilt, and the truncation was re-applied around them.
     @test params(bumped_trunc).onset_admit == (10.0, 3.0, nothing, 30.0)
@@ -1145,7 +1145,7 @@ end
     # rebuild, in moment coordinates.
     u_tree = sequential(:onset_admit => u, :admit_death => Gamma(2.0, 1.0))
     collapsed = update(u_tree, (onset_admit = (mean = 9.0, sd = 2.5),
-        admit_death = (shape = 2.0, scale = 1.0)))
+        admit_death = (alpha = 2.0, theta = 1.0)))
     @test params(collapsed).onset_admit == (9.0, 2.5)
 end
 

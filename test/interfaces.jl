@@ -226,7 +226,7 @@ end
     tbl = _param_rows(tree)
     onset_rows = findall(==(:onset), tbl.edge)
     @test length(onset_rows) == 2
-    @test tbl.param[onset_rows] == [:shape, :scale]
+    @test tbl.param[onset_rows] == [:alpha, :theta]
     @test tbl.value[onset_rows] == [2.0, 3.0]
     # The support is the untruncated/uncensored Gamma's own support, not the
     # censoring bounds.
