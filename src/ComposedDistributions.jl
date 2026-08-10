@@ -160,6 +160,10 @@ include("composers/Resolve.jl")
 # Resolve since it builds on `AbstractOneOf` / the `_n_branches` / `_is_no_event`
 # helpers.
 include("composers/Compete.jl")
+# Numeric inverse cdf for the one_of family (`Resolve` / `Compete`), by
+# bracketed bisection on their marginal `cdf`. After Compete.jl so both
+# concrete nodes and their `cdf` / `minimum` / `maximum` methods exist.
+include("composers/one_of_quantile.jl")
 include("composers/Choose.jl")
 # Shared nesting machinery, defined once all composer types exist.
 include("composers/nesting.jl")
