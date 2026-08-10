@@ -125,7 +125,7 @@ end
 A context-indexed leaf: a delay whose distribution varies with a covariate.
 
 `Varying` holds a map `f` from a covariate value to a `UnivariateDistribution`
-(e.g. `t -> Gamma(shape(t), scale)`), the `covariate` name it reads from a
+(e.g. `t -> Gamma(alpha(t), theta)`), the `covariate` name it reads from a
 [`Context`](@ref) (default `:time`), and a `reference` distribution used whenever
 the leaf is queried *without* a context. Because `Varying <: UnivariateDistribution`
 it drops into [`Sequential`](@ref) / [`Parallel`](@ref) / [`compose`](@ref) as an
@@ -637,7 +637,7 @@ is the empty `Symbol` (`Symbol(\"\")`) — the same root-row convention
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+tree = compose((onset = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
     admit = LogNormal(0.5, 0.4)))
 required_parameters(tree)
 ```
