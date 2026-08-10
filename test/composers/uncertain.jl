@@ -140,6 +140,47 @@ end
     @test all(>=(0), [rand(Xoshiro(i), nested) for i in 1:50])
 end
 
+@testitem "rand: refuses to draw an unresolved no_prior() parameter" begin
+    using Distributions, Random
+
+    # `Uncertain`'s `rand` checks every spec eagerly, before drawing anything,
+    # and names the unresolved parameter. Pinned here because the check would
+    # otherwise survive its own deletion undetected: `NoPrior` also has its own
+    # `Base.rand` fallback (tested below), which throws too if the eager check
+    # is removed and a `no_prior()` spec is drawn like any other — but with a
+    # generic message that does not name the parameter, which the assertions
+    # below distinguish.
+    u = uncertain(Gamma(2.0, 1.0); shape = no_prior())
+    @test_throws ArgumentError rand(u)
+    @test_throws "shape" rand(u)
+    @test_throws "no_prior()" rand(u)
+    @test_throws "update(tree, params)" rand(u)
+
+    # A resolved sibling parameter alongside the unresolved one still names
+    # only the unresolved one: the eager check runs before any spec is drawn,
+    # so `shape`'s real prior is never reached.
+    mixed = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2),
+        scale = no_prior())
+    @test_throws "scale" rand(Xoshiro(1), mixed)
+
+    # A fully resolved leaf still draws normally (the guard is not a blanket
+    # refusal).
+    resolved = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    @test rand(Xoshiro(1), resolved) isa Real
+end
+
+@testitem "rand: NoPrior's own guard refuses a direct draw" begin
+    using Random
+
+    # `Base.rand(::AbstractRNG, ::NoPrior)` is a defensive fallback for a
+    # marker reaching `rand` some other way than through `Uncertain`'s eager
+    # check (e.g. nested inside a `pool(...)` population); pinned directly so
+    # it cannot be deleted unnoticed even though `Uncertain`'s own guard
+    # already covers the ordinary leaf path.
+    @test_throws ArgumentError rand(Xoshiro(1), no_prior())
+    @test_throws "cannot draw from no_prior()" rand(Xoshiro(1), no_prior())
+end
+
 @testitem "truncated pushes inside an uncertain leaf" begin
     using Distributions, Random
 
