@@ -333,8 +333,14 @@ function _pool_hyper_rows!(sink, p::Pool)
     vals = params(inner)
     sup = (minimum(inner), maximum(inner))
     for (pname, v) in zip(pnames, vals)
-        haskey(specs, pname) || continue
-        _push_param!(sink, pool_group(p), pname, :Pool, v, sup, specs[pname])
+        # A leaf's parameter names are `Symbol`s by contract, but the element
+        # type of `_leaf_param_names(tmpl)` is not inferable for a population
+        # template whose type is not concrete here. The assertion states the
+        # contract, so the row push resolves against a `Symbol` name rather
+        # than one of unknown type.
+        name = pname::Symbol
+        haskey(specs, name) || continue
+        _push_param!(sink, pool_group(p), name, :Pool, v, sup, specs[name])
     end
     return nothing
 end
