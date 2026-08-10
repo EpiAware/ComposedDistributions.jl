@@ -6,11 +6,14 @@
 # `Parallel`. This layer adds no censored-internal behaviour.
 
 # A composable child is any univariate distribution (a leaf or a `Resolve`), a
-# nested `Sequential` / `Parallel` / `Choose`. Used to validate composer
-# components and `Choose` alternatives.
+# nested `Sequential` / `Parallel` / `Choose`, or any other multivariate
+# composer node (a downstream type implementing the node-extension contract).
+# Used to validate composer components and `Choose` alternatives. Parametrised
+# on `Multivariate` (not the bare `AbstractComposedDistribution`) so this does
+# not overlap `AbstractOneOf`'s `UnivariateDistribution` method above (`Resolve`
+# / `Compete` are univariate composer nodes, already covered there).
 _is_composable(::UnivariateDistribution) = true
-_is_composable(::Union{Sequential, Parallel}) = true
-_is_composable(::Choose) = true
+_is_composable(::AbstractComposedDistribution{Multivariate}) = true
 _is_composable(::Any) = false
 
 # Whether a value is admissible as a one_of outcome delay: a univariate leaf
@@ -127,6 +130,14 @@ function child_nleaves end
 
 child_nleaves(::UnivariateDistribution) = 1
 child_nleaves(c::Union{Sequential, Parallel}) = length(c)
+# Any OTHER multivariate composer node: the sum of its children's widths, the
+# generic default for a "concatenating" node (one whose flat value vector is
+# just its children's laid end to end, exactly `Sequential`/`Parallel`'s own
+# semantics). A node with different combination semantics (a disjunction like
+# `Choose`, above) overrides this directly.
+function child_nleaves(d::AbstractComposedDistribution{Multivariate})
+    return _nleaves(node_children(d))
+end
 # A nested `Choose` swaps in one alternative of fixed width, so it occupies a
 # fixed flat slot only when every alternative has the same leaf count. The
 # common width is the nested Choose's leaf count; disagreeing widths cannot
@@ -306,6 +317,13 @@ end
 function child_logpdf(c::Choose, x, offset, n::Int)
     return child_logpdf(_flat_select_alternative(c), x, offset, n)
 end
+# Any OTHER multivariate composer node: sum the per-child log-densities over
+# the matching sub-slices of this node's own slice, the generic
+# "concatenating" default (see `child_nleaves` above).
+function child_logpdf(d::AbstractComposedDistribution{Multivariate}, x, offset,
+        n::Int)
+    return _composite_logpdf(node_children(d), @view x[(offset + 1):(offset + n)])
+end
 
 # Backward-compatible internal alias (see `child_nleaves`).
 const _child_logpdf = child_logpdf
@@ -394,6 +412,17 @@ end
 # committed alternative the flat `child_logpdf` scores.
 function child_rand!(out, offset, rng::AbstractRNG, c::Choose)
     return child_rand!(out, offset, rng, _flat_select_alternative(c))
+end
+# Any OTHER multivariate composer node: draw each child in turn into the
+# matching sub-slice of this node's own slice, the generic "concatenating"
+# default (see `child_nleaves` above).
+function child_rand!(
+        out, offset, rng::AbstractRNG, d::AbstractComposedDistribution{Multivariate})
+    sub = _composite_rand(rng, node_children(d), float(eltype(out)))
+    @inbounds for k in eachindex(sub)
+        out[offset + k] = sub[k]
+    end
+    return nothing
 end
 
 # Backward-compatible internal alias (see `child_nleaves`).

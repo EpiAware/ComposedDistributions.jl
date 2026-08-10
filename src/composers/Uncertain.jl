@@ -13,8 +13,8 @@
 # *observed* case, `Varying` (`varying.jl`): `Varying` maps an observed covariate
 # read from a `Context` and is resolved by `instantiate`; `Uncertain` maps a
 # latent parameter draw with a prior and is resolved by `rand` (the marginal)
-# or collapsed by `update`. The two share the `_node_children` guard walk (see
-# `has_uncertain` below) and `Varying`'s `instantiate` shares the `_rebuild`
+# or collapsed by `update`. The two share the `node_children` guard walk (see
+# `has_uncertain` below) and `Varying`'s `instantiate` shares the `node_rebuild`
 # reconstruction machinery. Maintenance notes:
 #
 #   - The specs are priors attached to the template's free parameters, so the
@@ -588,9 +588,13 @@ Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # --- has-uncertainty predicate ----------------------------------------------
 
-# The composer nodes recurse through the shared `_node_children` accessor,
+# The composer nodes recurse through the shared `node_children` accessor,
 # mirroring `has_varying` (the two deferred-leaf guards share one walk); the
 # leaf base case reports a spec via the `_uncertain_specs` routing hook.
+# Dispatch on the shared `AbstractComposedDistribution` supertype (not a
+# closed Union of the five built-ins) so a downstream node recurses
+# generically too, rather than falling through to the untyped leaf method
+# below (#374).
 
 @doc "
 
@@ -635,8 +639,8 @@ has_uncertain(collapsed)   # resolved: false
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 - [`has_varying`](@ref): the same guard for the observed (varying) case.
 "
-function has_uncertain(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    return any(has_uncertain, _node_children(d))
+function has_uncertain(d::AbstractComposedDistribution)
+    return any(has_uncertain, node_children(d))
 end
 # A `Resolve` is also uncertain when its branch probabilities carry an attached
 # simplex prior (a node-level uncertain parameter, not a leaf), so a tree with

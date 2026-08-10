@@ -1,5 +1,39 @@
 ## Unreleased
 
+- **feature:** the composer-node extension contract is minimal and public
+  now (`public`, not exported).
+  A downstream node implements `node_children(node)`, `node_rebuild(node,
+  children)` and `component_names(node)` (promoted from the private
+  `_node_children`/`_rebuild`), and that alone is enough to compose, table
+  (`composed_to_table`) and `update`.
+  `child_nleaves`/`child_logpdf`/`child_rand!` now default generically off
+  `node_children` for a plain "concatenating" node, so a node whose
+  realisation is just its children laid end to end (`Sequential`/`Parallel`'s
+  own semantics) needs none of the three; a node with different combination
+  semantics still overrides them directly, as `Choose` does.
+  A node additionally wanting the flat-vector codec
+  (`flat_dimension`/`flatten`/`unflatten`/`reconstruct`, the primitive a fit
+  routes through) declares its own child names and children's types as its
+  first two type parameters, matching `Sequential`/`Parallel`/`Choose`/
+  `Compete`'s existing shape — a `@generated` function cannot call a method a
+  downstream package defines (a Julia world-age hazard), so this is the only
+  design that lets the codec read a downstream node's layout at compile time.
+  `composed_to_table`, `params`, `update`, `has_uncertain`, `has_varying` and
+  `compose(...)` nesting are now generic over any `AbstractComposedDistribution`
+  subtype rather than closed to the five built-in node kinds; a node
+  subtyping `AbstractComposedDistribution` without the required methods now
+  fails with a clear error naming the missing method or the exact
+  type-parameter shape needed, rather than silently being treated as a leaf
+  with zero estimated parameters (#374).
+  `TestUtils.test_estimation_dimension` is a new conformance check (wired
+  into both `test_node_interface` and `test_interface`) asserting
+  `flat_dimension(d)` matches `composed_to_table(d)`'s estimated-row count,
+  so a node that silently drops an uncertain leaf from the codec fails the
+  harness rather than shipping green.
+  A downstream node's own `event_names`/`event_tree`/`Base.show`, and
+  top-level `rand`/`logpdf`/moments when the node is used as a standalone
+  root distribution, are not yet part of this contract and remain built-in
+  only; tracked as a follow-up issue.
 - **breaking:** `params_table(d)` is removed. `composed_to_table(d)` is now
   the single table surface: it returns the full node/attribute/parameter
   inventory of a composed tree — one row per composer node, per leaf

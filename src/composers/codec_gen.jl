@@ -101,14 +101,78 @@ function _unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
         return _composer_unflatten_expr(access, :delays, T, ctx)
     elseif T <: Union{Convolved, Difference}
         return _composite_unflatten_expr(access, T, ctx)
+    elseif T <: AbstractComposedDistribution
+        return _generic_node_unflatten_expr(access, T, ctx)
     else
         return _leaf_unflatten_expr(access, T, ctx)
     end
 end
 
+# Any OTHER composer node (a downstream type, not one of the five built-ins
+# above): read its (names, child types) layout purely from its own type
+# parameters -- see `_generic_node_layout`'s docstring for why this must never
+# call a method the generator cannot see -- then recurse exactly like
+# `_composer_unflatten_expr` does, reading each child at RUNTIME through the
+# public `node_children` accessor (a plain call embedded in the returned code,
+# not evaluated by the generator itself, so it carries no world-age risk; the
+# composite-leaf case above already relies on this same pattern). Landing in
+# this branch (rather than falling through to the leaf branch below and
+# silently reporting zero estimated parameters) is what #374 closes.
+function _generic_node_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
+    names, ctypes = _generic_node_layout(T)
+    keys_out = Symbol[]
+    vals_out = Any[]
+    for i in eachindex(names)
+        child_access = :(ComposedDistributions.node_children($access)[$i])
+        e = _unflatten_expr(child_access, ctypes[i], ctx)
+        e === nothing && continue
+        push!(keys_out, names[i])
+        push!(vals_out, e)
+    end
+    return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
+end
+
+# The (names, child types) layout of a downstream composer node, read purely
+# from its own type parameters -- no method call, so reading it cannot hit the
+# world-age wall a `@generated` function calling a downstream-extensible
+# method would (measured: a `@generated` function cannot see a method a
+# downstream package defines, even after both packages are fully loaded and
+# precompiled -- see `docs/src/developer/interface-contracts.md`). By
+# convention, a node wanting codec (`flat_dimension`/`flatten`/`unflatten`/
+# `reconstruct`) support declares its own child names (a `Tuple` of `Symbol`,
+# matching `component_names`) and its children's types (a `Tuple` type,
+# matching `node_children`'s return type) as its first two type parameters,
+# in that order -- exactly the shape `Sequential`/`Parallel`/`Choose`/
+# `Compete` already use. Throws a clear, actionable error naming the type
+# when a node subtyping `AbstractComposedDistribution` does not have that
+# shape, rather than silently falling through to the leaf branch (#374's
+# root cause).
+function _generic_node_layout(::Type{T}) where {T}
+    P = T.parameters
+    if length(P) < 2 || !(P[1] isa Tuple) || !all(n -> n isa Symbol, P[1]) ||
+       !(P[2] isa Type) || !(P[2] <: Tuple)
+        throw(ArgumentError(
+            "$T subtypes AbstractComposedDistribution but does not expose " *
+            "a (names::Tuple{Vararg{Symbol}}, children::Tuple-type) layout " *
+            "as its first two type parameters, so the flat-vector codec " *
+            "cannot read its layout at compile time. Give it that shape " *
+            "(see the \"Writing a new composer node\" developer docs " *
+            "section on node_children/node_rebuild), or avoid calling " *
+            "flat_dimension/flatten/unflatten/reconstruct on a tree " *
+            "containing it."))
+    end
+    names = P[1]::Tuple
+    ctypes = P[2].parameters
+    length(names) == length(ctypes) || throw(ArgumentError(
+        "$T declares $(length(names)) names but $(length(ctypes)) child " *
+        "types; node_children(::$(nameof(T))) must return one child per " *
+        "name, matching component_names(::$(nameof(T)))"))
+    return names, ctypes
+end
+
 # The component types of a see-through composite leaf (`Convolved`/
 # `Difference` used as a leaf, `convolved_interop.jl`), mirroring
-# `_node_children` at the type level: `Convolved{C<:Tuple, Method}`'s
+# `node_children` at the type level: `Convolved{C<:Tuple, Method}`'s
 # components are `C`'s own type parameters; `Difference{X, Y, Method}` has
 # exactly the two fixed operand types.
 _composite_child_types(::Type{<:Convolved{C}}) where {C} = Tuple(C.parameters)
@@ -117,7 +181,7 @@ _composite_child_types(::Type{<:Difference{X, Y}}) where {X, Y} = (X, Y)
 # A composite leaf's node children are namespaced `component_1, component_2,
 # ...` (mirroring `_composite_component_names` in `convolved_interop.jl`,
 # computed independently here so this file has no include-order dependency on
-# it) and read at runtime through the generic `_node_children` accessor (so
+# it) and read at runtime through the generic `node_children` accessor (so
 # `Convolved`'s `.components` tuple and `Difference`'s `(.x, .y)` pair share
 # one code path, exactly as `_walk_rows!`/`_update` already do).
 function _composite_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
@@ -125,7 +189,7 @@ function _composite_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
     keys_out = Symbol[]
     vals_out = Any[]
     for i in eachindex(ctypes)
-        child_access = :(ComposedDistributions._node_children($access)[$i])
+        child_access = :(ComposedDistributions.node_children($access)[$i])
         e = _unflatten_expr(child_access, ctypes[i], ctx)
         e === nothing && continue
         push!(keys_out, Symbol(:component_, i))
@@ -465,8 +529,25 @@ function _flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{T},
         _composer_flatten_reads!(exprs, d_access, :delays, nt_access, T, ctx)
     elseif T <: Union{Convolved, Difference}
         _composite_flatten_reads!(exprs, d_access, nt_access, T, ctx)
+    elseif T <: AbstractComposedDistribution
+        _generic_node_flatten_reads!(exprs, d_access, nt_access, T, ctx)
     else
         _leaf_flatten_reads!(exprs, d_access, nt_access, T, ctx)
+    end
+    return nothing
+end
+
+# The read-direction counterpart of `_generic_node_unflatten_expr`: same
+# type-parameter layout read, same `node_children` runtime access, appending
+# NamedTuple-read expressions instead of building NamedTuple-construction
+# ones.
+function _generic_node_flatten_reads!(exprs::Vector, d_access, nt_access,
+        ::Type{T}, ctx::_CodecCtx) where {T}
+    names, ctypes = _generic_node_layout(T)
+    for i in eachindex(names)
+        _flatten_reads!(exprs,
+            :(ComposedDistributions.node_children($d_access)[$i]),
+            :($nt_access.$(names[i])), ctypes[i], ctx)
     end
     return nothing
 end
@@ -475,7 +556,7 @@ function _composite_flatten_reads!(
         exprs::Vector, d_access, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
     ctypes = _composite_child_types(T)
     for i in eachindex(ctypes)
-        child_access = :(ComposedDistributions._node_children($d_access)[$i])
+        child_access = :(ComposedDistributions.node_children($d_access)[$i])
         _flatten_reads!(exprs, child_access,
             :($nt_access.$(Symbol(:component_, i))), ctypes[i], ctx)
     end

@@ -168,7 +168,7 @@ include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
-# introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
+# introspection so it reuses `node_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.
 include("composers/structural_edits.jl")
 # Event-skeleton topology + the `@events` macro. After introspection (the fill
@@ -182,7 +182,7 @@ include("composers/events_macro.jl")
 include("composers/Shared.jl")
 # Uncertain (distribution-valued parameters): after introspection (extends
 # `free_leaf` / `rewrap_leaf` / `_uncertain_specs`, reuses `_update_leaf` /
-# `_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
+# `node_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
 # the tag wrapper).
 include("composers/Uncertain.jl")
 # The `@uncertain` syntax front-end over the positional `uncertain` family
@@ -190,7 +190,7 @@ include("composers/Uncertain.jl")
 include("composers/uncertain_macro.jl")
 # Partial pooling (a parameter pooled, across a group of leaves, through one
 # estimated population). After Uncertain (a `Pool` rides an uncertain leaf's
-# specs) and introspection (it reuses `_node_children`/`_split_edge`/`_join_path`
+# specs) and introspection (it reuses `node_children`/`_split_edge`/`_join_path`
 # /`_update_leaf` and the `_walk_rows!` / `_update` leaf hooks).
 include("composers/Pool.jl")
 # Context-indexed leaves + the `instantiate` resolution seam. After every

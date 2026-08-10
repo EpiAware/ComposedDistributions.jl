@@ -32,17 +32,35 @@ event tree: the multivariate [`Sequential`](@ref) / [`Parallel`](@ref) /
 ([`AbstractOneOf`](@ref): [`Resolve`](@ref) / [`Compete`](@ref)). Parametric on
 variate form so the one supertype spans both.
 
-Required methods a concrete subtype implements (the node interface):
+Required methods a concrete subtype implements (the node interface; see
+[Adding a valid composer node](@ref new-composer-node) for the full contract
+and a worked example):
 
-- `child_nleaves(c)`, `child_logpdf(c, x, offset, n)`,
-  `child_rand!(out, offset, rng, c)` — walk the flat event vector;
-- `component_names(c)` — the child names;
-- `params(c)` and `composed_to_table(c)`;
-- `event_names(c)` (flat) and `event_tree(c)` (nested);
-- `Base.show(io, c)`.
+- [`node_children`](@ref)`(node)` and [`node_rebuild`](@ref)`(node, children)`
+  — the node's children and how to rebuild around new ones;
+- [`component_names`](@ref)`(node)` — the child names.
+
+Those three alone are enough for a node to compose, table
+([`composed_to_table`](@ref)), and `update`; [`params`](@ref),
+`child_nleaves`/`child_logpdf`/`child_rand!` (the flat event-vector walk) and
+the flat-vector codec (`flat_dimension`/`flatten`/`unflatten`/`reconstruct`)
+all derive from them generically for a plain "concatenating" node (one whose
+realisation is just its children's laid end to end, `Sequential`/`Parallel`'s
+own semantics). A node with different combination semantics (a disjunction, a
+mixture) overrides `child_nleaves`/`child_logpdf`/`child_rand!` directly, as
+[`Choose`](@ref) does. Codec (flatten/unflatten/fit) support additionally
+needs the node's own child names and children's types as its first two type
+parameters — see [`node_children`](@ref)'s docstring for why.
+
+Not yet part of the generic contract (open, tracked in follow-up issues): a
+downstream node's `event_names`/`event_tree` (flat/nested event naming),
+top-level `rand`/`logpdf` when the node is used as a standalone root
+distribution, and `Base.show`.
 
 Verify a subtype with
-`ComposedDistributions.TestUtils.test_composed_interface`.
+`ComposedDistributions.TestUtils.test_node_interface` (the node contract) and
+`ComposedDistributions.TestUtils.test_composed_interface` (the fuller public
+checklist too, for a node also exercising `rand`/`logpdf`/moments as a root).
 """
 abstract type AbstractComposedDistribution{F <: VariateForm,
     S <: ValueSupport} <: Distribution{F, S} end

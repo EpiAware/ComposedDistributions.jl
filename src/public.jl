@@ -8,11 +8,19 @@
 # when two packages both export a same-named generic function.
 public update
 
-# The composer node/leaf extension contract: a new node implements
-# `child_nleaves` / `child_logpdf` / `child_rand!`, and a new leaf wrapper
-# `free_leaf` / `rewrap_leaf`. `component_names` reads a node's child names.
+# The composer node-extension contract (see
+# `docs/src/developer/interface-contracts.md`, "Writing a new composer
+# node"): a new node implements `node_children` / `node_rebuild` /
+# `component_names`, which alone is enough to compose, table, `update` and
+# (given the codec's type-parameter layout convention) flatten/fit; a node
+# with novel combination semantics (not a plain concatenation of its
+# children, e.g. a disjunction or a mixture) additionally overrides
+# `child_nleaves` / `child_logpdf` / `child_rand!`, which otherwise default
+# generically off `node_children`. A new leaf wrapper implements `free_leaf`
+# / `rewrap_leaf`.
 public child_nleaves, child_logpdf, child_rand!
 public free_leaf, rewrap_leaf, component_names
+public node_children, node_rebuild
 
 # `inner_dist` is the single-layer peel hook the read-through leaf-wrapper hooks
 # recurse through: a wrapper defines one method returning its inner distribution
@@ -109,6 +117,8 @@ public flat_dimension, flatten, unflatten, reconstruct
 # `composed_to_table` rows, reporting the fixed, non-parameter structure it
 # carries. A row's `node` label is read off the type name and a wrapped leaf's
 # layers are peeled through `inner_dist`, so neither is asked of a downstream
-# type. The rebuild half of the contract (`node_rebuild`, `set_node_params`,
-# for `compose(table)` and friends) is deferred to a later slice.
+# type. `node_rebuild` (the round-trip half, `public` above alongside
+# `node_children`) is now part of the node-extension contract; `compose(table)`
+# reconstructing a tree straight from a `composed_to_table`-shaped source is
+# still deferred to a later slice.
 public node_attributes
