@@ -844,6 +844,12 @@ is the pair's second element). A no-event win yields a `missing` time.
 To recover the marginal time-to-resolution alone (the mixture over outcomes,
 discarding which fired) sample [`as_mixture`](@ref)`(c)` instead.
 
+A [`Resolve`](@ref) whose `branch_prob_prior` still carries an unresolved
+[`no_prior`](@ref)`()` marker has nothing to draw the branch probabilities
+from, so `rand` refuses eagerly, naming the node, rather than silently
+drawing from the node's current fixed `branch_probs` (matching
+[`Uncertain`](@ref)'s leaf-level guard).
+
 # Examples
 ```@example
 using ComposedDistributions, Distributions, Random
@@ -863,11 +869,30 @@ function Base.rand(c::AbstractOneOf; outcome::Bool = false)
     return rand(default_rng(), c; outcome)
 end
 
+# `branch_probs` refuses to draw when its attached prior is still `no_prior()`
+# (estimated, no prior chosen yet), naming the node, exactly like `Uncertain`'s
+# leaf-level guard (`Uncertain.jl`) refuses an unresolved parameter spec — the
+# same class of silence the guard removes there (#366). A fixed node
+# (`branch_prob_prior === nothing`) or one carrying a resolved `Dirichlet`
+# still draws from `branch_probs` as before; only the unresolved marker
+# refuses.
+function _check_branch_probs_resolved(c::Resolve)
+    c.branch_prob_prior isa NoPrior || return nothing
+    throw(ArgumentError(
+        "cannot draw from $(c): branch_probs is marked no_prior() (free, " *
+        "no prior chosen yet); attach a prior with uncertain(tree; " *
+        "branch_probs = prior, ...) or update(tree, table) before " *
+        "drawing, or collapse first with update(tree, params)"))
+end
+
 # The scalar marginal draw of a terminal Resolve (its branch-prob-weighted
 # mixture time-to-resolution, discarding which outcome fired). Used by the plain
 # flat value path (`child_rand!`), where a Resolve child is one value slot, and
 # wherever the marginal time alone is wanted.
-_one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
+function _one_of_marginal_rand(rng::AbstractRNG, c::Resolve)
+    _check_branch_probs_resolved(c)
+    return rand(rng, as_mixture(c))
+end
 
 # Internal: sample a one_of outcome and its time, returning `(name, time)`. This
 # is the compact pair view backing `rand(c; outcome = true)`; it retains which
@@ -887,6 +912,7 @@ _one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 function _rand_outcome end
 
 function _rand_outcome(rng::AbstractRNG, c::Resolve)
+    _check_branch_probs_resolved(c)
     i = _sample_branch(rng, c.branch_probs)
     names = component_names(c)
     # A no-event win yields `missing` (no event time recorded); a real outcome

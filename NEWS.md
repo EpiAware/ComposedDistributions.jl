@@ -9,6 +9,6 @@
   `no_prior()` is a spec value everywhere a prior or a `pool(...)` spec is accepted (`uncertain`, `update`, `params_table`'s `prior` column).
   Attach a real prior afterwards with a targeted `uncertain(tree; param = prior, ...)` call, or by editing `params_table(tree)`'s `prior` column and calling `update(tree, table)`.
   `rand` on an `Uncertain` leaf still carrying a `no_prior()` marker refuses, naming the parameter, rather than silently drawing from nothing.
-  A `Resolve` node's `branch_prob_prior` does not yet carry the same guard: `rand` draws from its current fixed `branch_probs` even when `branch_prob_prior` is marked `no_prior()` (tracked as #366).
+  A `Resolve` node's `rand` carries the same guard on its `branch_prob_prior`: it refuses, naming the node, when `branch_prob_prior` is marked `no_prior()`, rather than silently drawing from its current fixed `branch_probs` (#366).
 
 GitHub releases (auto-generated from merged PRs) cover every release.

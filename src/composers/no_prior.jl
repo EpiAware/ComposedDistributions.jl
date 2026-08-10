@@ -21,10 +21,9 @@
 # `codec_gen.jl`: the generated `unflatten`/`flatten` walk is spec-value-blind
 # outside the `Pool` case, so a marker needs no codec change at all). What it
 # cannot do is draw a value: `Uncertain`'s `rand` refuses it, naming the
-# parameter. `Resolve`'s `branch_prob_prior` does not yet carry the same
-# guard — `rand` on a `Resolve` node draws from its current fixed
-# `branch_probs` even when `branch_prob_prior` is marked `no_prior()`; this is
-# a tracked follow-up (#366), not a guarantee this marker makes today.
+# parameter, and `Resolve`'s `rand` (`Resolve.jl`'s
+# `_check_branch_probs_resolved`) carries the same guard on its
+# `branch_prob_prior` (#366).
 
 @doc raw"
 
@@ -37,11 +36,10 @@ without saying what its prior is. Every place a spec drives structure
 ([`params_table`](@ref)'s `prior` column, [`has_uncertain`](@ref), the flat
 codec) treats `NoPrior` exactly like an attached prior — it occupies a
 flat-vector slot and marks the parameter estimated. What it cannot do is
-*draw*: `rand` on an [`Uncertain`](@ref) leaf that still carries an
-unresolved `NoPrior` marker is refused, naming the parameter and how to fix
-it (attach a prior, or collapse first with [`update`](@ref)). A
-[`Resolve`](@ref) node does not yet carry the same guard on its
-`branch_prob_prior`.
+*draw*: `rand` on an [`Uncertain`](@ref) leaf, or a [`Resolve`](@ref) node,
+that still carries an unresolved `NoPrior` marker is refused, naming the
+parameter (or, for `Resolve`, the node) and how to fix it (attach a prior, or
+collapse first with [`update`](@ref)).
 
 Bare `uncertain(tree)` (no `params`/keywords) is built on this marker: it
 promotes every currently-fixed free parameter to `no_prior()`, the explicit
