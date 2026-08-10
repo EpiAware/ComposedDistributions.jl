@@ -169,9 +169,9 @@ end
     # positive by construction), and two whole-line-support parameters newly
     # caught by `_is_positive_param`'s name list (SkewNormal `alpha`,
     # NormalInverseGaussian `beta`, both real-valued skew/asymmetry
-    # parameters). Pinned as documented, known behaviour (#372); not
-    # re-engineered here, since the whole prior surface is slated to leave
-    # this package.
+    # parameters). Pinned as documented, known behaviour (#372); tracked as
+    # a follow-up in #377, not re-engineered here, since the whole prior
+    # surface is slated to leave this package.
     ig_tree = compose((x = InverseGaussian(1.0, 1.0),))
     ig_priors = build_priors(composed_to_table(ig_tree))
     @test ig_priors.x.mu isa Normal   # positive-by-construction, unconstrained

@@ -24,7 +24,7 @@
   positive-truncated default; InverseGaussian `mu`, SkewNormal `alpha` and
   NormalInverseGaussian `beta` are now misclassified by the unchanged
   `_is_positive_param`/`_is_location_param` heuristic) — tracked as a
-  follow-up, not re-engineered here (#372).
+  follow-up, not re-engineered here (#372, #377).
 - **breaking:** `params_table(d)` is removed. `composed_to_table(d)` is now
   the single table surface: it returns the full node/attribute/parameter
   inventory of a composed tree — one row per composer node, per leaf

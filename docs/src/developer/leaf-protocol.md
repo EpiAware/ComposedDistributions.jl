@@ -54,6 +54,8 @@ The motivating case is a moment-parameterised wrapper naming a mean and a standa
 A leaf's `params` must be type-stable: the derivation reads `typeof(params(leaf))`, so a type-unstable `params` widens every codec return type built from that leaf.
 
 ```@example leaf-protocol
+using ComposedDistributions, Distributions
+
 struct MomentLeaf{D} <: ContinuousUnivariateDistribution
     vals::Tuple{Float64, Float64}
 end
