@@ -150,6 +150,36 @@ end
     @test tbl.prior[stick[1]] == no_prior()
 end
 
+@testitem "branch_probs: rand refuses when the prior is unresolved" begin
+    using ComposedDistributions: update
+    using Distributions, Random
+
+    r = resolve(:death => (Gamma(1.5, 1.0), 0.3),
+        :disch => (Gamma(2.0, 1.5), 0.7))
+    ur = update(r, (branch_probs = no_prior(),))
+    @test has_uncertain(ur)
+
+    # Both standalone draw shapes (the named event record and the compact
+    # (name, time) pair) refuse, naming the node, rather than silently
+    # drawing from the fixed branch_probs the no_prior() marker was meant to
+    # override — the same class of silence Uncertain's leaf-level guard
+    # refuses (#366).
+    @test_throws ArgumentError rand(Xoshiro(1), ur)
+    @test_throws "branch_probs" rand(Xoshiro(1), ur)
+    @test_throws "no_prior()" rand(Xoshiro(1), ur)
+    @test_throws "update(tree, params)" rand(Xoshiro(1), ur)
+    @test_throws ArgumentError rand(Xoshiro(1), ur; outcome = true)
+
+    # Nested inside a tree, the in-context draw (the flat-value path's
+    # `_one_of_marginal_rand`, a separate call site from the standalone draw
+    # above) refuses too.
+    tree = compose((resolution = ur, tail = LogNormal(0.5, 0.4)))
+    @test_throws ArgumentError rand(Xoshiro(1), tree)
+
+    # A fixed node (no attached prior at all) is unaffected.
+    @test rand(Xoshiro(1), r) isa NamedTuple
+end
+
 @testitem "Compete has no node-level free parameter" begin
     using ComposedDistributions: update
     using Distributions
