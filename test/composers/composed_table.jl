@@ -10,7 +10,7 @@
     # A locally defined toy leaf-wrapper (mirrors `ToyWrap` in
     # `codec_gen.jl`'s `register_leaf_wrapper!` docstring): extends
     # `free_leaf`/`rewrap_leaf` like a real leaf-wrapper package would, but
-    # deliberately does NOT extend `leaf_layers`/`node_attributes`, so it
+    # deliberately does NOT extend `inner_dist`/`node_attributes`, so it
     # appears as one opaque node row rather than a peeled one (the "structure
     # is now recoverable" testitem below asserts this explicitly).
     struct ToyWrap{D <: UnivariateDistribution} <:
@@ -153,15 +153,17 @@ end
     end
 end
 
-@testitem "_ParamSink walk: leaf hot path never calls leaf_layers" begin
+@testitem "_ParamSink walk: leaf hot path never emits layers" begin
     using ComposedDistributions: _param_rows, centred_pool_rows
     using Distributions
 
-    # A leaf-wrapper that counts `leaf_layers` calls on itself, so the
+    # A leaf-wrapper that counts `node_attributes` calls on itself, so the
     # AD-hot-path anti-regression (the parameter-only `_ParamSink` walk must
-    # not build OR iterate a leaf's `leaf_layers` tuple, not merely discard
-    # the rows it would produce) is a directly observable assertion rather
-    # than an inferred absence of `:node`/`:attribute` rows. Every real
+    # not enter a leaf's layer machinery at all, not merely discard the rows
+    # it would produce) is a directly observable assertion rather than an
+    # inferred absence of `:node`/`:attribute` rows. `_emit_layers!` is the
+    # only caller that asks a leaf layer for its attributes, so a zero count
+    # pins that neither the layer fold nor the attribute read runs. Every real
     # `_ParamSink` caller is exercised directly here (`_param_rows`, and the
     # two production hot paths `required_parameters` and
     # `centred_pool_rows`), so a future reimplementation of `composed_to_table`
@@ -179,9 +181,9 @@ end
     function ComposedDistributions.rewrap_leaf(d::CountingLeaf, inner)
         return CountingLeaf(ComposedDistributions.rewrap_leaf(d.dist, inner))
     end
-    function ComposedDistributions.leaf_layers(d::CountingLeaf)
+    function ComposedDistributions.node_attributes(d::CountingLeaf)
         d.calls += 1
-        return (d,)
+        return (;)
     end
 
     leaf = CountingLeaf(Gamma(2.0, 1.0))
@@ -281,7 +283,7 @@ end
     @test pool_attrs[:west].group == :region_b
 
     # A third-party leaf wrapper extending only `free_leaf`/`rewrap_leaf`
-    # (not `leaf_layers`/`node_attributes`) appears as one opaque node row —
+    # (not `inner_dist`/`node_attributes`) appears as one opaque node row —
     # its inner delay's node/attribute rows are not separately visible, but
     # its parameters still are.
     struct OpaqueWrap{D <: UnivariateDistribution} <:

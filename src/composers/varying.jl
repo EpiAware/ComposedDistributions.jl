@@ -301,7 +301,6 @@ end
 # CSV), and `Varying` is a wrapper layer of its own, peeling to the
 # reference's layers.
 node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
-leaf_layers(d::Varying) = (d, leaf_layers(d.reference)...)
 _shared_tag(d::Varying) = _shared_tag(d.reference)
 
 @doc "

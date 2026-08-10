@@ -393,10 +393,9 @@ inner_dist(d::Uncertain) = d.template
 rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
 # `Uncertain` is a wrapper layer of its own in `composed_to_table`, peeling to
-# the template's layers; it has no attributes of its own (its specs already
-# ride the `:param` rows' `prior` column, so the default empty
-# `node_attributes` is right and needs no override).
-leaf_layers(u::Uncertain) = (u, leaf_layers(u.template)...)
+# the template's layers through `inner_dist` above; it has no attributes of
+# its own (its specs already ride the `:param` rows' `prior` column, so the
+# default empty `node_attributes` is right and needs no override).
 
 # A modifier-owned extra parameter (e.g. a thinned template's `:thin` factor)
 # survives an uncertain leaf, so `composed_to_table` still surfaces it

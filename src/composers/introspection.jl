@@ -770,43 +770,34 @@ end
     return (v, rest...)
 end
 
-# --- node-emission hooks (#227 slice 1) -------------------------------------
+# --- node emission (#227 slice 1) -------------------------------------------
 #
 # The single pre-order walk (`_walk_rows!` below) emits a `:node` row for
 # every composer node and every leaf (wrapper) layer, alongside the existing
-# `:param` rows. These four hooks are what a node/leaf-wrapper type overrides
-# to control its own rows; the core composer types and `Truncated` have
-# methods here or beside their other hooks (Choose.jl, Resolve.jl, Shared.jl,
-# varying.jl, Uncertain.jl, wrapped_leaves.jl), so a downstream node/wrapper
-# only needs these four to appear correctly in `composed_to_table`.
+# `:param` rows. `node_attributes` is the one hook a downstream node or
+# leaf-wrapper type defines to control those rows. The other two ingredients
+# are derived rather than asked for: a row's structural label is the type's
+# own name (`_node_kind`), and a leaf's wrapper layers fold out of the
+# `inner_dist` peel (`_leaf_layers`) a wrapper already defines to take part in
+# the leaf protocol at all.
 
-@doc raw"
+# The structural label of a composer node or leaf (wrapper) layer: the `node`
+# column of `composed_to_table`. Read straight off the type, so a `Gamma` leaf
+# reports `:Gamma` and a `Sequential` node `:Sequential`. Correct by
+# construction for every type that can appear in a tree, which is why it is an
+# accessor and not a hook a downstream type has to supply.
+_node_kind(x) = Base.typename(typeof(x)).name
 
-The structural kind of a composer node or leaf (wrapper) layer, for the
-`node` column of [`composed_to_table`](@ref).
-
-The default reads the type name off `x` directly (e.g. a `Gamma` leaf reports
-`:Gamma`, a `Sequential` node `:Sequential`), which is right for every core
-node and leaf family with no override needed. A type that wants a different
-label (rare — the default is almost always right) overrides this on its own
-type.
-
-# Arguments
-- `x`: the composer node or (possibly wrapped) leaf layer.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-ComposedDistributions.node_kind(Gamma(2.0, 1.0))
-```
-
-# See also
-- [`node_attributes`](@ref): a node/layer's own fixed-structure attributes.
-- [`leaf_layers`](@ref): a leaf's wrapper layers, outermost to innermost.
-- [`composed_to_table`](@ref): the table this feeds.
-"
-node_kind(x) = Base.typename(typeof(x)).name
+# A (possibly wrapped) leaf's wrapper layers, outermost to innermost, folded
+# out of the single-layer `inner_dist` peel: `truncated(shared(:inc, Gamma(...)))`
+# gives its `Truncated`, `Shared` and `Gamma` layers in that order, each then
+# emitting its own `:node` row (and any `node_attributes`) at the leaf's one
+# edge. The fold terminates at a plain leaf, whose inner is itself, so a
+# wrapper with no `inner_dist` method appears as one opaque node row.
+function _leaf_layers(x)
+    inner = inner_dist(x)
+    return inner === x ? (x,) : (x, _leaf_layers(inner)...)
+end
 
 @doc raw"
 
@@ -821,6 +812,10 @@ family whose parameters are already fully covered by the `:param` rows. A
 node or leaf-wrapper type with fixed, non-parameter structure overrides this
 on its own type.
 
+This is the only node-emission method a downstream type supplies. A row's
+structural label is read off the type name, and a wrapped leaf's layers are
+peeled through [`inner_dist`](@ref), so neither needs a method of its own.
+
 # Arguments
 - `x`: the composer node or (possibly wrapped) leaf layer.
 
@@ -829,48 +824,14 @@ on its own type.
 using ComposedDistributions, Distributions
 
 ComposedDistributions.node_attributes(Gamma(2.0, 1.0))
+ComposedDistributions.node_attributes(truncated(Gamma(2.0, 1.0); upper = 10.0))
 ```
 
 # See also
-- [`node_kind`](@ref): the node/layer's own structural label.
 - [`composed_to_table`](@ref): the table this feeds.
+- [`inner_dist`](@ref): the peel a wrapper layer's own rows follow.
 "
 node_attributes(x) = (;)
-
-@doc raw"
-
-A (possibly wrapped) leaf's wrapper layers, outermost to innermost, for the
-`:node`/`:attribute` rows [`composed_to_table`](@ref) emits per leaf.
-
-The default `(x,)` treats `x` as a single, unwrapped layer (right for a plain
-Distributions.jl leaf and for any wrapper type with no override — it then
-appears as one opaque node row, which is current, acceptable behaviour, not
-an error). A wrapper type peeling to an inner delay (`Truncated`, `Censored`,
-`Shared`, `Varying`, `Uncertain`) overrides this to list itself followed by
-its inner layer's own `leaf_layers`, so each layer gets its own `:node` row
-(and any `node_attributes`) at the leaf's one edge, distinguished by the
-`node` column. A leaf-wrapper package extending [`free_leaf`](@ref)/
-[`rewrap_leaf`](@ref) should extend this (and [`node_attributes`](@ref))
-alongside them, or its layer appears as one opaque row instead of a peeled
-one.
-
-# Arguments
-- `x`: the (possibly wrapped) leaf distribution.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-ComposedDistributions.leaf_layers(truncated(Gamma(2.0, 1.0); upper = 10.0))
-```
-
-# See also
-- [`free_leaf`](@ref), [`rewrap_leaf`](@ref): the matching peel/rebuild hooks.
-- [`node_attributes`](@ref): a layer's own fixed-structure attributes.
-- [`composed_to_table`](@ref): the table this feeds.
-"
-leaf_layers(x) = (x,)
-leaf_layers(d::Truncated) = (d, leaf_layers(d.untruncated)...)
 
 # `Truncated`'s bounds are fixed structure, not free parameters (its inner
 # delay's own parameters ride the `:param` rows as always).
@@ -976,15 +937,15 @@ function _push_attr_rows!(sink, edge::Symbol, node::Symbol, attrs::NamedTuple)
     return nothing
 end
 
-# A leaf's `:node`/`:attribute` rows, one pair per `leaf_layers(leaf)` layer.
-# A no-op on `_ParamSink`: `leaf_layers` peels a leaf-wrapper stack (e.g.
+# A leaf's `:node`/`:attribute` rows, one pair per `_leaf_layers(leaf)` layer.
+# A no-op on `_ParamSink`: `_leaf_layers` peels a leaf-wrapper stack (e.g.
 # `Truncated`) that only the full table shows, so a parameter-only walk's hot
 # path must not build or iterate it at all, not just discard the rows it
 # would produce.
 @inline _emit_layers!(::_ParamSink, ::Symbol, leaf) = nothing
 function _emit_layers!(sink::_FullSink, edge_path::Symbol, leaf)
-    for layer in leaf_layers(leaf)
-        kind = node_kind(layer)
+    for layer in _leaf_layers(leaf)
+        kind = _node_kind(layer)
         _push_node!(sink, edge_path, kind)
         _push_attr_rows!(sink, edge_path, kind, node_attributes(layer))
     end
@@ -1092,8 +1053,8 @@ per scalar free parameter. Columns:
   or the tag/group for a [`shared`](@ref)/pooled parameter row (see below).
 - `param`: the parameter or attribute name; the empty `Symbol` on a `:node`
   row.
-- `node`: the structural kind ([`node_kind`](@ref)) of the owning composer
-  node or leaf layer (e.g. `:Sequential`, `:Gamma`, `:Truncated`).
+- `node`: the type name of the owning composer node or leaf layer (e.g.
+  `:Sequential`, `:Gamma`, `:Truncated`).
 - `role`: one of `:node`, `:attribute`, `:param`.
 - `value`: the current value (a `:param`/`:attribute` row), or `nothing` (a
   `:node` row).
@@ -1143,8 +1104,9 @@ tbl.node  # :Sequential, :LogNormal, :Truncated, :Gamma, ...
 ```
 
 # See also
-- [`node_kind`](@ref), [`node_attributes`](@ref), [`leaf_layers`](@ref): the
-  node-emission hooks a downstream node/leaf-wrapper type overrides.
+- [`node_attributes`](@ref): the one hook a downstream node or leaf-wrapper
+  type defines to control its own rows here.
+- [`inner_dist`](@ref): the peel a wrapped leaf's per-layer rows follow.
 "
 function composed_to_table(
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
@@ -1203,12 +1165,12 @@ Tables.rows(d::AbstractComposedDistribution) = Tables.rows(composed_to_table(d))
 # composer node emits its own `:node` row, then one `:attribute` row per
 # `node_attributes` entry, then recurses into its named children, then any of
 # its OWN param rows (a `Resolve`'s `branch_probs`, emitted last — see below).
-# A leaf emits one `:node`/`:attribute` row per `leaf_layers` layer, then one
+# A leaf emits one `:node`/`:attribute` row per `_leaf_layers` layer, then one
 # `:param` row per scalar free parameter. Hand-rolled recursion to stay
 # type-stable.
 function _walk_rows!(sink, seen, d::Union{Sequential, Parallel}, path)
     edge = _join_path(path)
-    kind = node_kind(d)
+    kind = _node_kind(d)
     _push_node!(sink, edge, kind)
     _push_attr_rows!(sink, edge, kind, node_attributes(d))
     names = component_names(d)
@@ -1223,7 +1185,7 @@ end
 # sourced branches is inventoried once.
 function _walk_rows!(sink, seen, d::Choose, path)
     edge = _join_path(path)
-    kind = node_kind(d)
+    kind = _node_kind(d)
     _push_node!(sink, edge, kind)
     _push_attr_rows!(sink, edge, kind, node_attributes(d))
     for (name, alt) in zip(component_names(d), d.alternatives)
@@ -1239,13 +1201,13 @@ end
 # is skipped, unchanged from the params-only behaviour (no param rows).
 function _walk_rows!(sink, seen, c::Resolve, path)
     edge = _join_path(path)
-    kind = node_kind(c)
+    kind = _node_kind(c)
     _push_node!(sink, edge, kind)
     _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
         child_path = (path..., name)
         if _is_no_event(delay)
-            _push_node!(sink, _join_path(child_path), node_kind(delay))
+            _push_node!(sink, _join_path(child_path), _node_kind(delay))
             continue
         end
         _walk_rows!(sink, seen, delay, child_path)
@@ -1284,7 +1246,7 @@ end
 # no branch-probability block (the winning probability is derived, not free).
 function _walk_rows!(sink, seen, c::Compete, path)
     edge = _join_path(path)
-    kind = node_kind(c)
+    kind = _node_kind(c)
     _push_node!(sink, edge, kind)
     _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
@@ -1293,11 +1255,11 @@ function _walk_rows!(sink, seen, c::Compete, path)
     return nothing
 end
 
-# Leaf distribution: one `:node`/`:attribute` row per `leaf_layers` layer,
+# Leaf distribution: one `:node`/`:attribute` row per `_leaf_layers` layer,
 # then one `:param` row per scalar free parameter. A censored leaf shows only
 # its inner free delay's params and that delay's support (the censoring
 # bounds are fixed structure, see `free_leaf`); its wrapper layer still gets
-# its own node/attribute rows via `leaf_layers`. A shared-tagged leaf
+# its own node/attribute rows via `_leaf_layers`. A shared-tagged leaf
 # (`_shared_tag`) is inventoried once under its tag as the PARAM edge: the
 # first occurrence emits the param rows, later occurrences with the same tag
 # are skipped so the tied parameter is listed once. The leaf's node/attribute
@@ -1327,7 +1289,7 @@ function _walk_rows!(sink, seen, leaf, path)
         map(e -> e.support, extras)...)
     edge = tag === nothing ? edge_path : tag
     tag === nothing || push!(seen, tag)
-    leaf_kind = node_kind(inner)
+    leaf_kind = _node_kind(inner)
     for (pname, v, s) in zip(pnames, vals, sups)
         spec = specs === nothing ? nothing : get(specs, pname, nothing)
         # A pooled parameter lowers to the group's shared population
@@ -1919,36 +1881,11 @@ end
 _rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
 _rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
 
-@doc raw"
-
-A composer node's children tuple, uniform across the node kinds (the field
-holding them differs per type).
-
-Pairs with `_rebuild` for a generic node walk over any composer type; the
-generated codec (`codec_gen.jl`) reads it by qualified name at the type level
-too, so a call site keeping the underscored spelling
-(`ComposedDistributions._node_children`) keeps resolving unchanged (`const`
-makes it the same function object).
-
-# Arguments
-- `d`: the composer node whose children are read.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0), admit_death = LogNormal(0.5, 0.4)))
-ComposedDistributions.node_children(tree)
-```
-
-# See also
-- [`node_kind`](@ref), [`node_attributes`](@ref): the sibling node-emission
-  hooks.
-"
-node_children(d::Union{Sequential, Parallel}) = d.components
-node_children(c::AbstractOneOf) = c.delays
-node_children(d::Choose) = d.alternatives
-const _node_children = node_children
+# A composer node's children tuple, uniform across the node kinds (the field
+# holding them differs per type). Pairs with `_rebuild` for generic node walks.
+_node_children(d::Union{Sequential, Parallel}) = d.components
+_node_children(c::AbstractOneOf) = c.delays
+_node_children(d::Choose) = d.alternatives
 
 # --- build_priors: composed_to_table + flat priors -> nested NamedTuple -----
 

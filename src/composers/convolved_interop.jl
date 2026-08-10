@@ -282,7 +282,7 @@ _composite_component_names(n::Int) = ntuple(i -> Symbol(:component_, i), n)
 # exactly as it would be as a standalone leaf, one row-group per component).
 function _walk_rows!(sink, seen, d::Union{Convolved, Difference}, path)
     edge = _join_path(path)
-    kind = node_kind(d)
+    kind = _node_kind(d)
     _push_node!(sink, edge, kind)
     _push_attr_rows!(sink, edge, kind, node_attributes(d))
     children = _node_children(d)

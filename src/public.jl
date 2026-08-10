@@ -104,12 +104,11 @@ public TestUtils
 # (`parameter_rows`/`reconstruct`).
 public flat_dimension, flatten, unflatten, reconstruct
 
-# The node-emission half of the single-table contract (#227 slice 1): a
-# composer node or leaf (wrapper) type overrides these to control its own
-# `composed_to_table` rows. `node_kind` labels a node/layer; `node_children`
-# reads a composer node's children uniformly; `node_attributes` reports a
-# node/layer's own fixed-structure attributes; `leaf_layers` lists a leaf's
-# wrapper layers outermost to innermost. The rebuild half of the contract
-# (`node_rebuild`, `register_node_kind!`, `set_node_params`, for
-# `compose(table)` and friends) is deferred to a later slice.
-public node_kind, node_children, node_attributes, leaf_layers
+# The node-emission half of the single-table contract (#227 slice 1): the one
+# method a composer node or leaf (wrapper) type defines to control its own
+# `composed_to_table` rows, reporting the fixed, non-parameter structure it
+# carries. A row's `node` label is read off the type name and a wrapped leaf's
+# layers are peeled through `inner_dist`, so neither is asked of a downstream
+# type. The rebuild half of the contract (`node_rebuild`, `set_node_params`,
+# for `compose(table)` and friends) is deferred to a later slice.
+public node_attributes

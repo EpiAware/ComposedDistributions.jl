@@ -18,28 +18,30 @@
 
 # --- Censored leaf-protocol parity with Truncated ---------------------------
 
-free_leaf(d::Distributions.Censored) = free_leaf(d.uncensored)
+# The single-layer peel. Every read-through hook (`free_leaf`,
+# `uncertain_specs`, `extra_leaf_params`, `shared_tag`) recurses through it,
+# and `composed_to_table`'s per-layer node rows fold out of it, so `Censored`
+# needs no forwarding method of its own for any of them.
+inner_dist(d::Distributions.Censored) = d.uncensored
+
 function rewrap_leaf(d::Distributions.Censored, inner)
     return censored(rewrap_leaf(d.uncensored, inner); lower = d.lower,
         upper = d.upper)
 end
 
-uncertain_specs(d::Distributions.Censored) = uncertain_specs(d.uncensored)
-extra_leaf_params(d::Distributions.Censored) = extra_leaf_params(d.uncensored)
 set_extra_leaf_params(d::Distributions.Censored, ::NamedTuple{()}) = d
 function set_extra_leaf_params(d::Distributions.Censored, vals::NamedTuple)
     return censored(set_extra_leaf_params(d.uncensored, vals);
         lower = d.lower, upper = d.upper)
 end
 
-shared_tag(d::Distributions.Censored) = shared_tag(d.uncensored)
+# Not a pure forward: `has_varying` is a tree predicate rather than a
+# read-through leaf hook, so it stays explicit (mirroring `Truncated`).
 has_varying(d::Distributions.Censored) = has_varying(d.uncensored)
 
 # `Censored`'s bounds are fixed structure (an `:attribute` row, mirroring
-# `Truncated`), and it is a wrapper layer of its own in `composed_to_table`,
-# peeling to the uncensored inner delay's layers.
+# `Truncated`).
 node_attributes(d::Distributions.Censored) = (; lower = d.lower, upper = d.upper)
-leaf_layers(d::Distributions.Censored) = (d, leaf_layers(d.uncensored)...)
 
 # Upstream gives `Truncated` a one-line `show` but `Censored` only the generic
 # multi-line struct dump (its `uncensored` field is a distribution), which broke

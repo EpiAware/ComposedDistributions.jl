@@ -20,8 +20,11 @@
   full table. `update` filters a role-carrying table to its parameter rows
   first, and `update(a, b)` with `b` a tree now throws a clear error naming
   `composed_to_table` as the explicit way to copy rows, rather than
-  silently bulk-writing `b` into `a`. `node_kind`, `node_children`,
-  `node_attributes` and `leaf_layers` are the new public hooks a downstream
-  node/leaf-wrapper type overrides to control its own rows (#227).
+  silently bulk-writing `b` into `a`. `node_attributes` is the one new public
+  hook a downstream node or leaf-wrapper type defines to control its own
+  rows, reporting the fixed, non-parameter structure it carries. A row's
+  `node` label is read off the type name and a wrapped leaf's layers are
+  peeled through `inner_dist`, so neither is asked of a downstream type
+  (#227).
 
 GitHub releases (auto-generated from merged PRs) cover every release.
