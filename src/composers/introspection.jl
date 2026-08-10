@@ -1195,11 +1195,11 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 # Concrete values pin the parameters.
-tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+tree2 = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)))
 event(tree2, :onset_admit)
 # A distribution makes just that parameter uncertain (a partial update).
-est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+est = update(tree, (onset_admit = (alpha = LogNormal(log(2.0), 0.2),),))
 has_uncertain(est)
 ```
 
@@ -1249,9 +1249,9 @@ from a sampler output after reading it into the flat coordinate system.
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)),
+    alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# The one estimated parameter is onset_admit.shape; the vector is length 1.
+# The one estimated parameter is onset_admit.alpha; the vector is length 1.
 # This is equivalent to
 # update(tree, ComposedDistributions.unflatten(tree, [3.0])).
 result = update(tree, [3.0])
@@ -1858,7 +1858,7 @@ for that row), so a custom `default` can pick a prior from the parameter's
 # Keyword Arguments
 - `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
   (e.g. a `Dict`) or a nested `NamedTuple` keyed like the tree
-  (`(onset_admit = (shape = prior,),)`); only the listed parameters are
+  (`(onset_admit = (alpha = prior,),)`); only the listed parameters are
   overridden (default: empty).
 - `default`: a function `row -> prior` for rows not overridden (default:
   [`default_prior`](@ref), deriving the prior family from the parameter's
@@ -1873,8 +1873,8 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 tbl = params_table(tree)
 # Support-derived defaults everywhere, overriding only one parameter.
 nested = build_priors(tbl;
-    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),),))
-nested.onset_admit.shape
+    priors = (onset_admit = (alpha = truncated(Normal(2, 0.5); lower = 0),),))
+nested.onset_admit.alpha
 ```
 
 # See also
@@ -1968,7 +1968,7 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 priors = param_priors(tree)
-priors.onset_admit.shape
+priors.onset_admit.alpha
 ```
 
 # See also

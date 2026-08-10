@@ -14,7 +14,11 @@
 # walk below produces a concretely-typed (`@inferred`-stable) nested
 # NamedTuple instead, which both fixes Enzyme reverse and removes the
 # dominant per-evaluation cost (issue #178's spike measured the Dict walk at
-# 50-83% of a `logdensity` call).
+# 50-83% of a `logdensity` call). A leaf whose parameter names come from the
+# generic, value-based derivation (`param_names`, introspection.jl) rather
+# than an explicit override currently loses that `@inferred`-stability again
+# (tracked in #371); the AD-safety and value/runtime-type correctness this
+# file exists for are unaffected.
 #
 # `update(d, nt)` (ordinary recursion over the nested NamedTuple, adding no
 # Dict of its own) is unchanged by this file: `reconstruct` below composes the
@@ -347,9 +351,12 @@ so `update(d, unflatten(d, x))` collapses every uncertain leaf at the draw while
 holding the fixed parameters at the template.
 
 Generated once per distinct tree type from a compile-time layout walk (no
-`Dict`, no intermediate `Any`-typed accumulation), so the result is
-`@inferred`-concrete and the reverse-mode AD backends (including Enzyme)
-differentiate through it.
+`Dict`, no intermediate `Any`-typed accumulation), so the reverse-mode AD
+backends (including Enzyme) differentiate through it. The result is not
+currently `@inferred`-concrete for a leaf whose parameter names come from
+the generic, value-based derivation (see [`param_names`](@ref)) rather than
+an explicit override — tracked in issue #371 — though its value and runtime
+type are unaffected.
 
 # Arguments
 - `d`: the composed distribution whose table fixes the layout.
@@ -360,9 +367,9 @@ differentiate through it.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# One estimated parameter (onset_admit.shape); the rest stay at the template.
+# One estimated parameter (onset_admit.alpha); the rest stay at the template.
 # Public but not exported; reach it by the qualified name.
 update(tree, ComposedDistributions.unflatten(tree, [3.0]))
 ```
@@ -406,10 +413,10 @@ codec.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
 # Public but not exported; reach it by the qualified name. Only onset_admit's
-# shape is uncertain, so the dimension is 1.
+# alpha is uncertain, so the dimension is 1.
 ComposedDistributions.flat_dimension(tree)
 ```
 
@@ -599,9 +606,9 @@ view over it), so the two cannot drift apart.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# The estimated vector is 1-long (onset_admit.shape); round-trip it.
+# The estimated vector is 1-long (onset_admit.alpha); round-trip it.
 # Public but not exported; reach the codec by the qualified name.
 nt = ComposedDistributions.unflatten(tree, [2.0])
 ComposedDistributions.flatten(tree, nt)
@@ -646,7 +653,7 @@ is [`unflatten`](@ref)'s, and `update`'s inferrability is inherited from it.
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)),
+    alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
 ComposedDistributions.reconstruct(tree, [3.0])
 ```

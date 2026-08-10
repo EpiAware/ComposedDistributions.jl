@@ -627,7 +627,7 @@ is not `nothing`). A fully concrete (pinned) tree returns an empty vector.
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+tree = compose((onset = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
     admit = LogNormal(0.5, 0.4)))
 required_parameters(tree)
 ```

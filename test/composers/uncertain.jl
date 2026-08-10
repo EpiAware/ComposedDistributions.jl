@@ -514,7 +514,7 @@ end
     # A Sequential containing a Parallel branch, one of whose endpoints is an
     # uncertain leaf: exercises the composed `rand`/`logpdf` surfaces (the
     # package's stack of per-leaf draws / densities) on a genuinely nested
-    # tree alpha, not just a flat sibling list.
+    # tree shape, not just a flat sibling list.
     u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     inner = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
     tree = sequential(:onset => Gamma(1.5, 1.0), :branch => inner)

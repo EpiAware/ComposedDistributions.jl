@@ -268,22 +268,26 @@ end
 # check, so a future generation-time change to this file has one place that
 # fails loudly on any drift.
 #
-# Not `@inferred` any more: `leaf_param_names`'s built-in-family names came
-# from a per-type dispatch table until #345 replaced it with generic,
-# value-based derivation (matching `params(leaf)` against
+# Not `@inferred` any more: `leaf_param_names`'s six curated-family names came
+# from a per-type dispatch table before this branch; this branch replaces it
+# with generic, value-based derivation (matching `params(leaf)` against
 # `fieldnames(typeof(leaf))`). The table was a pure function of the leaf's
 # TYPE, so Julia's compiler could prove the exact name tuple at compile time;
 # the derivation reads actual field VALUES to decide the match, which no
-# amount of restructuring lets ordinary type inference see through (a
-# `@generated` function cannot help either -- it may only inspect argument
-# TYPES, never VALUES, and matching genuinely needs the values). So
+# amount of restructuring found so far lets ordinary type inference see
+# through (a `@generated` function cannot help either -- it may only inspect
+# argument TYPES, never VALUES, and matching genuinely needs the values). So
 # `unflatten`/`flatten` on a derivation-named leaf now return a NamedTuple
 # whose VALUE and RUNTIME type are exactly as before, but whose statically
 # INFERRED type is the widened `NamedTuple{names, T} where names` -- correct
-# results, less concrete compile-time typing. This is a deliberate, accepted
-# trade of the old static table's inferability for registration-free
-# genericity (the whole point of #345), not a bug; only the `@inferred`
-# wrapping comes off; the value/runtime-type parity checks stay.
+# results, less concrete compile-time typing. AD correctness is unaffected
+# (test/ad/scenarios.jl's Mooncake #146 item exercises a derivation-named
+# Gamma leaf through both directions against ForwardDiff), but this is a real
+# loss of static inference on the per-gradient hot path and is NOT this
+# branch's call to make alone: it is flagged in #371 for @seabbs to accept or
+# reject, not silently decided here; only the `@inferred` wrapping comes off
+# for now so the (correctness-only) value/runtime-type parity checks stay
+# green while #371 is open.
 @testitem "codec: S2 layout parity -- unflatten is unchanged on every existing \
     codec_gen test tree" begin
     using ComposedDistributions: update, unflatten, flatten

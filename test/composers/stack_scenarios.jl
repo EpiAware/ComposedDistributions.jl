@@ -385,7 +385,7 @@ end
     @test Symbol("branches.fatal.death") in edges
     @test Symbol("branches.fatal.branch_probs") in edges
 
-    # update node-replace keeps the alpha and swaps the incubation leaf.
+    # update node-replace keeps the shape and swaps the incubation leaf.
     edited = update(deep, :incubation => Gamma(3.0, 0.7))
     @test event(edited, :incubation) == Gamma(3.0, 0.7)
 

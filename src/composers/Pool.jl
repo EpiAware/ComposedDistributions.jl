@@ -136,13 +136,13 @@ a shared `population` distribution.
 
 ```julia
 uncertain(Gamma(2.0, 1.0);
-    shape = pool(:district,
+    alpha = pool(:district,
         uncertain(LogNormal(0.0, 1.0); mu = Normal(0.0, 1.0),
             sigma = truncated(Normal(0.0, 1.0); lower = 0.0))))
 ```
 
-reading as: *`shape` is partially pooled across the `:district` leaves — each
-district's `shape` is drawn from one shared `LogNormal` population whose
+reading as: *`alpha` is partially pooled across the `:district` leaves — each
+district's `alpha` is drawn from one shared `LogNormal` population whose
 `(mu, sigma)` are estimated.* The `population` is an ordinary distribution;
 build it with [`uncertain`](@ref) so its free parameters carry their priors
 through the same machinery as any uncertain leaf (those become the
@@ -177,12 +177,12 @@ members) comes from sampling the flat priors and rebuilding with
 ```@example
 using ComposedDistributions, Distributions
 
-# Three districts' onset->death delays with a partially pooled shape, drawn
-# from a shared estimated-LogNormal population.
+# Three districts' onset->death delays with a partially pooled shape
+# (alpha), drawn from a shared estimated-LogNormal population.
 model = compose((
-    north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    east  = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+    north = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    east  = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:district))))
 # 2 hyperparameters + 3 latents = 5 estimated parameters.
 ComposedDistributions.flat_dimension(model)
 ```
@@ -620,8 +620,8 @@ find the rows [`pool_centred_logprior`](@ref) needs to score.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions.centred_pool_rows(tree)
 ```
 
@@ -662,8 +662,8 @@ off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions._centred_pool_rows(tree)
 ```
 
@@ -690,8 +690,8 @@ population term.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 rows = ComposedDistributions.centred_pool_rows(tree)
 x = fill(0.5, ComposedDistributions.flat_dimension(tree))
 nt = ComposedDistributions.unflatten(tree, x)
@@ -730,8 +730,8 @@ moved off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 rows = ComposedDistributions.centred_pool_rows(tree)
 x = fill(0.5, ComposedDistributions.flat_dimension(tree))
 nt = ComposedDistributions.unflatten(tree, x)
@@ -770,8 +770,8 @@ fit-protocol extension calls this directly to gate a tree before fitting
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions.validate_pool_groups(tree)
 ```
 
@@ -804,8 +804,8 @@ moved off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions._validate_pool_groups(tree)
 ```
 
@@ -886,8 +886,8 @@ gate a tree before fitting (#212).
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions.validate_tree_names(tree)
 ```
 
@@ -938,8 +938,8 @@ moved off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions._validate_tree_names(tree)
 ```
 

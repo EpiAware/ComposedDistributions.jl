@@ -265,7 +265,7 @@ tbl.edge, tbl.param
 
 # [`build_priors`](@ref) takes that table (any Tables.jl source with `edge`,
 # `param`, `value`, `support` columns) and derives a default prior per row from
-# that leaf's support: a positive theta parameter gets a positive-truncated
+# that leaf's support: a positive scale parameter gets a positive-truncated
 # prior, a location parameter an unbounded one, a `[0, 1]` probability a
 # `Uniform(0, 1)`.
 # So `build_priors(tbl)` alone yields a complete set, defined against the table
@@ -287,7 +287,7 @@ mean(updated)
 
 # [`update`](@ref) also replaces whole nodes, not just their values.
 # Passing `path => new_node` swaps the node at an address for a new distribution,
-# keeping the tree alpha.
+# keeping the tree shape.
 # The address is the same one [`event`](@ref) reads: a bare name, a dotted
 # `Symbol`, or a tuple of edge names.
 
@@ -295,7 +295,7 @@ replaced = update(template, :admit_death => Gamma(3.0, 1.5));
 
 event(replaced, :admit_death)
 
-# Two edits that change the tree alpha are kept separate.
+# Two edits that change the tree shape are kept separate.
 # [`prune`](@ref) drops a branch from a node (renormalising a [`Resolve`](@ref)
 # arm's remaining probabilities), and [`splice`](@ref) inserts a step around a
 # node.
@@ -333,7 +333,7 @@ unique(params_table(tied).edge)
 # ## Syntax reference
 #
 # Every public composition form on one object, with whether it preserves the
-# tree alpha.
+# tree shape.
 #
 # | Syntax | What it does | Shape |
 # |---|---|---|
@@ -384,7 +384,7 @@ unique(params_table(tied).edge)
 # - [`params_table`](@ref) and [`build_priors`](@ref) attach parameters and
 #   support-derived priors to the same object.
 # - [`update`](@ref) edits the tree: `path => new_node` replaces nodes keeping
-#   the alpha, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,
+#   the shape, [`prune`](@ref) and [`splice`](@ref) are the two topology edits,
 #   and [`tie`](@ref) links leaves into one parameter group.
 #
 # ## Where next

@@ -1059,7 +1059,7 @@ end
     # A moment-parameterised leaf: it reports a mean and a standard deviation as
     # its parameters and evaluates through the LogNormal those moments imply. Its
     # family is a type parameter, so the bare `MomentLeaf` UnionAll cannot be
-    # called positionally — this is exactly the leaf alpha that the hard-coded
+    # called positionally — this is exactly the leaf shape that the hard-coded
     # `Base.typename(typeof(inner)).wrapper` reconstruction could not rebuild.
     struct MomentLeaf{D} <: ContinuousUnivariateDistribution
         vals::Tuple{Float64, Float64}

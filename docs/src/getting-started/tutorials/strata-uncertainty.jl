@@ -198,7 +198,7 @@ pooled_table = params_table(pooled)
 (pool_dimension = ComposedDistributions.flat_dimension(pooled),)
 
 # Passing a different population changes how the strata relate. A general
-# (non-location-theta) population takes the centred path, with each stratum's
+# (non-location-scale) population takes the centred path, with each stratum's
 # parameter scored directly against the population.
 
 gamma_pool = compose((

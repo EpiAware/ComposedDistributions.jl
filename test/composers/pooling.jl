@@ -1,6 +1,6 @@
 # Partial-pooling tests: a `pool` spec inside `uncertain` drawing each member's
 # parameter from a shared population distribution. Covers the non-centred
-# (location-theta) and centred (general population) paths, the pooling spectrum
+# (location-scale) and centred (general population) paths, the pooling spectrum
 # (tie / independent / pool), the CD-aligned flat layout, the codec round-trip
 # and collapse, and a prior-predictive shrinkage check. See issue #78.
 #
@@ -20,7 +20,7 @@
     @test pool_noncentred(p)
     @test p.population isa Uncertain
 
-    # An explicit location-theta population stays non-centred.
+    # An explicit location-scale population stays non-centred.
     q = pool(:region,
         uncertain(Normal(0.0, 1.0);
             mu = Normal(0.5, 0.3), sigma = truncated(Normal(0.0, 0.2); lower = 0)))
@@ -41,7 +41,7 @@
 
     # Non-centred cannot be forced on a general population.
     @test_throws ArgumentError pool(:g, Gamma(2.0, 1.0); noncentred = true)
-    # But it can be forced off on a location-theta one (centred LogNormal).
+    # But it can be forced off on a location-scale one (centred LogNormal).
     @test !pool_noncentred(pool(:g, LogNormal(0.0, 1.0); noncentred = false))
 end
 
@@ -164,7 +164,7 @@ end
     using Distributions
     using ComposedDistributions: flatten, unflatten, flat_dimension
 
-    # A Gamma population (not location-theta) takes the centred path: each
+    # A Gamma population (not location-scale) takes the centred path: each
     # member's alpha IS its latent, scored directly against the population.
     pop = uncertain(Gamma(2.0, 1.0);
         alpha = truncated(Normal(2.0, 1.0); lower = 0),
@@ -226,7 +226,7 @@ end
     @test pool_centred_logprior(fixed_rows, fixed_nt) ≈
           logpdf(Beta(2.0, 3.0), 0.4) + logpdf(Beta(2.0, 3.0), 0.7)
 
-    # A non-centred (location-theta) population contributes no rows and no
+    # A non-centred (location-scale) population contributes no rows and no
     # term: its latents are ordinary `Normal(0, 1)` per-row priors.
     noncentred = compose((
         a = uncertain(Gamma(2.0, 1.0); alpha = pool(:g, LogNormal(0.0, 1.0))),

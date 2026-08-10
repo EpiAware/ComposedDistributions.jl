@@ -1,5 +1,5 @@
 # Interface-conformance suite: the contract a type must satisfy to take part in
-# composition, checked uniformly over every built-in node alpha and a
+# composition, checked uniformly over every built-in node shape and a
 # user-defined node. Drives the reusable `ComposedDistributions.TestUtils`
 # harness (shipped in `src`, ported from the CensoredDistributions interface
 # suite, EpiAware/CensoredDistributions.jl#795) over the package's own fixtures,

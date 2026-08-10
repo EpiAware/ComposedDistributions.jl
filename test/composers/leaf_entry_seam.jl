@@ -4,7 +4,7 @@
 # `_update`'s leaf case already does. This stage adds the seam only; the
 # generated codec is untouched, so these tests exercise the new functions
 # directly and cross-check `_leaf_entry` against the real `unflatten` output
-# wherever a tree already covers the same leaf alpha.
+# wherever a tree already covers the same leaf shape.
 
 @testsnippet LeafEntrySeamFixture begin
     using Distributions

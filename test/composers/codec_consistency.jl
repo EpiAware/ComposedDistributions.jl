@@ -15,7 +15,7 @@
 # a genuine architectural change to the hottest, most heavily tested part of
 # this package, at a moment when #202 was independently rewriting
 # introspection.jl (merged since). This test is the fallback the issue offers
-# instead: it builds every composer/leaf alpha the walk must handle and
+# instead: it builds every composer/leaf shape the walk must handle and
 # asserts, for each, that feeding params_table's own current values (in table
 # order) through the codec (`reconstruct`) reproduces the SAME values — which
 # can only hold if table order and codec order are the same bijection onto
@@ -144,7 +144,7 @@ end
     CodecConsistencyHelpers] begin
     # Wrapper peeling (free_leaf/rewrap_leaf) is a distinct code path both
     # walks must agree on independently of plain leaves and composers — the
-    # exact kind of alpha this file exists to guard, and one this file didn't
+    # exact kind of shape this file exists to guard, and one this file didn't
     # cover until now despite Truncated pre-dating this PR and Censored
     # landing alongside it (#215).
     trunc_leaf = truncated(
