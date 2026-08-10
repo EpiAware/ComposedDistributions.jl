@@ -279,18 +279,20 @@ end
         eachindex(tbl.edge))
     @test tbl.prior[fixed] === nothing
 
-    # Precedence: attached spec beats the default, override beats both.
-    nested = build_priors(tbl)
+    # Precedence: attached spec beats a supplied default, override beats both.
+    default = row -> Normal(row.value, 1.0)
+    nested = build_priors(tbl; default = default)
     @test nested.onset_admit.shape == LogNormal(log(2.0), 0.2)
     @test nested.onset_admit.scale isa Distribution
-    ovr = build_priors(tbl;
+    ovr = build_priors(tbl; default = default,
         priors = (onset_admit = (shape = Exponential(1.0),),))
     @test ovr.onset_admit.shape == Exponential(1.0)
 
-    # A four-column table (no prior column) still works.
+    # A four-column table (no prior column) still works, given a default.
     legacy = (edge = collect(tbl.edge), param = collect(tbl.param),
         value = collect(tbl.value), support = collect(tbl.support))
-    @test build_priors(legacy).onset_admit.shape isa Distribution
+    @test build_priors(legacy; default = default).onset_admit.shape isa
+          Distribution
 
     # The table prints, with blank prior cells for fixed rows.
     @test occursin("prior", sprint(show, MIME("text/plain"), tbl))
@@ -444,7 +446,11 @@ end
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    promoted = update(tree, param_priors(tree))
+    # No default-prior machinery: every row not overridden needs an explicit
+    # `default` function.
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    priors = param_priors(tree; default = default)
+    promoted = update(tree, priors)
 
     @test has_uncertain(promoted)
     # Every free parameter is now estimated (the escape hatch to estimate-all).
@@ -452,8 +458,7 @@ end
     oa = event(promoted, :onset_admit)
     @test oa isa Uncertain
     @test keys(oa.specs) == (:shape, :scale)
-    # The specs are the support-derived defaults.
-    @test oa.specs.scale == param_priors(tree).onset_admit.scale
+    @test oa.specs.scale == priors.onset_admit.scale
 end
 
 @testitem "promote keeps an existing spec and defaults the rest" begin
@@ -462,12 +467,14 @@ end
 
     tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
         shape = LogNormal(log(2.0), 0.2)),))
-    promoted = update(tree, param_priors(tree))
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    priors = param_priors(tree; default = default)
+    promoted = update(tree, priors)
     oa = event(promoted, :onset_admit)
     @test keys(oa.specs) == (:shape, :scale)
-    # The user's shape spec is kept; scale gets the support-derived default.
+    # The user's shape spec is kept; scale gets the supplied default.
     @test oa.specs.shape == LogNormal(log(2.0), 0.2)
-    @test oa.specs.scale == param_priors(tree).onset_admit.scale
+    @test oa.specs.scale == priors.onset_admit.scale
 end
 
 @testitem "promote through a shared tag ties the estimated parameter" begin
@@ -477,7 +484,8 @@ end
 
     d = compose((a = shared(:g, Gamma(2.0, 1.0)),
         b = shared(:g, Gamma(2.0, 1.0))))
-    promoted = update(d, param_priors(d))
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    promoted = update(d, param_priors(d; default = default))
 
     @test has_uncertain(promoted)
     # The tied leaf is inventoried once, so shape + scale = two estimated rows.
@@ -557,11 +565,11 @@ end
         shape = LogNormal(log(2.0), 0.2), scale = 2.5))
     @test u3.components[1].template.θ == 2.5
 
-    # Bare `uncertain(tree)` promotes every free parameter (matches
-    # `update(tree, param_priors(tree))`).
-    everything = uncertain(tree)
-    @test has_uncertain(everything)
-    @test everything == update(tree, param_priors(tree))
+    # Bare `uncertain(tree)` (no params) is refused: ComposedDistributions no
+    # longer guesses default priors, so promoting every free parameter needs
+    # them supplied explicitly (targeted `uncertain(tree; ...)` calls, or
+    # `update(tree, param_priors(tree; priors = ..., default = ...))`).
+    @test_throws "no longer guesses default priors" uncertain(tree)
 
     # No distribution anywhere: refused, pointed at `update`.
     @test_throws ArgumentError uncertain(tree; onset_admit = (scale = 2.5,))

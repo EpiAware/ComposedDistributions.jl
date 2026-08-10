@@ -63,13 +63,15 @@
     @test tbl.param == [:shape, :scale, :mu, :sigma]
 
     # build_priors produces a prior per free parameter (four params, four
-    # priors; no Resolve simplex to fold here).
-    priors = build_priors(tbl)
+    # priors; no Resolve simplex to fold here). No default-prior guessing, so
+    # a `default` function supplies the rest.
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    priors = build_priors(tbl; default = default)
     @test priors.onset_admit.shape isa Distribution
     @test priors.onset_admit.scale isa Distribution
     @test priors.admit_death.mu isa Distribution
     @test priors.admit_death.sigma isa Distribution
-    @test param_priors(chain) == priors
+    @test param_priors(chain; default = default) == priors
 
     # update replaces the values; rand/logpdf reflect the change.
     tuned = update(chain, (onset_admit = (shape = 3.0, scale = 1.5),
@@ -132,7 +134,8 @@ end
     @test tbl.edge == [Symbol("hosp.onset_admit"), Symbol("hosp.onset_admit"),
         Symbol("hosp.admit_disch"), Symbol("hosp.admit_disch"),
         :notify, :notify]
-    priors = param_priors(par)
+    priors = param_priors(par;
+        default = row -> Normal(row.value, max(abs(row.value), 1.0)))
     @test priors.hosp.onset_admit.shape isa Distribution
     @test priors.notify.shape isa Distribution
 
@@ -205,7 +208,8 @@ end
     @test probs(reweighted) == (death = 0.6, disch = 0.4)
 
     # param_priors: a prior per delay parameter and a Dirichlet over the simplex.
-    priors = param_priors(res)
+    priors = param_priors(res;
+        default = row -> Normal(row.value, max(abs(row.value), 1.0)))
     @test priors.death.shape isa Distribution
     @test priors.branch_probs isa Dirichlet
 
@@ -466,7 +470,8 @@ end
     @test unique(params_table(tied).edge) == [:incubation]
 
     # build_priors produces a single prior for the tied group.
-    priors = param_priors(tied)
+    priors = param_priors(tied;
+        default = row -> Normal(row.value, max(abs(row.value), 1.0)))
     @test keys(priors) == (:incubation,)
     @test priors.incubation.shape isa Distribution
 

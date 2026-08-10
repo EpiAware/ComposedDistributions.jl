@@ -1614,101 +1614,6 @@ function _table_to_nested_updates(table)
     return _freeze_tree(tree)
 end
 
-# --- parameter-derived default priors (brms-style family defaults) ----------
-#
-# The default prior is classified from the parameter's own natural domain, not
-# the leaf's variate support: a location-family delay (`Normal`, `Affine(Normal)`)
-# has unbounded variate support, but its scale parameter still lives on the
-# positive half-line, so a `minimum(dist)`/`maximum(dist)` rule would wrongly
-# give it an unconstrained prior with mass on negative scale.
-
-# Location parameters live on the whole line (a `Normal`/`LogNormal` `mu`, a
-# `Uniform` bound), so they get an unconstrained default.
-function _is_location_param(p::Symbol)
-    p === :mu || p === :location || p === :loc || p === :lower || p === :upper
-end
-
-# Scale/shape/rate-type parameters are positive by construction (the `sigma` of a
-# `Normal`/`LogNormal`, the `shape`/`scale` of a `Gamma`/`Weibull`, the `scale`
-# of an `Exponential`, and the common positive parameter names of related
-# families), so they get a positive-truncated default regardless of the leaf's
-# variate support.
-function _is_positive_param(p::Symbol)
-    p === :sigma || p === :scale || p === :rate || p === :shape ||
-        p === :alpha || p === :beta || p === :theta || p === :nu ||
-        p === :k || p === :df || p === :mean || p === :sd
-end
-
-@doc "
-
-Pick a default prior for a parameter row, brms-style.
-
-`default_prior(row)` is the per-row default [`build_priors`](@ref) uses for rows
-the user does not override. `row` is a `(; edge, param, value, support)`
-NamedTuple (a [`params_table`](@ref) row); the prior family follows the
-parameter's own natural domain (classified by name), not the leaf's variate
-support:
-
-- a probability parameter, support `[0, 1]` (a `branch_probs` row) ->
-  `Uniform(0, 1)`.
-- a scale/shape/rate-type parameter (`:sigma`, `:scale`, `:shape`, `:rate`, ...)
-  -> `truncated(Normal(value, scale); lower = 0)`, positive by construction even
-  for a location-family delay (a `Normal`/`Affine(Normal)` `sigma`).
-- a location parameter (`:mu`, `:location`, a `Uniform` bound) ->
-  `Normal(value, scale)`, unconstrained since the location lives on the whole
-  line even for a positive-support delay.
-- otherwise, an unmapped name falls back to the variate support: a non-negative
-  support -> `truncated(Normal(value, scale); lower = 0)`, else
-  `Normal(value, scale)`.
-
-The spread `scale` defaults to `max(abs(value), 1)`, a weakly-informative width
-that scales with the parameter's magnitude.
-
-# Arguments
-- `row`: a [`params_table`](@ref) row `(; edge, param, value, support)`.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-# A positive scale parameter -> a positive-truncated default.
-default_prior((; edge = :onset_admit, param = :scale,
-    value = 1.0, support = (0.0, Inf)))
-```
-
-!!! note \"DistributionsInference's `distribution_priors`\"
-    `DistributionsInference.distribution_priors` applies the
-    same support-derived heuristic generically, over any fit-protocol
-    object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
-    `ComposedDistributions` tree. It is a separate implementation, not a
-    thin wrapper over this one: `DistributionsInference` depends on
-    `ComposedDistributions`, not the reverse, so this package's own
-    `default_prior`/[`build_priors`](@ref) cannot delegate to it without
-    inverting that dependency. The two stay independent, parallel
-    implementations of the same heuristic for their respective row shapes.
-
-# See also
-- [`build_priors`](@ref): assembles the nested prior NamedTuple, using this as
-  the per-row default and accepting overrides.
-"
-function default_prior(row)
-    lo, hi = row.support
-    scale = max(abs(float(row.value)), one(float(row.value)))
-    if lo == 0 && hi == 1
-        return Distributions.Uniform(0, 1)
-    elseif _is_positive_param(row.param)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
-    elseif _is_location_param(row.param)
-        return Distributions.Normal(row.value, scale)
-    elseif lo >= 0 && isinf(hi)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
-    else
-        return Distributions.Normal(row.value, scale)
-    end
-end
-
 @doc "
 
 Assemble the nested prior `NamedTuple` from a [`params_table`](@ref) inventory.
@@ -1722,13 +1627,16 @@ For each row the prior is chosen in order:
 1. a user `priors` override for that `(edge, param)`, if present, else
 2. the row's attached `prior` (an [`uncertain`](@ref) parameter's spec rides
    the table's `prior` column), if present, else
-3. `default(row)`, the per-row default (support-derived [`default_prior`](@ref)
-   unless a different `default` function is given).
+3. `default(row)`, if a `default` function is given.
 
-By default every row gets a sensible support-derived prior, so
-`build_priors(params_table(tree))` alone yields a complete prior NamedTuple. A
-user overrides only the parameters they care about (brms-style partial override)
-through `priors`.
+ComposedDistributions does not guess a prior from a parameter's name or
+support — a `mu` is not reliably a location and a `shape` is not reliably
+positive across every `Distributions` family (an `InverseGaussian`'s `mu` is
+positive, a `GEV`/`SkewNormal`'s `shape` is signed), so a row that reaches
+neither an override, an attached spec, nor a `default` throws rather than
+guessing. Pass `priors` for the parameters you care about and/or a `default`
+function for the rest; see DistributionsInference.jl for prior-selection
+guidance.
 
 `row` is a `NamedTuple` `(; edge, param, value, support)` (the table's columns
 for that row), so a custom `default` can pick a prior from the parameter's
@@ -1743,9 +1651,8 @@ for that row), so a custom `default` can pick a prior from the parameter's
   (e.g. a `Dict`) or a nested `NamedTuple` keyed like the tree
   (`(onset_admit = (shape = prior,),)`); only the listed parameters are
   overridden (default: empty).
-- `default`: a function `row -> prior` for rows not overridden (default:
-  [`default_prior`](@ref), deriving the prior family from the parameter's
-  support).
+- `default`: a function `row -> prior` for rows not overridden by `priors` or
+  an attached spec (default: `nothing`, so an un-overridden row throws).
 
 # Examples
 ```@example
@@ -1754,19 +1661,21 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 tbl = params_table(tree)
-# Support-derived defaults everywhere, overriding only one parameter.
+# Every row named explicitly.
 nested = build_priors(tbl;
-    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),),))
+    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),
+            scale = truncated(Normal(1, 1); lower = 0)),
+        admit_death = (mu = Normal(0.5, 1),
+            sigma = truncated(Normal(0.4, 1); lower = 0))))
 nested.onset_admit.shape
 ```
 
 # See also
 - [`params_table`](@ref): the flat inventory keyed against.
-- [`default_prior`](@ref): the support-derived per-row default.
 - `composed_parameters_model` (downstream), [`update`](@ref): consume the result.
 "
 function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
-        default = default_prior)
+        default = nothing)
     edges = Tables.getcolumn(table, :edge)
     params_col = Tables.getcolumn(table, :param)
     values = Tables.getcolumn(table, :value)
@@ -1791,7 +1700,11 @@ function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
             default(row)
         else
             throw(ArgumentError(
-                "no prior for ($edge, $param) and no default supplied"))
+                "no prior for ($edge, $param); ComposedDistributions no " *
+                "longer guesses default priors — pass one via " *
+                "`priors = (...)`, supply a `default` function, or attach " *
+                "one directly with `uncertain`; see DistributionsInference " *
+                "for prior-selection guidance"))
         end
         _nest_insert!(tree, _split_edge(edge), param, prior)
     end
@@ -1828,11 +1741,13 @@ nested prior `NamedTuple` in one call, forwarding the same keyword surface.
 It adds no prior logic of its own.
 
 The result is spec-shaped (a nested NamedTuple of distributions keyed like the
-tree), so it feeds [`update`](@ref) directly: `update(tree, param_priors(tree))`
-promotes every free parameter to [`uncertain`](@ref) with its default prior —
-the explicit estimate-everything path under uncertain-first (a bare tree
-estimates nothing). Pass `priors` to swap in your own spec for named
-parameters.
+tree), so it feeds [`update`](@ref) directly: `update(tree, param_priors(tree;
+priors = ...))` promotes free parameters to [`uncertain`](@ref) with the given
+priors — the explicit estimate-everything path under uncertain-first (a bare
+tree estimates nothing). ComposedDistributions does not guess a prior from a
+parameter's name or support (see [`build_priors`](@ref)), so `priors` (and/or
+a `default` function) must cover every row not already carrying an attached
+spec.
 
 # Arguments
 - `tree`: a composed distribution from [`compose`](@ref).
@@ -1841,8 +1756,8 @@ parameters.
 - `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
   or a nested `NamedTuple` keyed like the tree; only the listed parameters are
   overridden (default: empty).
-- `default`: a function `row -> prior` for rows not overridden (default:
-  [`default_prior`](@ref)).
+- `default`: a function `row -> prior` for rows not overridden by `priors` or
+  an attached spec (default: `nothing`, so an un-overridden row throws).
 
 # Examples
 ```@example
@@ -1850,7 +1765,11 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
-priors = param_priors(tree)
+priors = param_priors(tree;
+    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),
+            scale = truncated(Normal(1, 1); lower = 0)),
+        admit_death = (mu = Normal(0.5, 1),
+            sigma = truncated(Normal(0.4, 1); lower = 0))))
 priors.onset_admit.shape
 ```
 
@@ -1867,11 +1786,13 @@ end
 # default for an uncertain branch-probability simplex is injected by walking the
 # tree alongside the built priors: at each `Resolve` the `branch_probs` entry is
 # set to the node's own attached `Dirichlet` if it has one, else a flat
-# `Dirichlet(ones(K))`, so `update(tree, param_priors(tree))` promotes the
-# simplex to uncertain with a sensible default (the branch probabilities are
-# recovered from any draw). `Compete` (winning probability derived) and `Choose`
-# (data-selected) have no node-level probability parameter, so nothing is
-# injected for them.
+# `Dirichlet(ones(K))`. This is a structural default for the simplex (always a
+# flat Dirichlet, never guessed from a name), unrelated to the per-parameter
+# default-prior machinery `build_priors` no longer has: it always fills the
+# `branch_probs` row, so `param_priors(tree; priors = ..., default = ...)`
+# only needs the leaves' own parameters covered. `Compete` (winning probability
+# derived) and `Choose` (data-selected) have no node-level probability
+# parameter, so nothing is injected for them.
 function _attach_branch_prob_priors(nt::NamedTuple, d)
     ks = keys(nt)
     vals = map(ks) do k

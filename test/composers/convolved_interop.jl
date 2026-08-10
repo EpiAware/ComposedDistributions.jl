@@ -361,7 +361,7 @@ end
     @test [(r.param, r.value) for r in c2] == [(:shape, 1.0), (:scale, 1.5)]
 
     # build_priors assembles the nested prior tree down to the components.
-    pr = build_priors(tbl)
+    pr = build_priors(tbl; default = row -> Normal(row.value, 1.0))
     @test pr isa NamedTuple
     @test haskey(pr, :report)
     @test haskey(pr.total.component_1, :shape)

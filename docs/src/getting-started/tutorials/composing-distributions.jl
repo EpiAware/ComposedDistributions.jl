@@ -264,14 +264,20 @@ tbl = params_table(template)
 tbl.edge, tbl.param
 
 # [`build_priors`](@ref) takes that table (any Tables.jl source with `edge`,
-# `param`, `value`, `support` columns) and derives a default prior per row from
-# that leaf's support: a positive scale parameter gets a positive-truncated
-# prior, a location parameter an unbounded one, a `[0, 1]` probability a
-# `Uniform(0, 1)`.
-# So `build_priors(tbl)` alone yields a complete set, defined against the table
-# rather than by hand-matching the tree.
+# `param`, `value`, `support` columns) and assembles a nested prior `NamedTuple`
+# from priors given per row, defined against the table rather than by
+# hand-matching the tree.
+# ComposedDistributions does not guess a prior from a parameter's name or
+# support — a `mu` is not reliably a location and a `shape` is not reliably
+# positive across every `Distributions` family — so every row needs a prior
+# named explicitly (or a `default` function for the rows not named).
 
-priors = build_priors(tbl);
+priors = build_priors(tbl;
+    priors = (
+        onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),
+            scale = truncated(Normal(1, 1); lower = 0)),
+        admit_death = (mu = Normal(0.5, 1),
+            sigma = truncated(Normal(0.4, 1); lower = 0))));
 
 priors.onset_admit.shape
 

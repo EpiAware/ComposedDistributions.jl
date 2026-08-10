@@ -133,7 +133,8 @@ end
 
     tree = compose((resolution = resolve(:death => (Gamma(1.5, 1.0), 0.3),
         :disch => (Gamma(2.0, 1.5), 0.7)),))
-    promoted = update(tree, param_priors(tree))
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    promoted = update(tree, param_priors(tree; default = default))
 
     @test has_uncertain(promoted)
     res = event(promoted, :resolution)
@@ -162,7 +163,8 @@ end
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:stick_1), tbl.param)
 
-    promoted = update(c, param_priors(c))
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    promoted = update(c, param_priors(c; default = default))
     # Only the two Gamma delays' shape/scale: four parameters, no node dim.
     @test flat_dimension(promoted) == 4
 end
@@ -180,7 +182,8 @@ end
     @test !any(==(:branch_probs), tbl.edge)
     @test !any(==(:weights), tbl.param)
 
-    promoted = update(ch, param_priors(ch))
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    promoted = update(ch, param_priors(ch; default = default))
     @test flat_dimension(promoted) == 4
 end
 
@@ -204,7 +207,8 @@ end
             :disch => (Gamma(2.0, 1.5), 0.7)),
         total = total,
         report = LogNormal(0.5, 0.4)))
-    promoted = update(tree, param_priors(tree))
+    default = row -> Normal(row.value, max(abs(row.value), 1.0))
+    promoted = update(tree, param_priors(tree; default = default))
 
     @test has_uncertain(promoted)
     @test has_uncertain(event(promoted, :resolution))

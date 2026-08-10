@@ -605,24 +605,33 @@ end
     @test_throws ArgumentError event(d, :nope)
 end
 
-@testitem "build_priors and default_prior" begin
+@testitem "build_priors requires an explicit prior for every row" begin
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
     tbl = params_table(tree)
-    nested = build_priors(tbl)
-    @test nested.onset_admit.shape isa Truncated
-    @test nested.admit_death.mu isa Normal
-    # A user override wins over the default.
-    ov = build_priors(tbl;
-        priors = (onset_admit = (shape = truncated(Normal(2, 0.5);
-            lower = 0),),))
-    @test ov.onset_admit.shape == truncated(Normal(2, 0.5); lower = 0)
-    # Probability parameter default is Uniform(0, 1).
-    dp = default_prior((; edge = :r, param = :death, value = 0.3,
-        support = (0.0, 1.0)))
-    @test dp == Uniform(0, 1)
+
+    # No guessed default any more: a bare call is refused, pointing at the
+    # escape hatches (`priors`, a `default` function, `uncertain`) and at
+    # DistributionsInference for prior-selection guidance.
+    @test_throws "no longer guesses default priors" build_priors(tbl)
+    @test_throws "DistributionsInference" build_priors(tbl)
+
+    # A user override for every row still assembles the nested NamedTuple.
+    priors = (
+        onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),
+            scale = truncated(Normal(1, 1); lower = 0)),
+        admit_death = (mu = Normal(0.5, 1),
+            sigma = truncated(Normal(0.4, 1); lower = 0)))
+    nested = build_priors(tbl; priors = priors)
+    @test nested.onset_admit.shape == truncated(Normal(2, 0.5); lower = 0)
+    @test nested.admit_death.mu == Normal(0.5, 1)
+
+    # A `default` function is still a supported escape hatch for rows the
+    # user does not want to name individually.
+    withdefault = build_priors(tbl; default = row -> Normal(row.value, 1.0))
+    @test withdefault.onset_admit.shape isa Normal
 end
 
 @testitem "param_priors is a thin front-door over build_priors(params_table(...))" begin
@@ -631,12 +640,18 @@ end
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
 
-    @test param_priors(tree) == build_priors(params_table(tree))
-    # The keyword surface is forwarded unchanged.
+    # The keyword surface (including `priors` and `default`) is forwarded
+    # unchanged.
+    priors = (onset_admit = (shape = Normal(2, 1), scale = Normal(1, 1)),
+        admit_death = (mu = Normal(0.5, 1), sigma = Normal(0.4, 1)))
+    @test param_priors(tree; priors = priors) ==
+          build_priors(params_table(tree); priors = priors)
+
     shape_prior = Normal(2, 0.5)
-    @test param_priors(tree; priors = Dict((:onset_admit, :shape) => shape_prior)) ==
-          build_priors(params_table(tree);
-        priors = Dict((:onset_admit, :shape) => shape_prior))
+    default = row -> Normal(row.value, 1.0)
+    partial = Dict((:onset_admit, :shape) => shape_prior)
+    @test param_priors(tree; priors = partial, default = default) ==
+          build_priors(params_table(tree); priors = partial, default = default)
 end
 
 @testitem "Composer show is compact; inspect gives detail" begin

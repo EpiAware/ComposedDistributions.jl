@@ -49,10 +49,9 @@ See the [Getting started](@ref getting-started) walkthrough for a side-by-side e
 | Verb | What it does | Returns |
 |---|---|---|
 | `params_table` | the flat free-parameter inventory | a Tables.jl table |
-| `build_priors` | support-derived default priors from that table | a nested prior `NamedTuple` |
-| `default_prior` | the default prior for one parameter row | a `Distribution` |
-| `param_priors` | `params_table` + `build_priors` in one call, for `uncertain(tree)` (bare) | a nested prior `NamedTuple` |
-| `uncertain(tree, ...)` | promote one or more free parameters of an existing tree; bare `uncertain(tree)` promotes all | a tree |
+| `build_priors` | assembles explicit per-row priors (`priors`/`default`) from that table | a nested prior `NamedTuple` |
+| `param_priors` | `params_table` + `build_priors` in one call | a nested prior `NamedTuple` |
+| `uncertain(tree, ...)` | promote one or more named free parameters of an existing tree with explicit priors | a tree |
 
 See DistributionsInference.jl's [inference guide](https://distributionsinference.epiaware.org/dev/getting-started/inference) for how these feed the estimation pipeline.
 

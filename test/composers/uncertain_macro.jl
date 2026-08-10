@@ -27,7 +27,7 @@ end
     @test tbl.prior[shape_idx] == Normal(0.7, 0.2)
     @test tbl.prior[scale_idx] === nothing
 
-    priors = build_priors(tbl)
+    priors = build_priors(tbl; default = row -> Normal(row.value, 1.0))
     @test priors.onset.shape == Normal(0.7, 0.2)
 end
 

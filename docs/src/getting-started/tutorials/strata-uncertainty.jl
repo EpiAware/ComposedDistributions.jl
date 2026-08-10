@@ -151,13 +151,17 @@ flat = ComposedDistributions.flat_dimension(resolved)
 (estimated_parameters = flat,)
 
 # [`uncertain`](@ref) is the verb that moves the estimation boundary on an
-# already-built tree: `uncertain(tree, params)` promotes just the named
-# parameters
-# (a targeted promotion, built on `update`'s merge mode); bare `uncertain(tree)`
-# promotes every free parameter with support-derived default priors, the
-# explicit estimate-everything path.
+# already-built tree: `uncertain(tree, params)` / `uncertain(tree; kwargs...)`
+# promote just the named parameters (a targeted promotion, built on `update`'s
+# merge mode).
+# ComposedDistributions does not guess a prior from a parameter's name, so
+# promoting several parameters at once means naming a prior for each; the
+# already-uncertain `admit_death.mu` keeps its existing prior untouched.
 
-promoted = uncertain(resolved)
+promoted = uncertain(resolved;
+    onset_admit = (shape = truncated(Normal(2.0, 1.0); lower = 0),
+        scale = truncated(Normal(1.1, 1.0); lower = 0)),
+    admit_death = (sigma = truncated(Normal(0.4, 1.0); lower = 0)))
 (before = ComposedDistributions.flat_dimension(resolved),
     after = ComposedDistributions.flat_dimension(promoted))
 

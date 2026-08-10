@@ -326,13 +326,15 @@ a sibling parameter in the same call without itself becoming uncertain. A
 call with no distribution anywhere is refused: use [`update`](@ref) for a
 purely concrete edit.
 
-`uncertain(tree)` (no `params`) promotes every free parameter with its
-default, support-derived prior — one call in place of
-`update(tree, param_priors(tree))`.
+`uncertain(tree)` (no `params`) is refused: ComposedDistributions does not
+guess default priors, so promoting every free parameter needs them supplied
+explicitly — either as targeted `uncertain(tree; ...)` calls, or in one go via
+`update(tree, param_priors(tree; priors = ..., default = ...))` once every row
+has a prior.
 
-This is the preferred way to write a promotion: `update(tree, nt)` still
-accepts the identical distribution-valued `nt` directly (unchanged), for a
-call site that assembles `nt` programmatically without knowing in advance
+This is the preferred way to write a targeted promotion: `update(tree, nt)`
+still accepts the identical distribution-valued `nt` directly (unchanged), for
+a call site that assembles `nt` programmatically without knowing in advance
 whether it promotes anything.
 
 # Arguments
@@ -353,10 +355,6 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 # Targeted promotion: only onset_admit.shape becomes uncertain.
 u = uncertain(tree; onset_admit = (shape = LogNormal(log(2.0), 0.2),))
 has_uncertain(u)
-
-# Promote every free parameter with a default prior.
-everything = uncertain(tree)
-has_uncertain(everything)
 ```
 
 # See also
@@ -364,7 +362,7 @@ has_uncertain(everything)
   through; also the concrete-set / node-replacement / flat-vector / table /
   chain verb.
 - [`Uncertain`](@ref): the leaf type a promoted parameter's spec builds.
-- [`param_priors`](@ref): the default priors `uncertain(tree)` (bare) applies.
+- [`param_priors`](@ref): assembles a full prior set from explicit `priors`.
 - [`has_uncertain`](@ref): check whether any promotion remains unresolved.
 "
 function uncertain(d::AbstractComposedDistribution, params::NamedTuple)
@@ -375,7 +373,13 @@ function uncertain(d::AbstractComposedDistribution, params::NamedTuple)
 end
 
 function uncertain(d::AbstractComposedDistribution; kwargs...)
-    isempty(kwargs) && return uncertain(d, param_priors(d))
+    isempty(kwargs) && throw(ArgumentError(
+        "uncertain(tree) needs at least one parameter given an explicit " *
+        "prior, as a keyword (uncertain(tree; param = prior, ...)) or a " *
+        "NamedTuple (uncertain(tree, params)); ComposedDistributions no " *
+        "longer guesses default priors — see DistributionsInference for " *
+        "prior-selection guidance, or build a full set explicitly with " *
+        "param_priors(tree; priors = ..., default = ...)"))
     return uncertain(d, values(kwargs))
 end
 
@@ -417,10 +421,11 @@ _uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
 # the leaf's current spec or fixed value. This is the object-level spelling of
 # "distribution in the slot = estimate, value = fix": `update` with distribution
 # values is the targeted way to make parameters uncertain, and
-# `update(tree, param_priors(tree))` promotes a whole tree to uncertainty over
-# its free parameters with default priors (the explicit estimate-everything
-# escape hatch). Called from the leaf `_update` in merge mode; the methods live
-# here (not introspection.jl) so they can dispatch on `Shared`/`Uncertain`.
+# `update(tree, param_priors(tree; priors = ..., default = ...))` promotes a
+# whole tree to uncertainty over its free parameters with explicit priors (the
+# estimate-everything escape hatch, once every row has one). Called from the
+# leaf `_update` in merge mode; the methods live here (not introspection.jl) so
+# they can dispatch on `Shared`/`Uncertain`.
 # Shared stays outermost so its tag keeps routing; `Uncertain` wraps the
 # concrete (possibly `Truncated`) template so its `ValueSupport` stays concrete
 # (see the parameterisation note above).
