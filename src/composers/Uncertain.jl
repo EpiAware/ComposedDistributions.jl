@@ -389,7 +389,7 @@ end
 # pinning definite values (an `update` from fitted draws) collapses the
 # uncertain leaf to its concrete distribution.
 
-free_leaf(d::Uncertain) = free_leaf(d.template)
+inner_dist(d::Uncertain) = d.template
 rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
 # `Uncertain` is a wrapper layer of its own in `composed_to_table`, peeling to
@@ -399,10 +399,10 @@ rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 leaf_layers(u::Uncertain) = (u, leaf_layers(u.template)...)
 
 # A modifier-owned extra parameter (e.g. a thinned template's `:thin` factor)
-# survives an uncertain leaf, so `composed_to_table` still surfaces it. There is no
+# survives an uncertain leaf, so `composed_to_table` still surfaces it
+# (forwarded via `inner_dist(::Uncertain)`). There is no
 # `set_extra_leaf_params(::Uncertain)`: `rewrap_leaf` strips the uncertainty, so
 # the setter always runs on the rebuilt concrete leaf, not on the `Uncertain`.
-extra_leaf_params(d::Uncertain) = extra_leaf_params(d.template)
 
 # A shared tag survives an uncertain leaf (a `shared(:inc, uncertain(...))`
 # is tagged outside, but forward for robustness when nested the other way).

@@ -291,7 +291,7 @@ probs(d::Varying) = probs(d.reference)
 # Peel/rewrap through the wrapper so `composed_to_table` / `update` see the
 # inner free delay and a parameter update rebuilds the same varying leaf
 # around it.
-free_leaf(d::Varying) = free_leaf(d.reference)
+inner_dist(d::Varying) = d.reference
 function rewrap_leaf(d::Varying, inner)
     return Varying(d.f, d.covariate, rewrap_leaf(d.reference, inner))
 end
@@ -303,7 +303,6 @@ end
 node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
 leaf_layers(d::Varying) = (d, leaf_layers(d.reference)...)
 _shared_tag(d::Varying) = _shared_tag(d.reference)
-extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
 
 @doc "
 

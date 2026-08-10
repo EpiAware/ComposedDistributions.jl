@@ -1148,3 +1148,33 @@ end
         admit_death = (shape = 2.0, scale = 1.0)))
     @test params(collapsed).onset_admit == (9.0, 2.5)
 end
+
+@testitem "inner_dist: single-layer peel drives the read-through hooks" begin
+    using Distributions, ComposedDistributions
+
+    # A plain leaf's inner is itself, so peeling is the identity.
+    gamma = Gamma(2.0, 1.0)
+    @test ComposedDistributions.inner_dist(gamma) === gamma
+    @test ComposedDistributions.free_leaf(gamma) === gamma
+    @test ComposedDistributions.shared_tag(gamma) === nothing
+    @test ComposedDistributions.uncertain_specs(gamma) === nothing
+    @test ComposedDistributions.extra_leaf_params(gamma) == NamedTuple()
+
+    # A Truncated wrapper peels through the new hook to the (un)truncated inner.
+    trunc = truncated(Gamma(2.0, 1.0); upper = 10.0)
+    @test ComposedDistributions.free_leaf(trunc) ===
+          ComposedDistributions.free_leaf(Gamma(2.0, 1.0))
+    @test ComposedDistributions.shared_tag(trunc) === nothing
+
+    # A Shared tag survives the peel via the same generic forward.
+    sh = ComposedDistributions.shared(:inc, Gamma(2.0, 1.0))
+    @test ComposedDistributions.inner_dist(sh) === Gamma(2.0, 1.0)
+    @test ComposedDistributions.shared_tag(sh) === :inc
+    @test ComposedDistributions.free_leaf(sh) === Gamma(2.0, 1.0)
+
+    # Nested wrappers peel through every stored layer.
+    nested = truncated(ComposedDistributions.shared(:x, Gamma(2.0, 1.0));
+        upper = 10.0)
+    @test ComposedDistributions.free_leaf(nested) === Gamma(2.0, 1.0)
+    @test ComposedDistributions.shared_tag(nested) === :x
+end

@@ -14,6 +14,12 @@ public update
 public child_nleaves, child_logpdf, child_rand!
 public free_leaf, rewrap_leaf, component_names
 
+# `inner_dist` is the single-layer peel hook the read-through leaf-wrapper hooks
+# recurse through: a wrapper defines one method returning its inner distribution
+# and `free_leaf`/`uncertain_specs`/`extra_leaf_params`/`shared_tag` forward
+# through it for free.
+public inner_dist
+
 # The published leaf protocol a downstream leaf-wrapper package (censoring in
 # CensoredDistributions, the modifiers in ModifiedDistributions) extends
 # alongside `free_leaf`/`rewrap_leaf`. `uncertain_specs` routes a leaf's

@@ -103,9 +103,11 @@ ComposedDistributions.shared_tag(shared(:inc, Gamma(2.0, 1.0)))
 - [`shared`](@ref): constructs a tagged leaf.
 - [`tie`](@ref): the tree-level, path-based spelling of the same tie.
 "
-shared_tag(leaf) = nothing
 shared_tag(::Shared{tag}) where {tag} = tag
-shared_tag(d::Truncated) = shared_tag(d.untruncated)
+@inline function shared_tag(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? nothing : shared_tag(inner)
+end
 # The underscored alias retained for internal callers and the leaf-wrapper
 # method definitions; `const` makes it the same function object.
 const _shared_tag = shared_tag
@@ -115,7 +117,7 @@ const _shared_tag = shared_tag
 # straight through. Only the introspection/reconstruction layers read the tag.
 # (`get_dist(::Shared)` lives in the ModifiedDistributions extension, which owns
 # the `get_dist` unwrap protocol.)
-free_leaf(d::Shared) = free_leaf(d.dist)
+inner_dist(d::Shared) = d.dist
 function rewrap_leaf(d::Shared{tag}, inner) where {tag}
     return Shared{tag}(rewrap_leaf(d.dist, inner))
 end
@@ -130,7 +132,7 @@ leaf_layers(d::Shared) = (d, leaf_layers(d.dist)...)
 # `shared(:tag, thin(...))`); the setter re-applies the tag around the rebuilt
 # inner. The empty-`NamedTuple` method disambiguates the forward from the
 # generic identity in introspection.jl.
-extra_leaf_params(d::Shared) = extra_leaf_params(d.dist)
+# (`extra_leaf_params` forwards through the new `inner_dist(::Shared)` hook.)
 set_extra_leaf_params(d::Shared, ::NamedTuple{()}) = d
 function set_extra_leaf_params(d::Shared{tag}, vals::NamedTuple) where {tag}
     return Shared{tag}(set_extra_leaf_params(d.dist, vals))
