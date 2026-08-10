@@ -35,12 +35,11 @@ ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
 ADTypes = "1"
 Aqua = "0.8"
 BenchmarkTools = "1"
-ConvolvedDistributions = "0.4, 1"
+ConvolvedDistributions = "0.2, 0.3, 1"
 DifferentiationInterface = "0.6, 0.7"
 DifferentiationInterfaceTest = "0.9, 0.10, 0.11"
 Distributions = "0.25"
 Documenter = "1"
-EpiAwarePackageTools = "0.3"
 ExplicitImports = "1"
 ForwardDiff = "0.10, 1"
 JET = "0.9, 0.10, 0.11, 0.12"
@@ -58,3 +57,4 @@ TestItems = "1"
 
 [sources]
 ComposedDistributions = {path = ".."}
+EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}

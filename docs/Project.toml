@@ -24,10 +24,12 @@ ComposedDistributions = "2f642b71-32a9-4f47-97c4-6deb7517f7a7"
 [sources]
 ComposedDistributions = {path = ".."}
 ADFixtures = {path = "../test/ADFixtures"}
+# Until EpiAwarePackageTools is registered, pin it by git so the docs
+# environment resolves out of the box (mirrors test/Project.toml).
+EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}
 
 [compat]
-ConvolvedDistributions = "0.4, 1"
-EpiAwarePackageTools = "0.3"
+ConvolvedDistributions = "0.2, 0.3, 1"
 DifferentiationInterfaceTest = "0.9, 0.10, 0.11"
 Markdown = "1"
 Statistics = "1"
