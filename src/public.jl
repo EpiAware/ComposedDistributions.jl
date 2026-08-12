@@ -83,6 +83,16 @@ public validate_pool_groups, validate_tree_names,
 # only implies it.
 public param_names, leaf_ctor
 
+# The reconstruction/tie-identity split (#332 follow-up): `_update_leaf` (the
+# value-tuple rebuild `update`, `reconstruct` and `uncertain`'s pinning path
+# all route through) calls `rebuild_leaf`, an ordinary method with no
+# constructor-identity contract; `tie` groups leaves by `leaf_signature`
+# instead, which is where the egal-stability contract actually belongs. A
+# non-native leaf overrides `rebuild_leaf` (and usually `leaf_signature`)
+# rather than `leaf_ctor`, so it never needs a callable-struct constructor
+# just to satisfy `tie`.
+public rebuild_leaf, leaf_signature
+
 # The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
 # root the composer nodes subtype; `AbstractMultiChild` groups the positional
 # multi-child composers (`Sequential` / `Parallel`); `AbstractOneOf` is the
