@@ -221,7 +221,7 @@ nothing # hide
 It genuinely composes, tables, flattens and fits, with no further method — nested as a child of a built-in composer, or built directly with an `uncertain` leaf of its own:
 
 ```@example extending
-both = Both((uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+both = Both((uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
         Gamma(1.5, 1.0)), (:leg, :tail))
 tbl = composed_to_table(both)  # one estimated row, for the uncertain leg
 (node = tbl.node[1], estimated_rows = count(!isnothing, tbl.prior))

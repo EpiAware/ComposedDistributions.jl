@@ -330,7 +330,7 @@ using ComposedDistributions, Distributions
 using ComposedDistributions.TestUtils: test_estimation_dimension
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)), admit_death = LogNormal(0.5, 0.4)))
+    alpha = LogNormal(log(2.0), 0.2)), admit_death = LogNormal(0.5, 0.4)))
 test_estimation_dimension(tree)
 nothing # hide
 ```
@@ -822,7 +822,7 @@ nothing # hide
 function test_leaf_protocol_completeness(wrap::Function;
         leaf::UnivariateDistribution = Distributions.Gamma(2.0, 1.0),
         prior::UnivariateDistribution = LogNormal(0.0, 0.5),
-        param::Symbol = :shape, tag::Symbol = :leaf_protocol_completeness_tag,
+        param::Symbol = :alpha, tag::Symbol = :leaf_protocol_completeness_tag,
         name::AbstractString = "wrapper")
     return @testset "leaf-protocol completeness: $name" begin
         # free_leaf / rewrap_leaf: the two mandatory hooks, checked on a plain

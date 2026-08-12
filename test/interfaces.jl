@@ -183,7 +183,7 @@ fits" begin
 
     both = Both(
         (uncertain(Gamma(2.0, 1.0);
-                shape = LogNormal(log(2.0), 0.2)), Gamma(1.5, 1.0)),
+                alpha = LogNormal(log(2.0), 0.2)), Gamma(1.5, 1.0)),
         (:leg, :tail))
 
     # Tables: composed_to_table walks the node generically (no method of its
@@ -197,8 +197,8 @@ fits" begin
     # parameters at compile time and the estimated flat vector round-trips.
     @test flat_dimension(both) == 1
     nt = unflatten(both, [3.0])
-    @test nt == (leg = (shape = 3.0, scale = 1.0), tail = (shape = 1.5,
-        scale = 1.0))
+    @test nt == (leg = (alpha = 3.0, theta = 1.0), tail = (alpha = 1.5,
+        theta = 1.0))
     @test flatten(both, nt) == [3.0]
 
     # Fits: reconstruct/update collapse the tree at an estimated draw, the
@@ -207,7 +207,7 @@ fits" begin
     @test fitted isa Both
     @test params(node_children(fitted)[1]) == (4.0, 1.0)
     @test ComposedDistributions.update(both,
-        (leg = (shape = 5.0, scale = 1.0), tail = (shape = 1.5, scale = 1.0))) isa
+        (leg = (alpha = 5.0, theta = 1.0), tail = (alpha = 1.5, theta = 1.0))) isa
           Both
 
     # Composes: Both nests as a named child of a built-in composer (and a
@@ -238,12 +238,12 @@ end
     NoMethods(a, b) = NoMethods{Multivariate, Continuous}(a, b)
 
     incomplete = NoMethods(
-        uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+        uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
         Gamma(1.5, 1.0))
 
     @test_throws MethodError composed_to_table(incomplete)
     @test_throws MethodError ComposedDistributions.update(incomplete,
-        (a = (shape = 3.0, scale = 1.0), b = (shape = 1.5, scale = 1.0)))
+        (a = (alpha = 3.0, theta = 1.0), b = (alpha = 1.5, theta = 1.0)))
     # `flat_dimension` never even reaches `node_children`/`component_names`
     # for a type with no (names, children-types) type-parameter shape at
     # all -- the codec's own generation-time layout check catches it first,
