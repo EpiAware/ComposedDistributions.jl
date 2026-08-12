@@ -88,8 +88,9 @@ end
 # is a Parallel of the branch tails. Convolving the stack returns one series per
 # branch, each delayed by `origin` convolved with the branch tail (e.g. a shared
 # incubation, then a reporting branch and a death branch).
-function compose(origin::Union{UnivariateDistribution, Sequential, Parallel,
-            Choose};
+function compose(
+        origin::Union{UnivariateDistribution,
+            AbstractComposedDistribution{Multivariate}};
         branches...)
     isempty(branches) &&
         throw(ArgumentError("compose(origin; branches...) needs ≥1 branch"))
@@ -155,12 +156,13 @@ end
 # Lower a single front-end value to a composer child. A nested NamedTuple
 # recurses (carrying its own keys); a bare vector/tuple of composables becomes a
 # Sequential with default `:step_i` names (a plain vector has no names to carry).
-# A pre-built composer value (Sequential/Parallel) drops in unchanged, so a
+# A pre-built multivariate composer value (Sequential/Parallel/Choose, or a
+# downstream `AbstractComposedDistribution` node) drops in unchanged, so a
 # `compose(...)` result nests as a child and a `Sequential((...), names)` value
 # keeps readable step names. A `Resolve` is a UnivariateDistribution leaf and is
 # covered by the first method.
 _compose_child(d::UnivariateDistribution) = d
-_compose_child(c::Union{Sequential, Parallel, Choose}) = c
+_compose_child(c::AbstractComposedDistribution{Multivariate}) = c
 _compose_child(nt::NamedTuple) = compose(nt)
 function _compose_child(v::Union{AbstractVector, Tuple})
     all(_is_composable, v) ||

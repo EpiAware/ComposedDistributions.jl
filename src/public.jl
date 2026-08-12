@@ -9,10 +9,17 @@
 public update
 
 # The composer node/leaf extension contract: a new node implements
-# `child_nleaves` / `child_logpdf` / `child_rand!`, and a new leaf wrapper
-# `free_leaf` / `rewrap_leaf`. `component_names` reads a node's child names.
+# `child_nleaves` / `child_logpdf` / `child_rand!` for flat-vector scoring and
+# sampling, and a new leaf wrapper `free_leaf` / `rewrap_leaf`.
+# `component_names` reads a node's child names; `node_children` is the single
+# extra hook that gets `has_varying`/`has_uncertain` for free over a
+# third-party node's own children (see its docstring). A node subtyping
+# `AbstractComposedDistribution` composes as a named child of the built-ins
+# with no registration once these are defined; see
+# `docs/src/developer/extending.md` for what is, and is not, supported yet
+# beyond flat-vector scoring for a genuinely new multi-leaf node type.
 public child_nleaves, child_logpdf, child_rand!
-public free_leaf, rewrap_leaf, component_names
+public free_leaf, rewrap_leaf, component_names, node_children
 
 # `inner_dist` is the single-layer peel hook the read-through leaf-wrapper hooks
 # recurse through: a wrapper defines one method returning its inner distribution
@@ -31,7 +38,7 @@ public inner_dist
 # parameters (the thinning factor is the first instance). A leaf-wrapper package
 # that extends only `free_leaf`/`rewrap_leaf` but not these silently drops an
 # attached prior on a wrapped leaf (`build_priors` then treats it as fixed). See
-# `docs/src/developer/leaf-protocol.md`.
+# `docs/src/developer/extending.md`.
 public uncertain_specs, leaf_detail_lines, shared_tag, leaf_param_names
 public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 
@@ -59,7 +66,7 @@ public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
 # The pooling gate surface (#325): DistributionsInference.jl's fit-protocol
 # extension calls `validate_pool_groups` and `validate_tree_names` directly
 # to gate a composed tree once at `distribution_to_logdensity` construction,
-# before `params_table`/`build_priors` walk it per gradient evaluation.
+# before `composed_to_table`/`build_priors` walk it per gradient evaluation.
 # `validate_pool_groups` checks every leaf of a pool group agrees on
 # population and parameterisation; `validate_tree_names` checks that no pool
 # group, shared tag, or top-level edge name collides with one from another of

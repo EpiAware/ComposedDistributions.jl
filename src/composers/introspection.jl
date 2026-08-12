@@ -1967,11 +1967,43 @@ end
 _rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
 _rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
 
-# A composer node's children tuple, uniform across the node kinds (the field
-# holding them differs per type). Pairs with `_rebuild` for generic node walks.
-_node_children(d::Union{Sequential, Parallel}) = d.components
-_node_children(c::AbstractOneOf) = c.delays
-_node_children(d::Choose) = d.alternatives
+@doc """
+
+The immediate children of a composer node, as a `Tuple`.
+
+`node_children(node)` is the one hook a downstream composer node defines to
+get [`has_varying`](@ref) and [`has_uncertain`](@ref) for free: both walk a
+node generically as `any(f, node_children(node))`, dispatching on the public
+`AbstractComposedDistribution` root rather than a closed list of the built-in
+types, so a third-party node needs no registration to answer either
+predicate. The built-ins each hold their children in a differently-named
+field (`.components`, `.delays`, `.alternatives`), which is exactly what this
+accessor is for: one uniform name over that variation.
+
+# Arguments
+- `node`: the composer node whose immediate children are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset_admit = Gamma(2.0, 1.0),
+    admit_death = LogNormal(0.5, 0.4)))
+ComposedDistributions.node_children(tree)
+```
+
+# See also
+- [`has_varying`](@ref), [`has_uncertain`](@ref): the two generic walks built
+  on this accessor.
+""" function node_children end
+
+node_children(d::Union{Sequential, Parallel}) = d.components
+node_children(c::AbstractOneOf) = c.delays
+node_children(d::Choose) = d.alternatives
+
+# Retained for the package's own pre-existing internal call sites; `node_children`
+# is the public name (see `public.jl`).
+const _node_children = node_children
 
 # --- build_priors: composed_to_table + flat priors -> nested NamedTuple -----
 

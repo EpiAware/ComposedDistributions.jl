@@ -86,12 +86,17 @@ end
 @testitem "a user-defined composer node satisfies the node contract" begin
     using ComposedDistributions, Distributions, Random
     using ComposedDistributions.TestUtils: test_node_interface
-    import ComposedDistributions: child_nleaves, child_logpdf, child_rand!
+    import ComposedDistributions: child_nleaves, child_logpdf, child_rand!,
+                                  node_children, AbstractComposedDistribution
 
     # A minimal user node combining two branches side by side (the worked
-    # example from the interface-contracts docs). The public contract is reached
-    # by the qualified name, the same way the leaf hooks are.
-    struct Both{A, B}
+    # example from the extending-guide docs). The public contract is reached
+    # by the qualified name, the same way the leaf hooks are. Subtyping
+    # `AbstractComposedDistribution` (not a bare struct) is what lets it nest
+    # as a named child of a built-in below (#332/#345's structural-composability
+    # fix: composability is checked against this abstract root, not a closed
+    # list of the built-in types).
+    struct Both{A, B} <: AbstractComposedDistribution{Multivariate, Continuous}
         first::A
         second::B
     end
@@ -108,6 +113,7 @@ end
         child_rand!(out, offset + n1, rng, b.second)
         return nothing
     end
+    node_children(b::Both) = (b.first, b.second)
 
     node = Both(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
     @test child_nleaves(node) == 2
@@ -130,6 +136,20 @@ end
     @test ComposedDistributions._child_nleaves === child_nleaves
     @test ComposedDistributions._child_logpdf === child_logpdf
     @test ComposedDistributions._child_rand! === child_rand!
+
+    # `Both` nests as a named child of a built-in: construction accepts it
+    # (the `_is_composable` structural check), the flat-vector `logpdf` scores
+    # through it (positional, no naming needed), and `has_varying`/
+    # `has_uncertain` walk through its `node_children`.
+    tree = sequential(:pair => node, :tail => Gamma(1.0, 1.0))
+    @test length(tree) == 3
+    flat = [1.0, 2.0, 0.5]
+    @test logpdf(tree, flat) ≈
+          child_logpdf(node, flat, 0, 2) + logpdf(Gamma(1.0, 1.0), flat[3])
+    @test has_varying(tree) == false
+    @test has_uncertain(tree) == false
+    @test parallel(:a => node, :b => Gamma(1.0, 1.0)) isa Parallel
+    @test choose(:x => node, :y => Gamma(1.0, 1.0)) isa Choose
 end
 
 @testitem "abstract membership: composers sit under the right supertype" begin
@@ -175,6 +195,40 @@ end
     @test event_names(tree) isa Tuple
     @test event_tree(tree) isa NamedTuple
     @test event(tree, :onset_admit) == Gamma(2.0, 1.0)
+end
+
+@testitem "leaf_mean/leaf_var report the wrapped moment, not the inner one" begin
+    using ComposedDistributions, Distributions
+
+    # Regression guard: `leaf_mean`/`leaf_var` used to peel all the way to the
+    # inner free delay via `free_leaf`, silently reporting the untruncated /
+    # uncensored moment for a `Truncated`/`Censored` leaf. `truncated(Normal;
+    # lower)`/`censored(Normal; lower)` have a Distributions.jl closed-form
+    # moment, so this is exact, not an approximation.
+    tr = truncated(Normal(0.0, 1.0); lower = 0.0)
+    @test ComposedDistributions.leaf_mean(tr) ≈ mean(tr)
+    @test ComposedDistributions.leaf_mean(tr) != mean(Normal(0.0, 1.0))
+    @test ComposedDistributions.leaf_var(tr) ≈ var(tr)
+
+    cs = censored(Normal(0.0, 1.0); lower = 0.0)
+    @test ComposedDistributions.leaf_mean(cs) ≈ mean(cs)
+    @test ComposedDistributions.leaf_var(cs) ≈ var(cs)
+
+    # It propagates: the overall mean of a Sequential containing a truncated
+    # leaf is the sum of the true per-leaf moments.
+    seq = ComposedDistributions.Sequential((tr, Gamma(1.0, 1.0)), (:a, :b))
+    @test mean(seq) ≈ mean(tr) + mean(Gamma(1.0, 1.0))
+
+    # A family Distributions.jl has no closed-form truncated/censored moment
+    # for (e.g. `Truncated{Gamma}`) falls back to the old (inner-delay)
+    # approximation rather than throwing.
+    trg = truncated(Gamma(2.0, 1.0); upper = 10.0)
+    @test ComposedDistributions.leaf_mean(trg) == mean(Gamma(2.0, 1.0))
+
+    # A `Shared` tie is unaffected (it never had its own `mean`/`var`, and
+    # still does not need one): the moment is read through to the inner leaf.
+    sh = shared(:tag, Gamma(2.0, 1.0))
+    @test ComposedDistributions.leaf_mean(sh) == mean(Gamma(2.0, 1.0))
 end
 
 @testitem "leaf-wrapper contract: free_leaf / rewrap_leaf round-trip" begin
@@ -233,6 +287,46 @@ end
     @test all(==((0.0, Inf)), tbl.support[onset_rows])
 end
 
+@testitem "compose()'s NamedTuple/pairs front ends accept a downstream node" begin
+    using ComposedDistributions, Distributions
+    import ComposedDistributions: child_nleaves, child_logpdf, child_rand!,
+                                  node_children, AbstractComposedDistribution
+
+    # `compose`'s own `_compose_child` lowering has to widen alongside
+    # `_is_composable` (`Sequential`/`Parallel`/`Choose`'s inner-constructor
+    # guard), since it is a second, separate closed-type check on the same
+    # front door.
+    struct Pair2{A, B} <: AbstractComposedDistribution{Multivariate, Continuous}
+        first::A
+        second::B
+    end
+    child_nleaves(b::Pair2) = child_nleaves(b.first) + child_nleaves(b.second)
+    function child_logpdf(b::Pair2, x, offset, ::Int)
+        n1 = child_nleaves(b.first)
+        return child_logpdf(b.first, x, offset, n1) +
+               child_logpdf(b.second, x, offset + n1, child_nleaves(b.second))
+    end
+    function child_rand!(out, offset, rng, b::Pair2)
+        n1 = child_nleaves(b.first)
+        child_rand!(out, offset, rng, b.first)
+        child_rand!(out, offset + n1, rng, b.second)
+        return nothing
+    end
+    node_children(b::Pair2) = (b.first, b.second)
+
+    node = Pair2(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
+
+    # The NamedTuple front end (`compose((a = node, ...))`) and the pairs
+    # spelling both accept it as a child, and a `compose(origin; branches...)`
+    # shared-origin call accepts it as the origin.
+    t1 = compose((first = node, second = LogNormal(0.5, 0.4)))
+    @test t1 isa Parallel
+    t2 = compose(:first => node, :second => LogNormal(0.5, 0.4))
+    @test t2 == t1
+    t3 = compose(node; a = Gamma(1.0, 1.0), b = Gamma(2.0, 1.0))
+    @test t3 isa Sequential
+end
+
 @testitem "truncated/censored on a composed tree throws an informative error" begin
     using ComposedDistributions, Distributions
 
@@ -266,4 +360,100 @@ end
         @test occursin("applying $verb to the whole node", msg)
         @test !occursin("$(verb)ing", msg)
     end
+end
+
+@testitem "leaf-protocol completeness (#277): built-in wrappers pass" begin
+    using ComposedDistributions, Distributions
+    using ComposedDistributions.TestUtils: test_leaf_protocol_completeness
+
+    # `truncated`/`censored` and `shared` each implement the full optional
+    # leaf-protocol surface for a plain leaf, so the completeness check passes
+    # cleanly for each: an attached prior, a shared tie, and the moments all
+    # survive the wrapper.
+    test_leaf_protocol_completeness(d -> truncated(d; upper = 10.0);
+        name = "truncated")
+    test_leaf_protocol_completeness(d -> censored(d; upper = 10.0);
+        name = "censored")
+end
+
+@testitem "leaf-protocol completeness (#277): an incomplete wrapper fails, naming the hook" begin
+    using ComposedDistributions, Distributions, Random, Test
+    using ComposedDistributions.TestUtils: test_leaf_protocol_completeness
+    import ComposedDistributions: free_leaf, rewrap_leaf
+
+    # A wrapper implementing only the two mandatory hooks (the #277
+    # reproduction from the design review): it peels/rebuilds correctly but
+    # silently drops an attached prior and a shared tie, because the optional
+    # hooks (`uncertain_specs`, `shared_tag`) fall back to their fixed-leaf
+    # defaults instead of forwarding to `.inner`.
+    struct IncompleteWrap{D} <: Distributions.ContinuousUnivariateDistribution
+        inner::D
+    end
+    free_leaf(d::IncompleteWrap) = free_leaf(d.inner)
+    rewrap_leaf(d::IncompleteWrap, inner) = IncompleteWrap(rewrap_leaf(d.inner, inner))
+    Distributions.params(d::IncompleteWrap) = Distributions.params(d.inner)
+    Distributions.logpdf(d::IncompleteWrap, x::Real) = logpdf(d.inner, x)
+    Base.rand(rng::AbstractRNG, d::IncompleteWrap) = rand(rng, d.inner)
+    Distributions.minimum(d::IncompleteWrap) = minimum(d.inner)
+    Distributions.maximum(d::IncompleteWrap) = maximum(d.inner)
+
+    # `test_leaf_protocol_completeness` returns its `@testset`, which records
+    # its failures rather than throwing (so a caller sees every dropped hook
+    # at once, not just the first). Run it under a throwaway scratch parent
+    # testset so its two deliberate failures land there and are discarded,
+    # not folded into this @testitem's own count; the check reads the
+    # returned testset's counts instead. The failure summary still prints
+    # below (expected -- that IS the demonstration).
+    scratch = Test.DefaultTestSet("scratch")
+    Test.push_testset(scratch)
+    result = try
+        test_leaf_protocol_completeness(
+            d -> IncompleteWrap(d); name = "IncompleteWrap")
+    finally
+        Test.pop_testset()
+    end
+    counts = Test.get_test_counts(result)
+    # Both dropped hooks are caught (uncertain_specs and shared_tag).
+    @test counts.cumulative_fails + counts.cumulative_errors >= 2
+end
+
+@testitem "sampling-vs-density consistency (#278): built-ins pass, a corrupted rand fails" begin
+    using ComposedDistributions, Distributions, Random, Test
+    using ComposedDistributions.TestUtils: test_sampling_consistency
+
+    # A bare leaf checks clean directly; a `Sequential` (a genuine chain, not
+    # `compose`'s NamedTuple-is-Parallel front end) has no scalar `rand` (it
+    # is multivariate, a labelled NamedTuple), so it goes through
+    # `observed_distribution` first to reach the collapsed univariate view the
+    # check needs (documented on `test_sampling_consistency`).
+    test_sampling_consistency(Gamma(2.0, 1.0); nsamples = 20_000, name = "leaf")
+    seq = sequential(:onset => Gamma(2.0, 1.0), :admit => LogNormal(0.5, 0.4))
+    test_sampling_consistency(
+        observed_distribution(seq); nsamples = 20_000, name = "Sequential")
+
+    # A deliberately corrupted `rand` (drawn from a scaled distribution while
+    # `logpdf`/`cdf`/`mean`/`var` still describe the unscaled one) must fail:
+    # the check earning its keep, not merely passing on everything. Run under
+    # a throwaway scratch parent testset (see the matching note on the #277
+    # test above) so the expected failure summary does not count against this
+    # file's pass total.
+    struct BrokenGamma <: Distributions.ContinuousUnivariateDistribution
+        inner::Gamma{Float64}
+    end
+    Distributions.logpdf(d::BrokenGamma, x::Real) = logpdf(d.inner, x)
+    Distributions.cdf(d::BrokenGamma, x::Real) = cdf(d.inner, x)
+    Distributions.mean(d::BrokenGamma) = mean(d.inner)
+    Distributions.var(d::BrokenGamma) = var(d.inner)
+    Base.rand(rng::AbstractRNG, d::BrokenGamma) = 1.5 * rand(rng, d.inner)
+
+    scratch = Test.DefaultTestSet("scratch")
+    Test.push_testset(scratch)
+    result = try
+        test_sampling_consistency(
+            BrokenGamma(Gamma(2.0, 1.0)); nsamples = 20_000, name = "broken")
+    finally
+        Test.pop_testset()
+    end
+    counts = Test.get_test_counts(result)
+    @test counts.cumulative_fails + counts.cumulative_errors >= 1
 end

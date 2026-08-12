@@ -350,7 +350,7 @@ end
 # `codec_gen.jl`'s leaf case cannot compute a leaf's NATIVE parameter order at
 # generation time (S3 removed the type-level table that used to carry it),
 # yet `_pool_rows!`/`_pool_hyper_rows!` above insert a pooled group's
-# hyperparameter rows into `params_table` at the pooled parameter's OWN
+# hyperparameter rows into `composed_to_table` at the pooled parameter's OWN
 # native-order position -- not before or after the whole leaf's block, and a
 # population's own hyperparameters are walked in ITS native order, not its
 # `uncertain(...)` kwargs order. Both need `leaf_param_names` resolved on a
@@ -761,7 +761,7 @@ const _pool_centred_logprior = pool_centred_logprior
 Check that every leaf of each `pool` group declares the same population
 distribution and parameterisation, throwing an `ArgumentError` on a mismatch.
 
-Called once at [`params_table`](@ref) construction time (typically at
+Called once at [`composed_to_table`](@ref) construction time (typically at
 `distribution_to_logdensity` construction), not per gradient evaluation.
 Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
@@ -877,9 +877,9 @@ groups, shared tags, and root edge names into the same flat namespace; a name
 crossing roles would silently clobber another entry there. Reusing the same
 tag for a deliberate tie (`shared`/`tie`, or a pool group with several
 members) is the intended feature and is not flagged; only a name crossing
-roles is an error. Called once at [`params_table`](@ref) construction time
-(typically at `distribution_to_logdensity` construction), not per gradient
-evaluation. Reached by qualified name from outside this package —
+roles is an error. Called once at [`composed_to_table`](@ref) construction
+time (typically at `distribution_to_logdensity` construction), not per
+gradient evaluation. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
 gate a tree before fitting (#212).
 
