@@ -924,6 +924,19 @@ end
     @test :thin ∉ tbl.param
 end
 
+@testitem "params_table guards a leaf with vector-valued parameters" begin
+    using Distributions
+
+    # A Categorical leaf's own parameter is a probability Vector, not a
+    # scalar; composing and scoring it stays fine, only the table walk (which
+    # emits one scalar row per parameter) is undefined for it.
+    tree = compose((onset_admit = Categorical([0.3, 0.3, 0.4]),
+        admit_death = Gamma(2.0, 1.0)))
+    @test logpdf(tree, [1, 1.5]) isa Real
+    msg = r"(?=.*Categorical)(?=.*scalar)"
+    @test_throws msg params_table(tree)
+end
+
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
     using Distributions
 

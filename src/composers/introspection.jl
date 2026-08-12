@@ -1502,6 +1502,12 @@ function _walk_rows!(sink, seen, leaf, path)
     # attached this is exactly the plain per-param walk.
     extras = extra_leaf_params(leaf)
     native = params(inner)
+    all(v -> v isa Real, native) || throw(ArgumentError(
+        "$(nameof(typeof(inner))) has vector-valued (non-scalar) " *
+        "parameters $(native); vector-parameter leaves are not " *
+        "representable as scalar params_table rows (e.g. Categorical's " *
+        "probability vector); read or update this leaf's parameters " *
+        "directly rather than through the table"))
     vals = (native..., map(e -> e.value, extras)...)
     sups = (ntuple(_ -> sup, length(native))...,
         map(e -> e.support, extras)...)
