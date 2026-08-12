@@ -280,14 +280,14 @@ tbl.edge[param_idx], tbl.param[param_idx]
 
 priors = build_priors(tbl);
 
-priors.onset_admit.shape
+priors.onset_admit.alpha
 
 # ## Editing a composed tree
 #
 # [`update`](@ref) applies a set of parameter values back to a composed object,
 # returning a distribution of the same structure.
 
-updated = update(template, (onset_admit = (shape = 3.0, scale = 1.5),
+updated = update(template, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)));
 
 mean(updated)
@@ -356,7 +356,7 @@ unique(tied_tbl.edge[tied_tbl.role .== :param])
 # | `difference(d1, d2)` | a `Difference` `X - Y` | builds |
 # | `shared(:tag, d)` | tag a leaf as a tied parameter group | leaf wrap |
 # | `tie(d, paths...; name)` | tie leaves at `paths` into one group | yes |
-# | `update(d, (a = (shape = 3,),))` | replace free parameter values | yes |
+# | `update(d, (a = (alpha = 3,),))` | replace free parameter values | yes |
 # | `update(d, path => new_node)` | replace a whole node | yes |
 # | `prune(d, path...)` | drop a branch (renormalise a `Resolve` arm) | no (topology) |
 # | `splice(d, path; before, after)` | insert a step at a node | no (topology) |

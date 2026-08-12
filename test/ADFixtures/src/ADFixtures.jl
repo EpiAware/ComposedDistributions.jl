@@ -234,7 +234,7 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     # Driven through `unflatten`/`update` with a hand-written likelihood rather
     # than the (now DistributionsInference-owned)
     # `distribution_to_logdensity`/`logdensity` layer (#185, #317).
-    shared_u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    shared_u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     shared_tree = compose((a = shared(:g, shared_u), b = shared(:g, shared_u)))
     records = [[0.5, 2.0], [1.0, 3.0]]
     _push!("Shared-tag unflatten/update codec",

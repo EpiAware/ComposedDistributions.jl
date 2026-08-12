@@ -266,8 +266,8 @@ end
 #
 # `_leaf_entry`'s own substitution contract (introspection.jl) consumes
 # `slots` positionally IN `leaf_param_names(leaf)` ORDER, not `speckeys`'s own
-# kwargs order (a user can write `uncertain(Gamma(2, 1); scale = ..., shape =
-# ...)`, scale first, while Gamma's native order is `(shape, scale)`). Since
+# kwargs order (a user can write `uncertain(Gamma(2, 1); theta = ..., alpha =
+# ...)`, theta first, while Gamma's native order is `(alpha, theta)`). Since
 # S3 removed the type-level table this generator once used to compute that
 # order at generation time, this walk cannot bake per-name literal `x`
 # indices in `leaf_param_names` order any more -- so it does not try to:
@@ -425,9 +425,9 @@ differentiate through it.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# One estimated parameter (onset_admit.shape); the rest stay at the template.
+# One estimated parameter (onset_admit.alpha); the rest stay at the template.
 # Public but not exported; reach it by the qualified name.
 update(tree, ComposedDistributions.unflatten(tree, [3.0]))
 ```
@@ -472,10 +472,10 @@ codec.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
 # Public but not exported; reach it by the qualified name. Only onset_admit's
-# shape is uncertain, so the dimension is 1.
+# alpha is uncertain, so the dimension is 1.
 ComposedDistributions.flat_dimension(tree)
 ```
 
@@ -683,9 +683,9 @@ view over it), so the two cannot drift apart.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# The estimated vector is 1-long (onset_admit.shape); round-trip it.
+# The estimated vector is 1-long (onset_admit.alpha); round-trip it.
 # Public but not exported; reach the codec by the qualified name.
 nt = ComposedDistributions.unflatten(tree, [2.0])
 ComposedDistributions.flatten(tree, nt)
@@ -731,7 +731,7 @@ is [`unflatten`](@ref)'s, and `update`'s inferrability is inherited from it.
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)),
+    alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
 ComposedDistributions.reconstruct(tree, [3.0])
 ```

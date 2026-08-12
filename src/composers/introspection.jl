@@ -292,7 +292,7 @@ end
 # `double_interval_censored(Gamma(...))`, i.e. an
 # `IntervalCensored{Truncated{PrimaryCensored{Gamma}}}`). The censoring bounds
 # (primary event, truncation, interval) are fixed structure, not free
-# parameters; only the inner delay's parameters (the `Gamma` shape/scale) are
+# parameters; only the inner delay's parameters (the `Gamma` alpha/theta) are
 # free. `_free_leaf` peels the fixed censoring off to the inner free delay, and
 # `_rewrap_leaf` rebuilds the same censoring around a new inner delay. The
 # introspection (`composed_to_table`, names) and reconstruction layers go
@@ -644,20 +644,89 @@ end
 
 # --- parameter-name introspection for leaves -------------------------------
 
+# Greek-letter fieldnames (`α`, `θ`, ...) transliterated to their English
+# spelling, generation-time-only (called from inside `_derived_param_names`'s
+# `@generated` body, never at runtime). Julia's parser already normalises
+# identifiers to NFC, so no `Unicode` dependency is needed here; every
+# fieldname of every constructible exported univariate family in
+# Distributions.jl is either plain ASCII or one of these single characters.
+# Anything not in the map passes through unchanged -- a non-ASCII `Symbol` is a
+# legal `NamedTuple` key, so pass-through is safe, just less friendly.
+const _GREEK_TO_LATIN = Dict{Char, String}(
+    'α' => "alpha", 'β' => "beta", 'γ' => "gamma", 'δ' => "delta",
+    'ε' => "epsilon", 'ζ' => "zeta", 'η' => "eta", 'θ' => "theta",
+    'ι' => "iota", 'κ' => "kappa", 'λ' => "lambda", 'μ' => "mu",
+    'ν' => "nu", 'ξ' => "xi", 'ο' => "omicron", 'π' => "pi",
+    'ρ' => "rho", 'σ' => "sigma", 'ς' => "sigma", 'τ' => "tau",
+    'υ' => "upsilon", 'φ' => "phi", 'χ' => "chi", 'ψ' => "psi",
+    'ω' => "omega",
+    'Α' => "Alpha", 'Β' => "Beta", 'Γ' => "Gamma", 'Δ' => "Delta",
+    'Ε' => "Epsilon", 'Ζ' => "Zeta", 'Η' => "Eta", 'Θ' => "Theta",
+    'Ι' => "Iota", 'Κ' => "Kappa", 'Λ' => "Lambda", 'Μ' => "Mu",
+    'Ν' => "Nu", 'Ξ' => "Xi", 'Ο' => "Omicron", 'Π' => "Pi",
+    'Ρ' => "Rho", 'Σ' => "Sigma", 'Τ' => "Tau", 'Υ' => "Upsilon",
+    'Φ' => "Phi", 'Χ' => "Chi", 'Ψ' => "Psi", 'Ω' => "Omega")
+
+# Transliterate one fieldname, generation-time-only. Plain ASCII names pass
+# straight through with no allocation.
+function _transliterate_fieldname(s::Symbol)
+    str = String(s)
+    isascii(str) && return s
+    buf = IOBuffer()
+    for c in str
+        write(buf, get(_GREEK_TO_LATIN, c, string(c)))
+    end
+    return Symbol(String(take!(buf)))
+end
+
+# The type-domain derivation. `D` is the leaf type, `P` the type of
+# `params(leaf)` (a `Tuple` type); both are `Const` at every call site, so the
+# body below -- Base type reflection only, nothing user-extensible -- runs
+# once per `(D, P)` pair at specialization time and the generated method body
+# is a literal tuple of `Symbol`s. `fieldcount(P)` (not `length(params(d))`)
+# is what keeps the arity in the type domain.
+#
+# Falls back to positional `:param_1, :param_2, ...` whenever the leaf's own
+# fields don't line up 1:1 with its `params` in order: too few fields, a
+# fieldtype mismatch at some slot, or (after transliteration) a name collision.
+# That fallback is intentionally silent -- see `param_names`'s docstring for
+# how a leaf whose fields do not line up overrides this.
+@generated function _derived_param_names(::Type{D}, ::Type{P}) where {D, P}
+    n = fieldcount(P)
+    positional = ntuple(i -> Symbol(:param_, i), n)
+    n == 0 && return :(())
+    fns = fieldnames(D)
+    length(fns) < n && return :($positional)
+    for i in 1:n
+        fieldtype(D, i) === fieldtype(P, i) || return :($positional)
+    end
+    names = ntuple(i -> _transliterate_fieldname(fns[i]), n)
+    length(unique(names)) == n || return :($positional)
+    return :($names)
+end
+
 @doc raw"
 
 The scalar parameter names of a leaf distribution, matched positionally to
 `params(leaf)`.
 
 Distributions.jl exposes parameter values through `params` but not their names,
-so the common families are mapped explicitly here; anything unmapped falls back
-to `:param_1, :param_2, ...`.
+so the names are derived from the leaf's own type: the first `N` fieldnames of
+`typeof(leaf)`, transliterated (Greek letters to their English spelling), where
+`N` is the arity of `params(leaf)`. This works with no method of its own for
+any type whose fields line up 1:1 with `params`, in order -- the common case for
+a Distributions.jl-conforming family. A leaf whose fields don't line up (either
+because the arity is short, or because a field's declared type disagrees with
+the matching `params` slot, or because two transliterated names collide) falls
+back to `:param_1, :param_2, ...`. A wrapper (`Truncated`, `Uncertain`,
+`Shared`, a censoring/modifier layer) reports its inner leaf's names, read
+through [`inner_dist`](@ref).
 
-A leaf type whose free parameters are not the native family's overrides this, in
-step with [`leaf_ctor`](@ref): the two together fix the coordinates that
-`composed_to_table`, `uncertain`, `build_priors` and the flat codec work in. A
-moment-parameterised wrapper naming a mean and a standard deviation, rather than
-a shape and a scale, is the motivating case.
+A leaf type whose free parameters are not aligned with its own fields overrides
+this explicitly, in step with [`leaf_ctor`](@ref): the two together fix the
+coordinates that `composed_to_table`, `uncertain`, `build_priors` and the flat
+codec work in. A moment-parameterised wrapper naming a mean and a standard
+deviation, rather than a shape and a scale, is the motivating case.
 
 # Arguments
 - the leaf distribution whose parameter names are read.
@@ -671,14 +740,13 @@ ComposedDistributions.param_names(Gamma(2.0, 1.0))
 
 # See also
 - [`leaf_ctor`](@ref): the matching rebuild.
+- [`inner_dist`](@ref): the peel a wrapper's own names follow.
 "
-param_names(::Distributions.Normal) = (:mu, :sigma)
-param_names(::Distributions.LogNormal) = (:mu, :sigma)
-param_names(::Distributions.Gamma) = (:shape, :scale)
-param_names(::Distributions.Weibull) = (:shape, :scale)
-param_names(::Distributions.Exponential) = (:scale,)
-param_names(::Distributions.Uniform) = (:lower, :upper)
-param_names(::Any) = ()
+function param_names(d)
+    inner = inner_dist(d)
+    inner === d || return param_names(inner)
+    return _derived_param_names(typeof(d), typeof(params(d)))
+end
 
 # The underscored alias retained for the package's existing internal callers
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
@@ -690,11 +758,12 @@ const _param_names = param_names
 The estimable parameter names of a (possibly wrapped) leaf.
 
 The inner free delay's `param_names`, padding with positional fallbacks
-(`:param_1`, ...) so every value has a label even when the family is unmapped,
-then the names of any [`extra_leaf_params`](@ref) appended in order. A censored
-or modified leaf delegates to its free delay (`free_leaf`), so the fixed wrapper
-structure never appears, while a thinning modifier's `:thin` factor rides the
-trailing extra-parameter slot. These names are the coordinates
+(`:param_1`, ...) so every value has a label even when the leaf's fields don't
+line up 1:1 with its `params`, then the names of any
+[`extra_leaf_params`](@ref) appended in order. A censored or modified leaf
+delegates to its free delay (`free_leaf`), so the fixed wrapper structure
+never appears, while a thinning modifier's `:thin` factor rides the trailing
+extra-parameter slot. These names are the coordinates
 [`composed_to_table`](@ref), [`uncertain`](@ref) and [`build_priors`](@ref)
 key on.
 
@@ -767,6 +836,38 @@ function leaf_signature(leaf)
     inner = free_leaf(leaf)
     fam = inner === leaf ? leaf_ctor(leaf) : first(leaf_signature(inner))
     return (fam, leaf_param_names(leaf))
+end
+
+# A diagnostic, never a name selector: `_derived_param_names` decides labels
+# from the type alone (unconditionally, so names never depend on values), and
+# this catches the one thing the type-level rule cannot see -- a
+# contract-conforming type whose field ORDER differs from its `params` order
+# with matching field *types* (so the type-level structural check passes but
+# the field at slot `i` does not actually hold `params(free)[i]`). Restricted
+# to `Real`-valued slots so a vector-parameter leaf cannot trip it spuriously.
+# Called where the values are already in hand (`Uncertain`'s inner
+# constructor) and by `TestUtils`'s conformance check; never from
+# `param_names`/`leaf_param_names`/`_update_leaf`/`_walk_rows!`, which must
+# stay on the gradient path with no runtime branch to shield from Mooncake. A
+# plain `throw` (never `@warn`, never `try`/`catch`) keeps it AD-safe even if
+# it is ever reached from a differentiated path.
+function _check_leaf_param_alignment(free)
+    fs = fieldnames(typeof(free))
+    tvals = params(free)
+    n = length(tvals)
+    n == 0 && return nothing
+    length(fs) < n && return nothing
+    for i in 1:n
+        v = tvals[i]
+        v isa Real || continue
+        getfield(free, fs[i]) === v && continue
+        throw(ArgumentError(
+            "$(typeof(free)) has parameters $(tvals) whose order does not " *
+            "match its field order $(fs[1:n]); define " *
+            "`ComposedDistributions.param_names` (and `leaf_ctor` in step " *
+            "with it) for $(typeof(free))"))
+    end
+    return nothing
 end
 
 # The values matching `leaf_param_names(leaf)` positionally: the free delay's
@@ -1482,13 +1583,13 @@ spelling of \"distribution in the slot = estimate, value = fix\"):
 - a **distribution** makes the parameter [`uncertain`](@ref) with that spec.
   Passing distributions switches to a partial update: only the named parameters
   change (an absent parameter keeps its current spec or fixed value), so
-  `update(tree, (onset = (shape = LogNormal(log(2), 0.2),),))` makes just
-  `onset`'s `shape` uncertain. Promote a whole tree to uncertainty over its
+  `update(tree, (onset = (alpha = LogNormal(log(2), 0.2),),))` makes just
+  `onset`'s `alpha` uncertain. Promote a whole tree to uncertainty over its
   free parameters with default priors via `update(tree, `
   [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path;
 - a **[`pool`](@ref) spec** makes the parameter partially pooled across the
   leaves that name the same group (also a partial update), e.g.
-  `update(tree, (onset = (shape = pool(:district),),))`.
+  `update(tree, (onset = (alpha = pool(:district),),))`.
 
 A [`Resolve`](@ref) node's `branch_probs` are a node-level parameter, not a
 leaf: attach a simplex-valued `Distributions.Dirichlet` at the `branch_probs`
@@ -1521,11 +1622,11 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 # Concrete values pin the parameters.
-tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+tree2 = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)))
 event(tree2, :onset_admit)
 # A distribution makes just that parameter uncertain (a partial update).
-est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+est = update(tree, (onset_admit = (alpha = LogNormal(log(2.0), 0.2),),))
 has_uncertain(est)
 ```
 
@@ -1575,9 +1676,9 @@ from a sampler output after reading it into the flat coordinate system.
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)),
+    alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# The one estimated parameter is onset_admit.shape; the vector is length 1.
+# The one estimated parameter is onset_admit.alpha; the vector is length 1.
 # This is equivalent to
 # update(tree, ComposedDistributions.unflatten(tree, [3.0])).
 result = update(tree, [3.0])
@@ -2313,7 +2414,7 @@ for that row), so a custom `default` can pick a prior from the parameter's
 # Keyword Arguments
 - `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
   (e.g. a `Dict`) or a nested `NamedTuple` keyed like the tree
-  (`(onset_admit = (shape = prior,),)`); only the listed parameters are
+  (`(onset_admit = (alpha = prior,),)`); only the listed parameters are
   overridden (default: empty).
 - `default`: a function `row -> prior` for rows not overridden (default:
   [`default_prior`](@ref), deriving the prior family from the parameter's
@@ -2328,8 +2429,8 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 tbl = composed_to_table(tree)
 # Support-derived defaults everywhere, overriding only one parameter.
 nested = build_priors(tbl;
-    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),),))
-nested.onset_admit.shape
+    priors = (onset_admit = (alpha = truncated(Normal(2, 0.5); lower = 0),),))
+nested.onset_admit.alpha
 ```
 
 # See also
@@ -2438,7 +2539,7 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 priors = param_priors(tree)
-priors.onset_admit.shape
+priors.onset_admit.alpha
 ```
 
 # See also

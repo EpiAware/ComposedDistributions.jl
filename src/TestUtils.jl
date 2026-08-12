@@ -262,9 +262,25 @@ function _check_cdf(d, fix)
     return nothing
 end
 
+# Walk `d` down to its real leaves (peeling wrapper layers with `free_leaf`),
+# calling `f` on each. Used only by the `param_names`/`params` alignment
+# check below; not part of the public interface.
+function _each_real_leaf(f, d)
+    if ComposedDistributions._is_composer_node(d)
+        for child in ComposedDistributions._node_children(d)
+            _each_real_leaf(f, child)
+        end
+    else
+        f(ComposedDistributions.free_leaf(d))
+    end
+    return nothing
+end
+
 function _check_params(d)
     @testset "params / composed_to_table" begin
         @test_nowarn params(d)
+        @test_nowarn _each_real_leaf(
+            ComposedDistributions._check_leaf_param_alignment, d)
         if d isa AbstractComposedDistribution
             tbl = composed_to_table(d)
             @test Tables.istable(tbl)

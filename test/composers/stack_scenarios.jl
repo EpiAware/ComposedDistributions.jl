@@ -61,19 +61,19 @@
     # Parameter row count and labels.
     tbl = _param_rows(chain)
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
-    @test tbl.param == [:shape, :scale, :mu, :sigma]
+    @test tbl.param == [:alpha, :theta, :mu, :sigma]
 
     # build_priors produces a prior per free parameter (four params, four
     # priors; no Resolve simplex to fold here).
     priors = build_priors(tbl)
-    @test priors.onset_admit.shape isa Distribution
-    @test priors.onset_admit.scale isa Distribution
+    @test priors.onset_admit.alpha isa Distribution
+    @test priors.onset_admit.theta isa Distribution
     @test priors.admit_death.mu isa Distribution
     @test priors.admit_death.sigma isa Distribution
     @test param_priors(chain) == priors
 
     # update replaces the values; rand/logpdf reflect the change.
-    tuned = update(chain, (onset_admit = (shape = 3.0, scale = 1.5),
+    tuned = update(chain, (onset_admit = (alpha = 3.0, theta = 1.5),
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tuned, :onset_admit) == Gamma(3.0, 1.5)
     @test mean(tuned) != mean(chain)
@@ -135,8 +135,8 @@ end
         Symbol("hosp.admit_disch"), Symbol("hosp.admit_disch"),
         :notify, :notify]
     priors = param_priors(par)
-    @test priors.hosp.onset_admit.shape isa Distribution
-    @test priors.notify.shape isa Distribution
+    @test priors.hosp.onset_admit.alpha isa Distribution
+    @test priors.notify.alpha isa Distribution
 
     # One ForwardDiff gradient over the three-value observation, finite.
     g = ForwardDiff.gradient(v -> logpdf(par, v), collect(values(draw)))
@@ -201,14 +201,14 @@ end
     @test event(swapped, :death) == Gamma(3.0, 2.0)
     @test probs(swapped) == probs(res)
     reweighted = update(res,
-        (death = (shape = 1.5, scale = 1.0),
-            disch = (shape = 2.0, scale = 1.5),
+        (death = (alpha = 1.5, theta = 1.0),
+            disch = (alpha = 2.0, theta = 1.5),
             branch_probs = (death = 0.6, disch = 0.4)))
     @test probs(reweighted) == (death = 0.6, disch = 0.4)
 
     # param_priors: a prior per delay parameter and a Dirichlet over the simplex.
     priors = param_priors(res)
-    @test priors.death.shape isa Distribution
+    @test priors.death.alpha isa Distribution
     @test priors.branch_probs isa Dirichlet
 
     # One ForwardDiff derivative of the marginal logpdf w.r.t. the time, finite.
@@ -472,10 +472,10 @@ end
     # build_priors produces a single prior for the tied group.
     priors = param_priors(tied)
     @test keys(priors) == (:incubation,)
-    @test priors.incubation.shape isa Distribution
+    @test priors.incubation.alpha isa Distribution
 
     # update propagates the shared value to both leaves.
-    updated = update(tied, (incubation = (shape = 4.0, scale = 0.5),))
+    updated = update(tied, (incubation = (alpha = 4.0, theta = 0.5),))
     @test event(updated, :primary) == shared(:incubation, Gamma(4.0, 0.5))
     @test event(updated, :secondary) == shared(:incubation, Gamma(4.0, 0.5))
 

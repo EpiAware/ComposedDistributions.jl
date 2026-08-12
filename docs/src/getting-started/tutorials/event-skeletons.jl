@@ -288,13 +288,13 @@ tbl = composed_to_table(pathogen_a)
 update(pathogen_a, tbl) == pathogen_a
 
 # Editing the `value` column and folding the table back sets the matching
-# parameters, here bumping the onset shape to `3.0`.
+# parameters, here bumping the onset alpha to `3.0`.
 
-onset_shape = findfirst(
+onset_alpha = findfirst(
     i -> tbl.role[i] == :param && tbl.edge[i] == :onset &&
-         tbl.param[i] == :shape,
+         tbl.param[i] == :alpha,
     eachindex(tbl.edge))
-tbl.value[onset_shape] = 3.0
+tbl.value[onset_alpha] = 3.0
 
 bumped = update(pathogen_a, tbl)
 

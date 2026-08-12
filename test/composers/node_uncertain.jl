@@ -163,7 +163,7 @@ end
     @test !any(==(:stick_1), tbl.param)
 
     promoted = update(c, param_priors(c))
-    # Only the two Gamma delays' shape/scale: four parameters, no node dim.
+    # Only the two Gamma delays' alpha/theta: four parameters, no node dim.
     @test flat_dimension(promoted) == 4
 end
 
@@ -229,8 +229,8 @@ end
     @test_throws "merge mode must be a `Dirichlet`" update(
         r, (branch_probs = Beta(1.0, 1.0),))
     # A strict update covers every leaf; a non-NamedTuple branch_probs errors.
-    full = (death = (shape = 1.5, scale = 1.0),
-        disch = (shape = 2.0, scale = 1.5))
+    full = (death = (alpha = 1.5, theta = 1.0),
+        disch = (alpha = 2.0, theta = 1.5))
     @test_throws "strict `branch_probs` update must be a NamedTuple" update(
         r, merge(full, (branch_probs = 0.5,)))
     # A fixed node accepts a concrete per-outcome replacement (strict).

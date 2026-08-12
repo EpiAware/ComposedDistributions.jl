@@ -70,11 +70,11 @@ end
 
 @testitem "codec/parameter order: Sequential and Parallel" setup=[
     CodecConsistencyHelpers] begin
-    seq = sequential(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    seq = sequential(uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
         uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
     @test _assert_codec_matches_table(seq) == :ok
 
-    par = parallel(uncertain(Gamma(3.0, 1.5); scale = LogNormal(0.0, 0.2)),
+    par = parallel(uncertain(Gamma(3.0, 1.5); theta = LogNormal(0.0, 0.2)),
         LogNormal(0.7, 0.3))
     @test _assert_codec_matches_table(par) == :ok
 end
@@ -91,32 +91,32 @@ end
     # round-trip: Dirichlet branch_probs stick coordinate"
     # (test/composed_ext.jl).
     fixed = resolve(:a => (uncertain(Gamma(2.0, 1.0);
-                shape = LogNormal(0.0, 0.3)), 0.4),
+                alpha = LogNormal(0.0, 0.3)), 0.4),
         :b => (uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)), 0.6))
     @test _assert_codec_matches_table(fixed) == :ok
 
     # A NoEvent branch is skipped by both walks alike.
     withno = resolve(
         :event => (uncertain(Gamma(2.0, 1.0);
-                shape = LogNormal(0.0, 0.3)), 0.4),
+                alpha = LogNormal(0.0, 0.3)), 0.4),
         :none => (NoEvent(), 0.6))
     @test _assert_codec_matches_table(withno) == :ok
 end
 
 @testitem "codec/parameter order: Compete and Choose" setup=[
     CodecConsistencyHelpers] begin
-    cmp = compete(:a => uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    cmp = compete(:a => uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
         :b => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
     @test _assert_codec_matches_table(cmp) == :ok
 
-    ch = choose(:fast => uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    ch = choose(:fast => uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
         :slow => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
     @test _assert_codec_matches_table(ch) == :ok
 end
 
 @testitem "codec/parameter order: Shared tie across branches" setup=[
     CodecConsistencyHelpers] begin
-    tied = shared(:g, uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)))
+    tied = shared(:g, uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)))
     tree = compose((a = tied, b = tied,
         c = uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2))))
     @test _assert_codec_matches_table(tree) == :ok
@@ -130,13 +130,13 @@ end
                                   GaussLegendre, integrate, gl_integrate,
                                   AbstractSolverMethod
 
-    conv_leaf = convolved(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    conv_leaf = convolved(uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
         Gamma(1.0, 1.0))
     seq = sequential(:total => conv_leaf,
         :report => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
     @test _assert_codec_matches_table(seq) == :ok
 
-    diff_leaf = difference(uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+    diff_leaf = difference(uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
         Normal(1.0, 0.5))
     seq2 = sequential(:total => diff_leaf,
         :report => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
@@ -151,9 +151,9 @@ end
     # cover until now despite Truncated pre-dating this PR and Censored
     # landing alongside it (#215).
     trunc_leaf = truncated(
-        uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)); upper = 10.0)
+        uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)); upper = 10.0)
     cens_leaf = censored(
-        uncertain(Gamma(3.0, 1.5); scale = LogNormal(0.0, 0.2)); upper = 10.0)
+        uncertain(Gamma(3.0, 1.5); theta = LogNormal(0.0, 0.2)); upper = 10.0)
     tree = sequential(:trunc => trunc_leaf, :cens => cens_leaf,
         :plain => uncertain(LogNormal(0.5, 0.4); mu = Normal(0.5, 0.2)))
     @test _assert_codec_matches_table(tree) == :ok
@@ -163,7 +163,7 @@ end
     CodecConsistencyHelpers] begin
     # A fixed-probs Resolve, not a Dirichlet-uncertain one, for the reason
     # given in the "Resolve (fixed probs)" testitem above.
-    tied = shared(:g, uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)))
+    tied = shared(:g, uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)))
     nested = compose((
         chain = sequential(uncertain(LogNormal(0.5, 0.4);
                 mu = Normal(0.5, 0.2)),

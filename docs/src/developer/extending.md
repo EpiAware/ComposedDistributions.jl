@@ -30,7 +30,7 @@ Downstream extension packages (CensoredDistributions and its siblings) dispatch 
 
 Any `Distributions.jl` distribution is a valid leaf with no package-specific hooks.
 It composes, ties, gets wrapped in `uncertain`, and scores through the flat codec, unchanged.
-The only thing it does not get for free is a named parameter table row: `param_names(::Any) = ()` falls back to `:param_1, :param_2, ...` positional names unless the type overrides [`param_names`](@ref).
+Its estimable parameter names come from its own type, so a named parameter table row needs no method either; see [Parameter names](@ref parameter-names) below for the one case that does.
 
 ```@example extending
 using ComposedDistributions, Distributions
@@ -108,6 +108,35 @@ rebuilt = ComposedDistributions.rewrap_leaf(tr, Normal(1.0, 2.0))
 
 Every method here dispatches on an instance, and the flat-vector codec (`flat_dimension`, `unflatten`, `flatten`, `reconstruct`) reads the same instance-level hooks at call time, so there is no separate type-level table to keep in step and no registration step.
 
+## [Parameter names](@id parameter-names)
+
+`param_names(leaf)` derives its answer from the leaf's own type, with no method required for the common case.
+The names are the first `N` fieldnames of `typeof(free_leaf(leaf))`, transliterated (Greek letters to their English spelling), where `N` is the arity of `params(leaf)`.
+This works whenever a family's fields line up 1:1 with its `params`, in order, which is true of every Distributions.jl-conforming family whose author declared its fields in `params` order — the common case, and the reason a plain leaf costs nothing for names too.
+A leaf whose fields fall short of `N`, or whose declared field type at some slot disagrees with the matching `params` slot, or whose transliterated names collide, falls back to positional `:param_1, :param_2, ...` rather than guessing.
+
+A leaf type whose fields do not line up with its `params`, in order, overrides `param_names` explicitly, in step with `leaf_ctor`.
+The motivating case is a moment-parameterised wrapper naming a mean and a standard deviation rather than a shape and a scale.
+`uncertain(...)` checks the alignment at construction time for any leaf whose derivation used the fieldname branch, restricted to `Real`-valued parameter slots, and throws naming [`param_names`](@ref) and [`leaf_ctor`](@ref) as the fix when a field's value does not match its corresponding `params` slot.
+`TestUtils.test_interface`/`test_node_interface` run the same check over every real leaf of a tree, so a conformance run catches the mismatch too.
+
+A leaf's `params` must be type-stable: the derivation reads `typeof(params(leaf))`, so a type-unstable `params` widens every codec return type built from that leaf.
+
+```@example extending
+using ComposedDistributions, Distributions
+
+struct MomentLeaf{D} <: ContinuousUnivariateDistribution
+    vals::Tuple{Float64, Float64}
+end
+Distributions.params(d::MomentLeaf) = d.vals
+ComposedDistributions.param_names(::MomentLeaf) = (:mean, :sd)
+function ComposedDistributions.leaf_ctor(::MomentLeaf{D}) where {D}
+    return (vals...) -> MomentLeaf{D}((vals[1], vals[2]))
+end
+
+ComposedDistributions.leaf_param_names(MomentLeaf{LogNormal}((8.0, 2.0)))
+```
+
 ## [Writing a new composer node](@id new-composer-node)
 
 A node combines named children into a bigger structure: a table row, a slice of the flat estimated-parameter vector, a slice of the flat event vector.
@@ -132,6 +161,7 @@ A node with different combination semantics (a disjunction like `Choose`, a mixt
 
 A univariate leaf is the base case for that walk: it occupies one slot (`child_nleaves == 1`), `child_rand!` writes its single draw, and `child_logpdf` scores `x[offset + 1]`.
 Any `Distributions.jl` distribution is therefore a valid leaf with no package-specific hooks, as the leaf section above says.
+Its estimable parameter names are derived from its own fields (see [Parameter names](@ref parameter-names)); a leaf whose fields do not line up with its `params`, in order, is the one case that needs a method of its own.
 
 Add [`node_attributes`](@ref) when the node carries fixed structure that is not a free parameter, as a `Choose`'s selector is; its `node` label and its children's rows need no method of their own.
 

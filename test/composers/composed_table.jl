@@ -34,11 +34,11 @@
     shared_tree = choose(:index => inc,
         :sourced => compose((src = LogNormal(0.5, 0.4), inc = inc)))
     noncentred_pool = compose((
-        north = uncertain(Gamma(2.0, 1.0); shape = pool(:region)),
-        south = uncertain(Gamma(2.0, 1.0); shape = pool(:region))))
+        north = uncertain(Gamma(2.0, 1.0); alpha = pool(:region)),
+        south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region))))
     centred_pool = compose((
-        north = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Beta(2.0, 3.0))),
-        south = uncertain(Gamma(2.0, 1.0); shape = pool(:g, Beta(2.0, 3.0)))))
+        north = uncertain(Gamma(2.0, 1.0); alpha = pool(:g, Beta(2.0, 3.0))),
+        south = uncertain(Gamma(2.0, 1.0); alpha = pool(:g, Beta(2.0, 3.0)))))
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.0))
 
     fixtures = [
@@ -59,7 +59,7 @@
         "non-centred pool, two members" => noncentred_pool,
         "centred pool, two members" => centred_pool,
         "uncertain leaf" => compose((onset = uncertain(
-            Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),)),
+            Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),)),
         "truncated leaf" => compose((onset = truncated(
             Gamma(2.0, 1.0); upper = 10.0),)),
         "censored leaf" => compose((onset = censored(
@@ -266,10 +266,10 @@ end
     # A two-group non-centred pool gives each member's `z` row a
     # `(:Pool, pname)` attribute row naming its group.
     ptree = compose((
-        north = uncertain(Gamma(2.0, 1.0); shape = pool(:region_a)),
-        south = uncertain(Gamma(2.0, 1.0); shape = pool(:region_a)),
-        east = uncertain(Gamma(2.0, 1.0); shape = pool(:region_b)),
-        west = uncertain(Gamma(2.0, 1.0); shape = pool(:region_b))))
+        north = uncertain(Gamma(2.0, 1.0); alpha = pool(:region_a)),
+        south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region_a)),
+        east = uncertain(Gamma(2.0, 1.0); alpha = pool(:region_b)),
+        west = uncertain(Gamma(2.0, 1.0); alpha = pool(:region_b))))
     pfull = composed_to_table(ptree)
     pool_attrs = Dict{Symbol, Any}()
     for i in eachindex(pfull.edge)
@@ -300,7 +300,7 @@ end
     @test !((:a, :Gamma) in node_rows)
     oparams = [ofull.param[i] for i in eachindex(ofull.edge)
                if ofull.role[i] == :param]
-    @test Set(oparams) == Set((:shape, :scale))
+    @test Set(oparams) == Set((:alpha, :theta))
 end
 
 @testitem "composed_to_table: Tables interface on the tree" begin
@@ -350,7 +350,7 @@ end
     full = composed_to_table(tree)
     rows = Tables.rowtable(full)
     edited = map(rows) do row
-        row.role == :param && row.edge == :onset_admit && row.param == :shape ?
+        row.role == :param && row.edge == :onset_admit && row.param == :alpha ?
         merge(row, (; value = 5.0)) : row
     end
     written = update(tree, edited)
@@ -368,13 +368,13 @@ end
 
     tree = compose((
         onset_admit = uncertain(Gamma(2.0, 1.0);
-            shape = LogNormal(log(2.0), 0.2)),
+            alpha = LogNormal(log(2.0), 0.2)),
         admit_death = LogNormal(0.5, 0.4)))
 
     # DistributionsInference's dotted-`name` row convention (DI#20), now with
     # a `role` column too: it must still be refused for lacking `edge`/`param`,
     # not silently accepted because `role` happens to be present.
-    di_shaped_rows = [(name = :onset_admit_shape, value = 2.0,
+    di_shaped_rows = [(name = :onset_admit_alpha, value = 2.0,
         prior = LogNormal(log(2.0), 0.2), support = (0.0, Inf),
         role = "param")]
     @test_throws r"(?=.*edge)(?=.*param)" update(tree, di_shaped_rows)
