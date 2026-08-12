@@ -924,7 +924,7 @@ end
     @test :thin ∉ tbl.param
 end
 
-@testitem "params_table guards a leaf with vector-valued parameters" begin
+@testitem "composed_to_table guards a leaf with vector parameters" begin
     using Distributions
 
     # A Categorical leaf's own parameter is a probability Vector, not a
@@ -934,7 +934,7 @@ end
         admit_death = Gamma(2.0, 1.0)))
     @test logpdf(tree, [1, 1.5]) isa Real
     msg = r"(?=.*Categorical)(?=.*scalar)"
-    @test_throws msg params_table(tree)
+    @test_throws msg composed_to_table(tree)
 end
 
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin

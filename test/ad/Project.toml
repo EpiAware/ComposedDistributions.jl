@@ -27,6 +27,6 @@ ComposedDistributions = {path = "../.."}
 # Mirrors the root bound, so this env cannot resolve a release without the
 # shared `xlogy`/`xlog1py` Mooncake rules.
 [compat]
-ConvolvedDistributions = "0.4, 1"
+ConvolvedDistributions = "0.4.1, 1"
 EpiAwareADTools = "0.1.2"
 EpiAwarePackageTools = "0.3"
