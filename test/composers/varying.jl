@@ -169,7 +169,7 @@ end
     @test required_covariates(nested) == Dict(:time => [:death])
 
     # A data-selected `Choose` reads its own `selector` covariate, labelled
-    # with a `:selector` suffix (mirroring how `params_table` labels a
+    # with a `:selector` suffix (mirroring how `composed_to_table` labels a
     # `Resolve`'s own `branch_probs` row), in addition to whatever its
     # alternatives read.
     ch = choose(:index => Gamma(2.0, 1.0), :sourced => Gamma(4.0, 1.5))
@@ -187,6 +187,12 @@ end
             shape = LogNormal(0.0, 0.3)),
         :admit => LogNormal(0.5, 0.4))
     @test required_parameters(utree) == [(edge = :onset, param = :shape)]
+
+    # A bare uncertain leaf (no enclosing composer) has no name path, so its
+    # edge is the empty `Symbol` — the same root-row convention
+    # `composed_to_table` uses for a leaf at the tree root.
+    bare = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3))
+    @test required_parameters(bare) == [(edge = Symbol(""), param = :shape)]
 end
 
 @testitem "instantiate: the convolution kernel varies with the context" begin
@@ -211,10 +217,12 @@ end
 end
 
 @testitem "Varying: introspection is transparent to the reference" begin
+    using ComposedDistributions: _param_rows
     using Distributions
 
-    # The varying map is fixed structure; params_table shows the reference's
-    # free parameters and a Varying leaf peels/rewraps like any wrapper.
+    # The varying map is fixed structure; the parameter-only walk shows the
+    # reference's free parameters and a Varying leaf peels/rewraps like any
+    # wrapper.
     inner = Gamma(2.0, 1.0)
     d = varying(t -> Gamma(2.0, 1.0 + 0.1 * t))
     @test ComposedDistributions.free_leaf(d) == inner
@@ -229,12 +237,13 @@ end
         reference = ComposedDistributions.shared(:inc, Gamma(2.0, 1.0)))
     @test ComposedDistributions._shared_tag(tagged) == :inc
 
-    # params_table over a tree with a varying leaf matches the same tree built
-    # from the leaf's reference: the varying map is fixed structure, so only the
-    # reference's free parameters are inventoried. Compare the columns (a
-    # ParamsTable has no value-`==`), reached via the forwarded property access.
-    tbl = params_table(compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4))))
-    ref = params_table(compose((onset_admit = Gamma(2.0, 1.0),
+    # The parameter-only walk over a tree with a varying leaf matches the same
+    # tree built from the leaf's reference: the varying map is fixed
+    # structure, so only the reference's free parameters are inventoried.
+    # Compare the columns (a ComposedTable has no value-`==`), reached via the
+    # forwarded property access.
+    tbl = _param_rows(compose((onset_admit = d, admit_death = LogNormal(0.5, 0.4))))
+    ref = _param_rows(compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4))))
     @test tbl.edge == ref.edge
     @test tbl.param == ref.param

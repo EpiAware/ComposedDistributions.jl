@@ -34,7 +34,7 @@ that alternative's leaf count; every alternative must share that leaf count for
 the nested `Choose` to occupy one fixed flat slot, or the parent's width query
 errors.
 
-For prior introspection ([`params_table`](@ref), [`build_priors`](@ref),
+For prior introspection ([`composed_to_table`](@ref), [`build_priors`](@ref),
 [`update`](@ref)) the alternatives' parameters are namespaced per alternative:
 independent per-branch params live under their alternative name (`index.…` /
 `sourced.…`), so each branch's parameters are inventoried and sampled separately.
@@ -88,6 +88,10 @@ function Choose(names::K, alternatives::A, selector::Symbol) where {
 end
 
 component_names(::Choose{names}) where {names} = names
+
+# The selector field name is fixed structure, not a free parameter, so it
+# rides `composed_to_table`'s `:attribute` rows rather than the `:param` rows.
+node_attributes(d::Choose) = (; selector = d.selector)
 
 @doc "
 

@@ -298,28 +298,24 @@ end
 #
 # Emit the population's hyperparameter rows once per group (deduped through the
 # walk's `seen` set, so they precede every member's latent and the flat vector
-# opens with `[hyper..., ...]`), then this member's latent: a `Normal(0, 1)`
-# `z` row (non-centred) or the member's own parameter carrying the centred-pool
-# marker (centred). All ordinary scalar rows.
-function _pool_rows!(edges, params_col, values, supports, priors, seen,
-        p::Pool, leaf_edge, pname, v, s)
+# opens with `[hyper..., ...]`), then an `:attribute` row naming this member's
+# group (so a member row's group identity is recoverable from
+# `composed_to_table` without joining on `edge`), then this member's latent: a
+# `Normal(0, 1)` `z` row (non-centred) or the member's own parameter carrying
+# the centred-pool marker (centred). All ordinary scalar rows (`node = :Pool`).
+function _pool_rows!(sink, seen, p::Pool, leaf_edge, pname, v, s)
     gkey = _pool_seen_key(pool_group(p))
     if !(gkey in seen)
         push!(seen, gkey)
-        _pool_hyper_rows!(edges, params_col, values, supports, priors, p)
+        _pool_hyper_rows!(sink, p)
     end
+    _push_attr!(sink, leaf_edge, :Pool, pname,
+        (; group = pool_group(p), noncentred = pool_noncentred(p)))
     if pool_noncentred(p)
-        push!(edges, _join_path((_split_edge(leaf_edge)..., pname)))
-        push!(params_col, :z)
-        push!(values, 0.0)
-        push!(supports, (-Inf, Inf))
-        push!(priors, _pool_z_prior(p))
+        edge = _join_path((_split_edge(leaf_edge)..., pname))
+        _push_param!(sink, edge, :z, :Pool, 0.0, (-Inf, Inf), _pool_z_prior(p))
     else
-        push!(edges, leaf_edge)
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, s)
-        push!(priors, CentredPoolPrior(p))
+        _push_param!(sink, leaf_edge, pname, :Pool, v, s, CentredPoolPrior(p))
     end
     return nothing
 end
@@ -328,7 +324,7 @@ end
 # emitted under the `<group>` edge with the specs' priors. A population with no
 # uncertain specs (a fully fixed population) contributes no hyperparameters.
 # This is exactly the uncertain-leaf param walk restricted to the spec'd rows.
-function _pool_hyper_rows!(edges, params_col, values, supports, priors, p::Pool)
+function _pool_hyper_rows!(sink, p::Pool)
     specs = _uncertain_specs(p.population)
     specs === nothing && return nothing
     tmpl = _population_template(p.population)
@@ -337,12 +333,14 @@ function _pool_hyper_rows!(edges, params_col, values, supports, priors, p::Pool)
     vals = params(inner)
     sup = (minimum(inner), maximum(inner))
     for (pname, v) in zip(pnames, vals)
-        haskey(specs, pname) || continue
-        push!(edges, pool_group(p))
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, sup)
-        push!(priors, specs[pname])
+        # A leaf's parameter names are `Symbol`s by contract, but the element
+        # type of `_leaf_param_names(tmpl)` is not inferable for a population
+        # template whose type is not concrete here. The assertion states the
+        # contract, so the row push resolves against a `Symbol` name rather
+        # than one of unknown type.
+        name = pname::Symbol
+        haskey(specs, name) || continue
+        _push_param!(sink, pool_group(p), name, :Pool, v, sup, specs[name])
     end
     return nothing
 end
@@ -607,12 +605,19 @@ end
 
 The centred pooled parameters' `(path, param, pool)` triples, in table order.
 
-Collected once per [`params_table`](@ref) walk (typically at
-`distribution_to_logdensity` construction time), so a tree with only
-non-centred (or no) pooling adds no per-evaluation cost. Reached by qualified
-name from outside this package — DistributionsInference.jl's fit-protocol
-extension calls this directly to find the rows
-[`pool_centred_logprior`](@ref) needs to score.
+Collected from one `_ParamSink` walk (typically at
+`distribution_to_logdensity` construction time) — the same zero-extra-work
+parameter-only walk [`composed_to_table`](@ref) widens, run directly rather
+than through the full table, so a tree with only non-centred (or no) pooling
+adds no per-evaluation cost. Reached by qualified name from outside this
+package — DistributionsInference.jl's fit-protocol extension calls this
+directly to find the rows [`pool_centred_logprior`](@ref) needs to score
+(#212).
+
+A bare pooled leaf (no enclosing composer) has no name path, so its row's
+`path` is the single empty-`Symbol` component `(Symbol(\"\"),)` — the same
+root-row convention [`composed_to_table`](@ref) uses for a leaf at the tree
+root.
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
@@ -631,14 +636,12 @@ ComposedDistributions.centred_pool_rows(tree)
 - [`CentredPoolPrior`](@ref), [`pool_centred_logprior`](@ref)
 "
 function centred_pool_rows(dist)
-    tbl = params_table(dist)
-    prcol = Tables.getcolumn(tbl, :prior)
-    edges = Tables.getcolumn(tbl, :edge)
-    params_col = Tables.getcolumn(tbl, :param)
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), dist, ())
     rows = Tuple{Tuple, Symbol, Pool}[]
-    for i in eachindex(prcol)
-        prcol[i] isa CentredPoolPrior || continue
-        push!(rows, (_split_edge(edges[i]), params_col[i], prcol[i].pool))
+    for i in eachindex(s.prior)
+        s.prior[i] isa CentredPoolPrior || continue
+        push!(rows, (_split_edge(s.edge[i]), s.param[i], s.prior[i].pool))
     end
     return rows
 end

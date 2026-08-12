@@ -6,7 +6,7 @@ Any `Distributions.jl` distribution is a valid leaf with no extra work, so a pla
 A wrapper leaf, a type that carries fixed structure or extra parameters around an inner delay (censoring in CensoredDistributions, the modifiers in ModifiedDistributions), implements the methods below so the introspection and reconstruction layers see through the wrapper to the inner free delay.
 
 The names are `public` but not exported, so a downstream package reaches them by the qualified name (`ComposedDistributions.free_leaf` and friends) and adds methods dispatching on its own wrapper type.
-Extending only `free_leaf` and `rewrap_leaf` is enough for a fixed-structure wrapper; a wrapper that attaches priors or owns extra parameters extends the rest so those reach `params_table` and `build_priors`.
+Extending only `inner_dist` and `rewrap_leaf` is enough for a fixed-structure wrapper; a wrapper that attaches priors or owns extra parameters extends the rest so those reach `composed_to_table` and `build_priors`.
 Every method here dispatches on an instance, and the flat-vector codec (`flat_dimension`, `unflatten`, `flatten`, `reconstruct`) reads the same instance-level hooks at call time, so there is no separate type-level table to keep in step and no further registration step.
 
 ## The methods
@@ -15,8 +15,10 @@ The protocol splits into peel and rebuild, names, reconstruction, uncertainty, t
 
 | Method | Role |
 |---|---|
+| `inner_dist(leaf)` | peel one wrapper layer to the inner distribution |
 | `free_leaf(leaf)` | peel to the innermost free delay |
 | `rewrap_leaf(leaf, inner)` | rebuild the wrapper around a new inner delay |
+| `node_attributes(leaf)` | the layer's own fixed, non-parameter structure |
 | `component_names(node)` | a node's child names |
 | `param_names(leaf)` | the inner delay's native parameter names |
 | `leaf_param_names(leaf)` | the estimable names, native then extra |
@@ -29,15 +31,17 @@ The protocol splits into peel and rebuild, names, reconstruction, uncertainty, t
 | `leaf_detail_lines(leaf)` | `inspect` rendering lines |
 
 The peel and rebuild pair is the base of the protocol.
+`inner_dist` peels a single layer, and the read-through hooks (`free_leaf`, `shared_tag`, `uncertain_specs`, `extra_leaf_params`) recurse through it, so one method covers all of them.
 `free_leaf` reaches the inner free delay whose parameters are the leaf's free parameters, and `rewrap_leaf` re-applies the fixed structure around a rebuilt delay.
-A plain leaf is its own free leaf and `rewrap_leaf` returns the new inner delay, so the identity holds without a method.
+A plain leaf is its own inner distribution and `rewrap_leaf` returns the new inner delay, so the identity holds without a method.
+`composed_to_table` folds the same peel into the wrapper layers it lists, one `:node` row each, so a wrapper appears in the table with no further method.
 
 Names and reconstruction fix the coordinates the parameter table and the codec work in.
 `param_names` labels the native family parameters, `leaf_param_names` appends any extra names, and `leaf_ctor` rebuilds the inner delay from a positional tuple of native values.
 
 ## Extra parameters
 
-Most wrappers carry only fixed structure, so their extra-parameter map is empty and `params_table` shows just the inner delay's rows.
+Most wrappers carry only fixed structure, so their extra-parameter map is empty and `composed_to_table`'s `:param` rows show just the inner delay's parameters.
 A wrapper that owns a free parameter which is not one of the inner delay's native parameters reports it through `extra_leaf_params`, a `NamedTuple` mapping each extra name to a `(value, support)` pair.
 The thinning factor of `thin(d, p)` is the first instance, reported as a `:thin` entry with support `(0.0, 1.0)`.
 The support drives the default prior, so a `:thin` factor picks up a `Uniform(0, 1)` default the same way a `branch_probs` row does.
@@ -68,11 +72,11 @@ rebuilt = ComposedDistributions.rewrap_leaf(
 
 ## Adding a wrapper leaf
 
-1. Implement `free_leaf` and `rewrap_leaf` so the wrapper peels to and rebuilds around the inner free delay.
-2. Add `shared_tag` and `uncertain_specs` methods that forward to the inner delay, so a tie or an attached prior under the wrapper still reaches the parameter table.
+1. Implement `inner_dist` and `rewrap_leaf` so the wrapper peels one layer to its inner distribution and rebuilds around a new inner delay. A tie or an attached prior under the wrapper then reaches the table with no further method, since the read-through hooks follow the same peel.
+2. Add a `node_attributes` method when the wrapper carries fixed structure worth showing, as a truncation bound or a censoring window does. Each entry becomes one `:attribute` row of `composed_to_table`.
 3. Override `leaf_mean` and `leaf_var` only when the wrapper's transform changes the moment, as an affine scale and shift does.
 4. Implement `extra_leaf_params` and `set_extra_leaf_params` only when the wrapper owns a free parameter beyond the inner delay's native ones.
 5. Add a `leaf_detail_lines` method when the wrapper's raw struct dump would clutter an `inspect` tree.
 
 The docstrings for each method, with runnable examples, are in the public API reference.
-Steps 1-5 are all a leaf-wrapper package needs: `params_table`, `build_priors` and the generated flat-vector codec (`flat_dimension`/`unflatten`/`flatten`/`reconstruct`) all read the same instance-level hooks, so there is no separate codec-specific registration step.
+Steps 1-5 are all a leaf-wrapper package needs: `composed_to_table`, `build_priors` and the generated flat-vector codec (`flat_dimension`/`unflatten`/`flatten`/`reconstruct`) all read the same instance-level hooks, so there is no separate codec-specific registration step.

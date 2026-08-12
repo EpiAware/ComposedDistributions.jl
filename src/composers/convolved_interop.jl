@@ -244,7 +244,7 @@ end
 #
 # A `Convolved` / `Difference` node used as a leaf is a pre-formed composite
 # delay whose parameters *are* its components' parameters. The prior/params
-# interface sees through it to the component leaves: `params_table` inventories
+# interface sees through it to the component leaves: `composed_to_table` inventories
 # each component's scalar parameters under a `component_i` path segment (so a
 # two-Gamma `Convolved` at edge `:total` lists `total.component_1.shape`,
 # `total.component_1.scale`, `total.component_2.shape`, ...), and `update`
@@ -275,17 +275,20 @@ _rebuild(d::Difference, comps::Tuple) = Difference(comps[1], comps[2];
 # mirroring the edge/param naming the composers use for their named children.
 _composite_component_names(n::Int) = ntuple(i -> Symbol(:component_, i), n)
 
-# params_table rows: recurse into each component under a `component_i` segment,
-# reusing the generic leaf walk for each component (so a plain, censored,
-# uncertain, or nested-composite component is inventoried exactly as it would be
-# as a standalone leaf, one row-group per component).
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        d::Union{Convolved, Difference}, path)
+# Composed-table rows: the composite's own `:node`/`:attribute` rows (like any
+# other composer node), then recurse into each component under a
+# `component_i` segment, reusing the generic leaf walk for each component (so
+# a plain, censored, uncertain, or nested-composite component is inventoried
+# exactly as it would be as a standalone leaf, one row-group per component).
+function _walk_rows!(sink, seen, d::Union{Convolved, Difference}, path)
+    edge = _join_path(path)
+    kind = _node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
     children = _node_children(d)
     names = _composite_component_names(length(children))
     for (name, child) in zip(names, children)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, child,
-            (path..., name))
+        _walk_rows!(sink, seen, child, (path..., name))
     end
     return nothing
 end

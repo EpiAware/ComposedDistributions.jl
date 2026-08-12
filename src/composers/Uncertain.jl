@@ -48,7 +48,7 @@
 A leaf distribution whose parameters are themselves distributions.
 
 `Uncertain` pairs a concrete `template` leaf with `specs`, a `NamedTuple`
-mapping parameter names (as in [`params_table`](@ref)'s `param` column) to
+mapping parameter names (as in [`composed_to_table`](@ref)'s `param` column) to
 distributions. A spec entry may itself be an `Uncertain`, so parameter
 uncertainty nests. Parameters without a spec stay fixed at the template's
 values, and the template's fixed wrapper structure (truncation, censoring) is
@@ -136,7 +136,7 @@ distributions, nestable to any depth.
 - `uncertain(template; kwargs...)` wraps a concrete `template` leaf so the named
   parameters are drawn from the given distributions rather than fixed. Each
   keyword is a parameter name of the template's free delay (as in
-  [`params_table`](@ref)'s `param` column); a distribution value makes that
+  [`composed_to_table`](@ref)'s `param` column); a distribution value makes that
   parameter uncertain, a `Real` value re-pins it to a new fixed value.
 - `uncertain(Family, args...)` (a type, e.g. `Gamma`) takes one positional
   argument per parameter, in the family's constructor order: a
@@ -156,9 +156,9 @@ The result is a `Distributions.UnivariateDistribution` and composes as a leaf
 everywhere ([`sequential`](@ref), [`parallel`](@ref), [`resolve`](@ref),
 [`compete`](@ref), [`choose`](@ref), [`shared`](@ref)): `rand` draws the
 marginal, and [`update`](@ref)`(tree, params)` collapses an uncertain leaf to
-its concrete template. In [`params_table`](@ref) an uncertain parameter's spec
-rides the row's `prior` column, so [`build_priors`](@ref) picks it up without an
-explicit override.
+its concrete template. In [`composed_to_table`](@ref) an uncertain parameter's
+spec rides the row's `prior` column, so [`build_priors`](@ref) picks it up
+without an explicit override.
 
 !!! warning \"Only `rand` is marginal\"
     Every other query on the result — `logpdf`/`cdf`/`quantile`/... and the
@@ -392,9 +392,14 @@ end
 inner_dist(d::Uncertain) = d.template
 rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
+# `Uncertain` is a wrapper layer of its own in `composed_to_table`, peeling to
+# the template's layers through `inner_dist` above; it has no attributes of
+# its own (its specs already ride the `:param` rows' `prior` column, so the
+# default empty `node_attributes` is right and needs no override).
+
 # A modifier-owned extra parameter (e.g. a thinned template's `:thin` factor)
-# survives an uncertain leaf, so `params_table` still surfaces it (forwarded via
-# the new `inner_dist(::Uncertain)` hook). There is no
+# survives an uncertain leaf, so `composed_to_table` still surfaces it
+# (forwarded via `inner_dist(::Uncertain)`). There is no
 # `set_extra_leaf_params(::Uncertain)`: `rewrap_leaf` strips the uncertainty, so
 # the setter always runs on the rebuilt concrete leaf, not on the `Uncertain`.
 
@@ -404,8 +409,8 @@ _shared_tag(d::Uncertain) = _shared_tag(d.template)
 
 # The uncertain-spec protocol hook (default `nothing` in introspection.jl):
 # an `Uncertain` reports its own specs, and the known wrapper leaves forward so
-# a wrapped uncertain leaf still exposes them to `params_table`'s prior column.
-# (Extension wrapper types add their own forwarding methods.)
+# a wrapped uncertain leaf still exposes them to `composed_to_table`'s prior
+# column. (Extension wrapper types add their own forwarding methods.)
 _uncertain_specs(d::Uncertain) = d.specs
 _uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
 

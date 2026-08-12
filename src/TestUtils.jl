@@ -40,7 +40,7 @@ import Tables
 using ..ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                                Resolve, Compete, AbstractOneOf, Choose,
                                compose, resolve, compete, choose,
-                               event, event_names, event_tree, params_table,
+                               event, event_names, event_tree, composed_to_table,
                                observed_distribution, component_names,
                                AbstractComposedDistribution, AbstractMultiChild,
                                child_nleaves, child_logpdf, child_rand!
@@ -106,8 +106,8 @@ The checklist asserts, where applicable to the node's shape:
   for a `Parallel`);
 - `logpdf` is finite on the supplied in-support `draw`;
 - a univariate `cdf` is monotone and in `[0, 1]`;
-- `params` works and `params_table` is a Tables.jl table
-  (`Tables.istable(params_table(d))`);
+- `params` works and `composed_to_table` is a Tables.jl table
+  (`Tables.istable(composed_to_table(d))`);
 - `event_names` (flat) and `event_tree` agree in leaf count;
 - `event(d, path...)` round-trips the supplied known path;
 - `observed_distribution` collapses a chain to a univariate scalar.
@@ -252,10 +252,10 @@ function _check_cdf(d, fix)
 end
 
 function _check_params(d)
-    @testset "params / params_table" begin
+    @testset "params / composed_to_table" begin
         @test_nowarn params(d)
         if d isa Union{Sequential, Parallel, Resolve, Choose}
-            tbl = params_table(d)
+            tbl = composed_to_table(d)
             @test Tables.istable(tbl)
         end
     end

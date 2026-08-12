@@ -104,21 +104,21 @@ end
 end
 
 @testitem "codec: pooled parameter that is not the leaf's first native parameter" begin
-    using ComposedDistributions: update, params_table
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
     # Gamma's native order is (shape, scale); `scale` is pooled here, so a
     # codec walk that (wrongly) hoists the pool group's hyperparameter slots
     # before the WHOLE leaf's own block -- rather than at `scale`'s own
-    # native-order position, after `shape` -- disagrees with `params_table`.
+    # native-order position, after `shape` -- disagrees with the parameter rows.
     tree = compose((
         a = uncertain(Gamma(2.0, 3.0);
             shape = LogNormal(0.0, 0.3), scale = pool(:g)),
         b = uncertain(Gamma(4.0, 5.0);
             shape = LogNormal(0.0, 0.3), scale = pool(:g))))
 
-    table = params_table(tree)
+    table = _param_rows(tree)
     @test collect(table.edge) ==
           [:a, :g, :g, Symbol("a.scale"), :b, Symbol("b.scale")]
     @test collect(table.param) == [:shape, :mu, :sigma, :z, :shape, :z]
@@ -137,7 +137,7 @@ end
 end
 
 @testitem "codec: a leaf naming two different pool groups" begin
-    using ComposedDistributions: update, params_table
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
@@ -146,7 +146,7 @@ end
         b = uncertain(Gamma(4.0, 5.0); shape = pool(:g1)),
         c = uncertain(Gamma(6.0, 7.0); scale = pool(:g2))))
 
-    table = params_table(tree)
+    table = _param_rows(tree)
     @test collect(table.edge) == [:g1, :g1, Symbol("a.shape"), :g2, :g2,
         Symbol("a.scale"), Symbol("b.shape"), :b, :c, Symbol("c.scale")]
     @test flat_dimension(tree) == 8
@@ -166,13 +166,13 @@ end
 end
 
 @testitem "codec: pool population whose uncertain kwargs are out of native order" begin
-    using ComposedDistributions: update, params_table
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: unflatten, flatten, flat_dimension, reconstruct
 
     # `pop` writes `scale` before `shape`, the reverse of Gamma's native
     # (shape, scale) order; the group hyperparameter rows must still land in
-    # NATIVE order (`params_table` walks `leaf_param_names`, not a
+    # NATIVE order (the walk follows `leaf_param_names`, not a
     # population's kwargs order).
     pop = uncertain(Gamma(2.0, 3.0);
         scale = LogNormal(0.0, 0.3), shape = LogNormal(0.0, 0.3))
@@ -180,7 +180,7 @@ end
         a = uncertain(Gamma(2.0, 3.0); shape = pool(:g, pop)),
         b = uncertain(Gamma(4.0, 5.0); shape = pool(:g, pop))))
 
-    table = params_table(tree)
+    table = _param_rows(tree)
     @test collect(table.param)[1:2] == [:shape, :scale]
 
     x = [2.0, 3.0, 2.0, 3.0]
@@ -382,7 +382,7 @@ end
 # a type-level table (`_leaf_type_param_names` and the four companions it
 # combined, all removed) -- they resolve them at RUNTIME, from the leaf's own
 # INSTANCE-level `leaf_param_names`/`leaf_param_values` (introspection.jl),
-# exactly like `params_table`/`update` always have. This is the motivating
+# exactly like `composed_to_table`/`update` always have. This is the motivating
 # regression case that table could not handle without a bespoke override: a
 # leaf type whose `Distributions.params` are NOT its own struct fields 1:1 (a
 # moment-parameterised wrapper, mirroring `ReparameterisedDistributions`),

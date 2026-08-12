@@ -153,7 +153,7 @@ end
     @test !(sh isa AbstractOneOf)
 end
 
-@testitem "introspection contract: names, tree and params_table agree" begin
+@testitem "introspection contract: names, tree and composed_to_table agree" begin
     using ComposedDistributions, Distributions
     import ComposedDistributions: component_names
 
@@ -164,9 +164,8 @@ end
     @test component_names(tree) isa Tuple
     @test component_names(tree) == (:onset_admit, :admit_death)
 
-    # `params_table` is a Tables.jl column source: one row per free parameter,
-    # reachable by column.
-    tbl = params_table(tree)
+    # `composed_to_table` is a Tables.jl column source, reachable by column.
+    tbl = composed_to_table(tree)
     @test tbl.edge isa AbstractVector
     @test tbl.param isa AbstractVector
     @test length(tbl.edge) == length(tbl.param)
@@ -213,17 +212,18 @@ end
           logpdf(censored(Gamma(3.0, 1.5); upper = 10.0), 2.0)
 end
 
-@testitem "params_table reports a censored leaf's inner params, not its bounds" begin
+@testitem "composed_to_table reports a censored leaf's inner params, not its bounds" begin
+    using ComposedDistributions: _param_rows
     using ComposedDistributions, Distributions
 
-    # Before Censored had its own leaf-protocol methods, `params_table` fell
-    # back to the generic (unpeeled) walk and reported the censoring bounds as
-    # if they were free parameters (a spurious `nothing` row for an absent
-    # bound, and the fixed bound itself as a "value"), with the wrong support.
-    # This is the regression guard for that gap.
+    # Before Censored had its own leaf-protocol methods, the parameter-only
+    # walk fell back to the generic (unpeeled) walk and reported the censoring
+    # bounds as if they were free parameters (a spurious `nothing` row for an
+    # absent bound, and the fixed bound itself as a "value"), with the wrong
+    # support. This is the regression guard for that gap.
     tree = compose((onset = censored(Gamma(2.0, 3.0); upper = 10.0),
         admit = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = _param_rows(tree)
     onset_rows = findall(==(:onset), tbl.edge)
     @test length(onset_rows) == 2
     @test tbl.param[onset_rows] == [:shape, :scale]
