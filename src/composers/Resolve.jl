@@ -198,7 +198,7 @@ end
 
 # A `Resolve` with no attached prior is fixed structure; this three-argument
 # form keeps every existing construction path (the `Pair...` constructor,
-# `_rebuild`, `prune`, equality round-trips) building a fixed node unchanged.
+# `node_rebuild`, `prune`, equality round-trips) building a fixed node unchanged.
 function Resolve(names::Tuple, delays::Tuple, branch_probs::Tuple)
     return Resolve(names, delays, branch_probs, nothing)
 end

@@ -14,7 +14,7 @@
 #     resolved by `rand` (the marginal) or collapsed by `update`.
 #
 # They share one resolution machinery: `instantiate` rebuilds through the same
-# `_node_children` / `_rebuild` walk that `update`'s value collapse and
+# `node_children` / `node_rebuild` walk that `update`'s value collapse and
 # `structural_edits.jl`'s path edits use, rather than hand-rolling its own tree
 # walk.
 # A leaf can be both (a time-varying delay whose per-level parameter is itself
@@ -443,14 +443,14 @@ end
 
 # A composer resolves every child against the context and rebuilds itself
 # unchanged, so the tree shape and names are preserved and only the leaves
-# change. This reuses the `_node_children` / `_rebuild` reconstruction machinery
+# change. This reuses the `node_children` / `node_rebuild` reconstruction machinery
 # that `update`'s value walk and `structural_edits.jl`'s path edits already
 # share, so
 # resolution is not a third hand-rolled tree walk. `Resolve` / `Compete` are
 # `UnivariateDistribution`s, so these node methods win over the leaf identity.
 function instantiate(d::Union{Sequential, Parallel, Resolve, Compete},
         ctx::AbstractContext)
-    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
+    return node_rebuild(d, map(c -> instantiate(c, ctx), node_children(d)))
 end
 
 # A `Choose` selects an alternative by an observed data field (its `selector`).
@@ -464,12 +464,12 @@ function instantiate(d::Choose, ctx::AbstractContext)
     if _has_covariate(ctx, d.selector)
         return instantiate(_pick(d, _covariate(ctx, d.selector)), ctx)
     end
-    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
+    return node_rebuild(d, map(c -> instantiate(c, ctx), node_children(d)))
 end
 
 # A tagged shared leaf keeps its tag through resolution (the resolved value is
 # still the same shared parameter group); it is a wrapper leaf, so it forwards
-# into its wrapped distribution rather than through `_node_children`.
+# into its wrapped distribution rather than through `node_children`.
 function instantiate(d::Shared{tag}, ctx::AbstractContext) where {tag}
     return Shared{tag}(instantiate(d.dist, ctx))
 end
@@ -536,7 +536,7 @@ has_varying(d::AbstractOneOf) = any(has_varying, node_children(d))
 # these name *which* one(s), keyed to the node paths that read them, so a
 # fitting loop can validate a data source's columns up front rather than
 # discovering a gap reactively, one covariate at a time, mid-`instantiate`.
-# A dedicated tree walk (not routed through `_node_children`) since it needs
+# A dedicated tree walk (not routed through `node_children`) since it needs
 # per-position edge names (`component_names`), like `composed_to_table`'s walk.
 
 @doc "

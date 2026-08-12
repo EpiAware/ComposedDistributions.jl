@@ -8,10 +8,13 @@ distribution (or a bare leaf), so a downstream author writing a new leaf or
 composer can drop it into their own `@testset` to verify conformance against the
 package's public interface. `test_node_interface(node)` is the companion check
 for a new composer node, asserting its `child_nleaves` / `child_logpdf` /
-`child_rand!` methods round-trip on a flat event vector. [`test_interface`](@ref),
+`child_rand!` methods round-trip on a flat event vector and its
+[`ComposedDistributions.flat_dimension`](@ref) matches its own table.
+[`test_interface`](@ref),
 [`example_fixtures`](@ref), [`test_rejects_invalid`](@ref),
-[`test_node_interface`](@ref), [`test_composed_interface`](@ref) and
-[`test_abstract_membership`](@ref) are exported from this submodule.
+[`test_node_interface`](@ref), [`test_estimation_dimension`](@ref),
+[`test_composed_interface`](@ref) and [`test_abstract_membership`](@ref) are
+exported from this submodule.
 
 The harness is dependency-light — `Test` (a stdlib), `Tables`, and the
 package's own public surface — and each check returns its `@testset` result
@@ -51,9 +54,10 @@ using ..ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                                uncertain, shared
 
 export test_interface, example_fixtures, test_rejects_invalid,
-       test_node_interface, test_ad_safety, registry_types,
-       test_registry_coverage, test_composed_interface, test_abstract_membership,
-       test_leaf_protocol_completeness, test_sampling_consistency
+       test_node_interface, test_estimation_dimension, test_ad_safety,
+       registry_types, test_registry_coverage, test_composed_interface,
+       test_abstract_membership, test_leaf_protocol_completeness,
+       test_sampling_consistency
 
 # --- per-fixture descriptor -------------------------------------------------
 #
@@ -158,6 +162,7 @@ function test_interface(fix::InterfaceFixture; ad_gradient = nothing)
         _check_logpdf(d, fix)
         _check_cdf(d, fix)
         _check_params(d)
+        _check_estimation_dimension(d)
         _check_event_names(d, fix)
         _check_event_path(d, fix)
         _check_endpoint(d, fix)
@@ -260,12 +265,66 @@ end
 function _check_params(d)
     @testset "params / composed_to_table" begin
         @test_nowarn params(d)
-        if d isa Union{Sequential, Parallel, Resolve, Choose}
+        if d isa AbstractComposedDistribution
             tbl = composed_to_table(d)
             @test Tables.istable(tbl)
         end
     end
     return nothing
+end
+
+# The `flat_dimension` invariant (#374): the codec's estimated-parameter count
+# must agree with the table's estimated-row count (the `composed_to_table`
+# `:param` rows carrying an attached `uncertain` prior), so a node that
+# silently drops an uncertain leaf from the flat-vector codec (rather than
+# raising a loud error for a layout it cannot handle) is caught here instead
+# of shipping green. Skipped for a bare leaf (`flat_dimension` is defined
+# only over `AbstractComposedDistribution`).
+function _check_estimation_dimension(d)
+    d isa AbstractComposedDistribution || return nothing
+    @testset "flat_dimension matches composed_to_table's estimated rows" begin
+        tbl = composed_to_table(d)
+        expected = count(!isnothing, tbl.prior)
+        @test ComposedDistributions.flat_dimension(d) == expected
+    end
+    return nothing
+end
+
+@doc """
+
+Assert a composed distribution's estimated-parameter dimension matches its table.
+
+`test_estimation_dimension(d)` checks that
+[`ComposedDistributions.flat_dimension`](@ref)`(d)` equals the number of
+[`composed_to_table`](@ref)`(d)` rows carrying an attached prior (an
+[`ComposedDistributions.uncertain`](@ref) spec, or a `Resolve`'s
+uncertain `branch_probs`) — the flat-vector codec and the table walk must agree
+on how many free parameters a tree has. A composer node that silently drops an
+uncertain leaf from the codec (reporting a smaller `flat_dimension` than the
+table's estimated-row count, rather than raising a loud error for a layout it
+cannot handle) fails here (#374): [`test_interface`](@ref) and
+[`test_node_interface`](@ref) both call this, so this is normally exercised
+through them rather than called directly. Skipped for a bare leaf
+(`flat_dimension` is defined only over `AbstractComposedDistribution`). Returns
+the `@testset` object.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+using ComposedDistributions.TestUtils: test_estimation_dimension
+
+tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
+    shape = LogNormal(log(2.0), 0.2)), admit_death = LogNormal(0.5, 0.4)))
+test_estimation_dimension(tree)
+nothing # hide
+```
+""" function test_estimation_dimension end
+
+function test_estimation_dimension(d;
+        name::AbstractString = string(nameof(typeof(d))))
+    return @testset "estimation dimension: $name" begin
+        _check_estimation_dimension(d)
+    end
 end
 
 # The flat event path and the nested `event_tree` must agree in leaf count:
@@ -557,15 +616,23 @@ end
 
 Assert a composer node satisfies the public node-extension contract.
 
-`test_node_interface(node)` checks the three methods a new composer node
-implements (`child_nleaves`, `child_logpdf`, `child_rand!`) round-trip on a flat
-event vector, the same way the composers walk one. It asserts that
+`test_node_interface(node)` checks that `node`'s `child_nleaves` / `child_logpdf`
+/ `child_rand!` (whether the node's own methods or the generic defaults derived
+from [`ComposedDistributions.node_children`](@ref)) round-trip on a flat event
+vector, the same way the composers walk one, and that its estimated-parameter
+dimension agrees with its own table (see below). It asserts that
 
 - `child_nleaves(node)` is a positive `Int`;
 - `child_rand!` fills exactly the node's `offset + 1 : offset + n` slot, leaving
   any padding either side untouched;
 - `child_logpdf(node, x, offset, n)` is a finite scalar on that drawn vector and
-  does not depend on the surrounding padding.
+  does not depend on the surrounding padding;
+- [`ComposedDistributions.flat_dimension`](@ref)`(node)` matches
+  [`composed_to_table`](@ref)`(node)`'s
+  estimated-row count (see [`test_estimation_dimension`](@ref)) — a node that
+  silently drops an uncertain leaf from the flat-vector codec instead of raising
+  a loud error fails here (#374), rather than passing with a smaller
+  `flat_dimension` than the table reports.
 
 Pass `offset` and `pad` to place the node inside a wider vector, and `rng` for a
 reproducible draw. Returns the `@testset` object.
@@ -611,6 +678,9 @@ function test_node_interface(node; name::AbstractString =
         # vector gives the same value (the node reads only its own slice).
         tight = out[slot]
         @test child_logpdf(node, tight, 0, n) ≈ lp
+
+        # The flat_dimension invariant (#374): see `test_estimation_dimension`.
+        _check_estimation_dimension(node)
     end
 end
 

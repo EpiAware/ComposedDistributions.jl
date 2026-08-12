@@ -87,42 +87,49 @@ end
     using ComposedDistributions, Distributions, Random
     using ComposedDistributions.TestUtils: test_node_interface
     import ComposedDistributions: child_nleaves, child_logpdf, child_rand!,
-                                  node_children, AbstractComposedDistribution
+                                  node_children, node_rebuild, component_names,
+                                  AbstractComposedDistribution
 
-    # A minimal user node combining two branches side by side (the worked
-    # example from the extending-guide docs). The public contract is reached
-    # by the qualified name, the same way the leaf hooks are. Subtyping
-    # `AbstractComposedDistribution` (not a bare struct) is what lets it nest
-    # as a named child of a built-in below (#332/#345's structural-composability
-    # fix: composability is checked against this abstract root, not a closed
-    # list of the built-in types).
-    struct Both{A, B} <: AbstractComposedDistribution{Multivariate, Continuous}
-        first::A
-        second::B
+    # A minimal user node combining two named branches side by side (the
+    # worked example from the extending-guide docs, #374). Subtyping
+    # `AbstractComposedDistribution` and implementing `node_children` /
+    # `node_rebuild` / `component_names` is the whole contract: `names` and
+    # the children's types as the first two type parameters (matching
+    # `Sequential`/`Parallel`/`Choose`/`Compete`'s own shape) is what lets the
+    # flat-vector codec read the tree's layout with no method call of its own
+    # (see `docs/src/developer/extending.md`), and everything else
+    # -- `child_nleaves` / `child_logpdf` / `child_rand!`, `params`, the table
+    # walk, `update` -- comes for free as a generic "concatenating node"
+    # default. A node with different combination semantics overrides those
+    # three `child_*` methods directly, as the old hand-rolled version of this
+    # example used to.
+    struct Both{names, C <: Tuple} <:
+           AbstractComposedDistribution{Multivariate, Continuous}
+        children::C
+        function Both{names}(children::C) where {names, C <: Tuple}
+            length(names) == length(children) ||
+                throw(ArgumentError("names/children length mismatch"))
+            new{names, C}(children)
+        end
     end
-    child_nleaves(b::Both) = child_nleaves(b.first) + child_nleaves(b.second)
-    function child_logpdf(b::Both, x, offset, ::Int)
-        n1 = child_nleaves(b.first)
-        n2 = child_nleaves(b.second)
-        return child_logpdf(b.first, x, offset, n1) +
-               child_logpdf(b.second, x, offset + n1, n2)
-    end
-    function child_rand!(out, offset, rng::AbstractRNG, b::Both)
-        n1 = child_nleaves(b.first)
-        child_rand!(out, offset, rng, b.first)
-        child_rand!(out, offset + n1, rng, b.second)
-        return nothing
-    end
-    node_children(b::Both) = (b.first, b.second)
+    Both(children::C, names::NTuple{
+        N, Symbol}) where {N, C <: Tuple} = Both{names}(children)
 
-    node = Both(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
+    node_children(d::Both) = d.children
+    node_rebuild(d::Both, children::Tuple) = Both(children, component_names(d))
+    component_names(::Both{names}) where {names} = names
+
+    node = Both((Gamma(2.0, 1.0), LogNormal(0.5, 0.4)), (:first, :second))
     @test child_nleaves(node) == 2
 
-    # The reusable harness accepts the user node directly, the same way it checks
-    # the built-ins.
+    # The reusable harness accepts the user node directly, the same way it
+    # checks the built-ins -- including the `flat_dimension` invariant
+    # (#374), which a node whose codec layout disagreed with its table would
+    # fail here.
     test_node_interface(node; name = "Both")
 
-    # The node fills only its own slice and scores it position-independently.
+    # The node fills only its own slice and scores it position-independently,
+    # through the generic `child_rand!`/`child_logpdf` defaults.
     out = fill(NaN, 4)
     @test child_rand!(out, 1, Xoshiro(1), node) === nothing
     @test all(isfinite, @view out[2:3])
@@ -150,6 +157,156 @@ end
     @test has_uncertain(tree) == false
     @test parallel(:a => node, :b => Gamma(1.0, 1.0)) isa Parallel
     @test choose(:x => node, :y => Gamma(1.0, 1.0)) isa Choose
+end
+
+@testitem "a user-defined composer node composes, tables, flattens and \
+fits" begin
+    using ComposedDistributions, Distributions
+    import ComposedDistributions: node_children, node_rebuild, component_names,
+                                  AbstractComposedDistribution, flat_dimension,
+                                  unflatten, flatten, reconstruct
+
+    struct Both{names, C <: Tuple} <:
+           AbstractComposedDistribution{Multivariate, Continuous}
+        children::C
+        function Both{names}(children::C) where {names, C <: Tuple}
+            length(names) == length(children) ||
+                throw(ArgumentError("names/children length mismatch"))
+            new{names, C}(children)
+        end
+    end
+    Both(children::C, names::NTuple{
+        N, Symbol}) where {N, C <: Tuple} = Both{names}(children)
+    node_children(d::Both) = d.children
+    node_rebuild(d::Both, children::Tuple) = Both(children, component_names(d))
+    component_names(::Both{names}) where {names} = names
+
+    both = Both(
+        (uncertain(Gamma(2.0, 1.0);
+                shape = LogNormal(log(2.0), 0.2)), Gamma(1.5, 1.0)),
+        (:leg, :tail))
+
+    # Tables: composed_to_table walks the node generically (no method of its
+    # own beyond the three above), reporting one estimated row for the
+    # uncertain leaf.
+    tbl = composed_to_table(both)
+    @test tbl.node[1] == :Both
+    @test count(!isnothing, tbl.prior) == 1
+
+    # Flattens: the codec reads Both's (names, children-types) type
+    # parameters at compile time and the estimated flat vector round-trips.
+    @test flat_dimension(both) == 1
+    nt = unflatten(both, [3.0])
+    @test nt == (leg = (shape = 3.0, scale = 1.0), tail = (shape = 1.5,
+        scale = 1.0))
+    @test flatten(both, nt) == [3.0]
+
+    # Fits: reconstruct/update collapse the tree at an estimated draw, the
+    # primitive a sampler-driven fit routes through.
+    fitted = reconstruct(both, [4.0])
+    @test fitted isa Both
+    @test params(node_children(fitted)[1]) == (4.0, 1.0)
+    @test ComposedDistributions.update(both,
+        (leg = (shape = 5.0, scale = 1.0), tail = (shape = 1.5, scale = 1.0))) isa
+          Both
+
+    # Composes: Both nests as a named child of a built-in composer (and a
+    # built-in nests under Both, both directions of the same contract), and
+    # the whole tree's own table/codec see straight through it.
+    seq = Sequential((both, Gamma(1.0, 1.0)), (:branch, :tail2))
+    @test composed_to_table(seq).node[1:2] == [:Sequential, :Both]
+    @test flat_dimension(seq) == 1
+    sel = choose(:x => both, :y => Gamma(2.0, 1.0))
+    @test flat_dimension(sel) == 1
+end
+
+@testitem "an incomplete composer node fails loudly, not silently \
+(#374)" begin
+    using ComposedDistributions, Distributions, Test
+    import ComposedDistributions: AbstractComposedDistribution, flat_dimension
+
+    # A type that subtypes AbstractComposedDistribution but implements none
+    # of the node contract. Before #374's fix this fell through the codec's
+    # closed dispatch chain straight to the LEAF branch and silently reported
+    # `flat_dimension == 0` for a tree that plainly has an uncertain leaf.
+    # Every entry point must now fail loudly instead, naming the missing
+    # method or the exact type-parameter shape the codec needs.
+    struct NoMethods{F, S} <: AbstractComposedDistribution{F, S}
+        a::Any
+        b::Any
+    end
+    NoMethods(a, b) = NoMethods{Multivariate, Continuous}(a, b)
+
+    incomplete = NoMethods(
+        uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+        Gamma(1.5, 1.0))
+
+    @test_throws MethodError composed_to_table(incomplete)
+    @test_throws MethodError ComposedDistributions.update(incomplete,
+        (a = (shape = 3.0, scale = 1.0), b = (shape = 1.5, scale = 1.0)))
+    # `flat_dimension` never even reaches `node_children`/`component_names`
+    # for a type with no (names, children-types) type-parameter shape at
+    # all -- the codec's own generation-time layout check catches it first,
+    # with a message naming the fix.
+    err = try
+        flat_dimension(incomplete)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("type parameters", sprint(showerror, err))
+
+    # `test_node_interface`/`test_estimation_dimension` are EXPECTED to fail
+    # on `incomplete` -- that is the point of this fixture -- so each runs
+    # under a throwaway parent testset (`Test.push_testset`/`pop_testset`)
+    # rather than the real one this `@testitem` provides. Left under the real
+    # parent, the inner error would be recorded into the SUITE's own pass/
+    # fail tally (an "errored" count on the whole `Pkg.test` run) even though
+    # every `@test` written here passes; swapping the ambient testset keeps
+    # the expected-failure noise scoped to a throwaway sink this file reads
+    # and discards, exactly as `@test_throws` isolates an expected exception.
+    # A `Test.DefaultTestSet` pushes every non-passing outcome (a `Fail`, an
+    # `Error`, or a failed nested testset) onto its own `results`, and
+    # nothing onto it when everything passes, so `isempty(ts.results)` is a
+    # reliable "did this fully pass" check.
+    using ComposedDistributions.TestUtils: test_node_interface,
+                                           test_estimation_dimension
+    function _run_scoped(f)
+        scratch = Test.DefaultTestSet("scratch")
+        Test.push_testset(scratch)
+        try
+            return f()
+        finally
+            Test.pop_testset()
+        end
+    end
+
+    node_ts = _run_scoped(() -> test_node_interface(incomplete))
+    @test !isempty(node_ts.results)
+
+    dim_ts = _run_scoped(() -> test_estimation_dimension(incomplete))
+    @test !isempty(dim_ts.results)
+
+    # A type that DOES implement node_children/node_rebuild/component_names
+    # (so it composes and tables correctly) but not the type-parameter
+    # layout the flat-vector codec needs: a clear, actionable error naming
+    # the type and the fix, never a silent miscount.
+    import ComposedDistributions: node_children, node_rebuild, component_names
+    node_children(d::NoMethods) = (d.a, d.b)
+    node_rebuild(d::NoMethods, c::Tuple) = NoMethods(c[1], c[2])
+    component_names(::NoMethods) = (:a, :b)
+
+    tbl = composed_to_table(incomplete)
+    @test count(!isnothing, tbl.prior) == 1
+    err2 = try
+        flat_dimension(incomplete)
+        nothing
+    catch e
+        e
+    end
+    @test err2 isa ArgumentError
+    @test occursin("type parameters", sprint(showerror, err2))
 end
 
 @testitem "abstract membership: composers sit under the right supertype" begin

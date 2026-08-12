@@ -110,72 +110,111 @@ Every method here dispatches on an instance, and the flat-vector codec (`flat_di
 
 ## [Writing a new composer node](@id new-composer-node)
 
-A realisation of a composed tree is one flat vector of leaf values laid out depth-first, and each node reads and writes only its own contiguous slice by an offset.
-Three methods carry this, reached by the qualified name (`ComposedDistributions.child_nleaves` and friends, which are `public` but not exported):
+A node combines named children into a bigger structure: a table row, a slice of the flat estimated-parameter vector, a slice of the flat event vector.
+Three methods carry the whole contract, reached by the qualified name (`public`, not exported):
+
+- [`node_children`](@ref)`(node)` returns the node's children as a `Tuple`, positionally matching `component_names`;
+- [`node_rebuild`](@ref)`(node, children)` rebuilds a node of the same type and own fixed structure around a new children tuple;
+- `component_names(node)` returns a `Tuple` of the child names.
+
+Those three are all a plain node needs.
+`composed_to_table`, nested `params`, `update`, [`has_varying`](@ref) and [`has_uncertain`](@ref) all walk them generically, dispatching against the public `AbstractComposedDistribution` root rather than a closed list of the built-in types, so a node needs no registration.
+
+A realisation of a composed tree is also one flat vector of leaf values laid out depth-first, and each node reads and writes only its own contiguous slice by an offset.
+Three further methods carry that walk:
 
 - `child_nleaves(node)` returns a positive `Int`, the flat-slot count (one per leaf below the node);
 - `child_logpdf(node, x, offset, n)` returns a finite scalar over the node's `n`-wide slice `x[offset + 1 : offset + n]`, independent of the surrounding padding;
 - `child_rand!(out, offset, rng, node)` fills exactly that slice in place and returns `nothing`, leaving the padding either side untouched.
 
-A node delegates to each child by the same three methods, passing each child its own offset, so it nests inside any other node automatically: the built-ins call these functions polymorphically over each child rather than switching on the child's concrete type, so a node implementing them nests as a named child of `Sequential`/`Parallel`/`Choose`/`Resolve`/`Compete` with no registration, once it subtypes `AbstractComposedDistribution` (composability is checked structurally against that root, not a closed list of the built-in types).
+They default generically off `node_children` for a *concatenating* node, one whose realisation is just its children's laid end to end, exactly `Sequential`/`Parallel`'s own semantics.
+A node with different combination semantics (a disjunction like `Choose`, a mixture) overrides the three directly.
 
-A univariate leaf is the base case: it occupies one slot (`child_nleaves == 1`), `child_rand!` writes its single draw, and `child_logpdf` scores `x[offset + 1]`.
+A univariate leaf is the base case for that walk: it occupies one slot (`child_nleaves == 1`), `child_rand!` writes its single draw, and `child_logpdf` scores `x[offset + 1]`.
 Any `Distributions.jl` distribution is therefore a valid leaf with no package-specific hooks, as the leaf section above says.
 
-Add `node_children(node)` (returning the node's immediate children as a `Tuple`) and the node also gets [`has_varying`](@ref) and [`has_uncertain`](@ref) for free — both walk `any(f, node_children(node))` generically, dispatching against the public `AbstractComposedDistribution` root.
 Add [`node_attributes`](@ref) when the node carries fixed structure that is not a free parameter, as a `Choose`'s selector is; its `node` label and its children's rows need no method of their own.
 
+### Codec (flatten/unflatten/fit) support
+
+A tree's estimated-parameter codec ([`flat_dimension`](@ref)/[`flatten`](@ref)/[`unflatten`](@ref)/[`reconstruct`](@ref), the primitive a sampler-driven fit routes through) is generated once per distinct tree *type*, from a compile-time walk over that type alone — no `Dict`, no per-call tree walk, so the reverse-mode AD backends differentiate through it (see the module banner on `src/composers/codec_gen.jl`).
+That compile-time walk cannot call `node_children`/`component_names`, or any other method a downstream package defines: a `@generated` function calling a method a *different*, downstream package supplies is a Julia world-age hazard, verified by a two-package harness that reproduces a `MethodError: ... world age` even after both packages are fully loaded.
+`node_children` itself, an ordinary *runtime* dispatch called from the code the generator emits rather than from the generator itself, carries no such risk, which is exactly why it is fine to require but a compile-time equivalent is not.
+
+So a node wanting codec support declares its own child names (matching `component_names`) and its children's types (matching `node_children`'s return type) as its **first two type parameters**, in that order — exactly the shape `Sequential`/`Parallel`/`Choose`/`Compete` already use.
+A node subtyping `AbstractComposedDistribution` without that shape gets a clear, actionable `ArgumentError` naming the type the first time the codec is asked to walk it, never a silent miscount.
+
+### Steps
+
+1. Subtype `AbstractComposedDistribution{F, S}`, with your own child names and children's types as the first two type parameters if you want codec support (see above).
+2. Implement `node_children`, `node_rebuild` and `component_names`.
+3. Override the three `child_*` methods only if the node's combination semantics are not a plain concatenation.
+4. Implement `node_attributes` if the node carries fixed structure that is not a free parameter.
+5. Verify against the suite ([`TestUtils.test_node_interface`](@ref) covers the node contract; run it, don't just read the list above).
+
 ```@example extending
-using ComposedDistributions, Distributions, Random
-import ComposedDistributions: child_nleaves, child_logpdf, child_rand!,
-                              node_children, AbstractComposedDistribution
+using ComposedDistributions, Distributions
+using ComposedDistributions.TestUtils: test_node_interface
+import ComposedDistributions: node_children, node_rebuild, component_names,
+                              AbstractComposedDistribution
 
-# A minimal node combining two branches side by side. Subtyping
-# `AbstractComposedDistribution{Multivariate, Continuous}` (rather than the
-# `AbstractMultiChild` intermediate, which assumes a `.components` field) is
-# the smallest correct root for a bespoke multivariate node.
-struct Both{A, B} <: AbstractComposedDistribution{Multivariate, Continuous}
-    first::A
-    second::B
+# A minimal node combining two named branches side by side. `names` and the
+# children's types as the first two type parameters (mirroring
+# `Sequential`/`Parallel`) is what lets the codec below read the tree's
+# layout with no method call of its own.
+struct Both{names, C <: Tuple} <:
+       AbstractComposedDistribution{Multivariate, Continuous}
+    children::C
+    function Both{names}(children::C) where {names, C <: Tuple}
+        length(names) == length(children) ||
+            throw(ArgumentError("names/children length mismatch"))
+        new{names, C}(children)
+    end
 end
+Both(children::C, names::NTuple{N, Symbol}) where {N, C <: Tuple} =
+    Both{names}(children)
 
-child_nleaves(b::Both) = child_nleaves(b.first) + child_nleaves(b.second)
+node_children(d::Both) = d.children
+node_rebuild(d::Both, children::Tuple) = Both(children, component_names(d))
+component_names(::Both{names}) where {names} = names
+nothing # hide
+```
 
-function child_logpdf(b::Both, x, offset, ::Int)
-    n1 = child_nleaves(b.first)
-    n2 = child_nleaves(b.second)
-    return child_logpdf(b.first, x, offset, n1) +
-           child_logpdf(b.second, x, offset + n1, n2)
-end
+That is the whole contract — `child_nleaves`/`child_logpdf`/`child_rand!` are not overridden, so they fall back to the generic concatenating-node default, and the harness passes:
 
-function child_rand!(out, offset, rng::AbstractRNG, b::Both)
-    n1 = child_nleaves(b.first)
-    child_rand!(out, offset, rng, b.first)
-    child_rand!(out, offset + n1, rng, b.second)
-    return nothing
-end
+```@example extending
+node = Both((Gamma(2.0, 1.0), LogNormal(0.5, 0.4)), (:first, :second))
+test_node_interface(node)
+nothing # hide
+```
 
-node_children(b::Both) = (b.first, b.second)
+It genuinely composes, tables, flattens and fits, with no further method — nested as a child of a built-in composer, or built directly with an `uncertain` leaf of its own:
 
-node = Both(Gamma(2.0, 1.0), LogNormal(0.5, 0.4))
-out = zeros(child_nleaves(node))
-child_rand!(out, 0, Random.default_rng(), node)
-lp = child_logpdf(node, out, 0, child_nleaves(node))
+```@example extending
+both = Both((uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+        Gamma(1.5, 1.0)), (:leg, :tail))
+tbl = composed_to_table(both)  # one estimated row, for the uncertain leg
+(node = tbl.node[1], estimated_rows = count(!isnothing, tbl.prior))
+```
 
-# `Both` nests as a named child of a built-in — the point of subtyping
-# `AbstractComposedDistribution` rather than keeping it a bare struct.
-tree = sequential(:pair => node, :tail => Gamma(1.0, 1.0))
-(node_output = out, node_logpdf = lp, tree_length = length(tree),
-    tree_flat_logpdf = logpdf(tree, [1.0, 2.0, 0.5]),
-    has_varying = has_varying(tree))
+```@example extending
+# `Both` nests like any built-in composer node.
+tree = Sequential((both, Gamma(1.0, 1.0)), (:branch, :tail2))
+ComposedDistributions.flat_dimension(tree)  # 1: only the leg is uncertain
+```
+
+```@example extending
+# reconstruct/update is the fit primitive: collapse at an estimated draw.
+fitted = ComposedDistributions.reconstruct(tree, [4.0])
+node_children(node_children(fitted)[1])[1]  # the leg, collapsed at x[1] = 4.0
 ```
 
 ### What this does not (yet) cover
 
-The three `child_*` methods plus `node_children` are enough for flat-vector scoring and sampling (`child_logpdf`/`child_rand!` directly, and `logpdf(tree, flat_vector)` on any tree nesting the node) and for the `has_varying`/`has_uncertain` predicates.
-They are not yet enough for a genuinely new multi-leaf node type to participate in the *named* surface: `rand(tree)` returning a labelled `NamedTuple`, `logpdf(tree, nt::NamedTuple)`, `composed_to_table`, `event_names`/`event_tree`, or the [`flat_dimension`](@ref)/[`flatten`](@ref)/[`unflatten`](@ref)/[`reconstruct`](@ref) codec used by [`uncertain`](@ref) parameters.
-Those walks are still closed over the built-in node types, tracked separately (the codec walk is [issue #332](https://github.com/EpiAware/ComposedDistributions.jl/issues/332); the named-output walk is undocumented today).
-A node with exactly one flat slot (occupying a single named position, like the one_of family) is unaffected by this gap; a node with more than one is not yet a drop-in replacement for `Sequential`/`Parallel` beyond flat scoring.
+`component_names`, `composed_to_table` and `node_attributes` are generic over any node satisfying the contract above, and so is the codec once the node carries the type-parameter layout.
+The *named event* surface is not: `rand(tree)` returning a labelled `NamedTuple`, `logpdf(tree, nt::NamedTuple)`, and `event_names`/`event_tree`/`event` are exercised only over the five built-in node kinds, as are top-level `rand`/`logpdf`/moments when the node is a standalone root.
+A downstream node's own event naming and root-level sampling are open, tracked in [issue #332](https://github.com/EpiAware/ComposedDistributions.jl/issues/332), not part of this contract.
+A node with exactly one flat slot (occupying a single named position, like the one_of family) is unaffected by this gap.
 
 ## The one_of-outcome family: `AbstractOneOf`
 
@@ -195,14 +234,13 @@ c = compete(:death => Gamma(2.0, 3.0), :recover => Gamma(3.0, 2.0))
 
 ## The introspection contract
 
-A composed tree exposes its structure through name introspection, and every built-in node keeps these in agreement:
+A composed tree exposes its structure through name introspection.
+`component_names`, `composed_to_table` and `node_attributes` are generic over any node satisfying the node contract above; `event_names`/`event_tree`/`event` are, for now, exercised only over the five built-in node kinds.
 
 - `component_names(node)` — the `Tuple` of immediate child names;
-- [`event_names`](@ref) — the flat per-event name tuple (one entry per leaf edge, plus the origin);
-- [`event_tree`](@ref) — the same names as a nested record;
-- [`event`](@ref) — fetch a child or descend a name path;
 - [`composed_to_table`](@ref) — the full node/attribute/parameter inventory (one row per composer node, leaf wrapper layer, fixed-structure attribute and free parameter); a composed distribution is itself a Tables.jl source over this table. Filter its `role` column to `:param` for the free-parameter-only rows;
-- [`node_attributes`](@ref) — a node or leaf layer's own fixed, non-parameter structure, one `:attribute` row each. This is the only method a downstream type defines to control its rows in that table: the `node` label is read off the type name, and a wrapped leaf's layers are peeled through `inner_dist`.
+- [`node_attributes`](@ref) — a node or leaf layer's own fixed, non-parameter structure, one `:attribute` row each. This is the only method a downstream type defines to control its rows in that table: the `node` label is read off the type name, and a wrapped leaf's layers are peeled through `inner_dist`;
+- over the built-ins: [`event_names`](@ref) (the flat per-event name tuple, one entry per leaf edge plus the origin), [`event_tree`](@ref) (the same names nested) and [`event`](@ref) (fetch a child or descend a name path).
 
 ```@example extending
 using ComposedDistributions, Distributions
@@ -216,7 +254,7 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 ## Conformance suite reference
 
 The reusable suite lives in the `ComposedDistributions.TestUtils` submodule.
-`test_interface` runs the public checklist over the fixture set; `test_node_interface` runs the node-extension checklist; `test_composed_interface` wraps both and asserts the `AbstractComposedDistribution` membership; `test_abstract_membership` asserts the whole hierarchy; `test_leaf_protocol_completeness` closes [#277](https://github.com/EpiAware/ComposedDistributions.jl/issues/277) (a wrapper that silently drops what it wraps); and `test_sampling_consistency` closes [#278](https://github.com/EpiAware/ComposedDistributions.jl/issues/278) (`rand` and `logpdf`/`cdf` silently describing different distributions).
+`test_interface` runs the public checklist over the fixture set; `test_node_interface` runs the node-extension checklist, including the `flat_dimension` invariant (`test_estimation_dimension`: the codec's estimated-parameter count must match `composed_to_table`'s estimated-row count, so a node that silently drops an uncertain leaf from the codec fails the harness instead of shipping green); `test_composed_interface` wraps both and asserts the `AbstractComposedDistribution` membership; `test_abstract_membership` asserts the whole hierarchy; `test_leaf_protocol_completeness` closes [#277](https://github.com/EpiAware/ComposedDistributions.jl/issues/277) (a wrapper that silently drops what it wraps); and `test_sampling_consistency` closes [#278](https://github.com/EpiAware/ComposedDistributions.jl/issues/278) (`rand` and `logpdf`/`cdf` silently describing different distributions).
 Drop the same suite into your own tests to verify a custom leaf, wrapper, or composer conforms, and run it after adding a type to a family.
 
 ```@docs
@@ -224,6 +262,7 @@ ComposedDistributions.TestUtils
 ComposedDistributions.TestUtils.test_interface
 ComposedDistributions.TestUtils.test_composed_interface
 ComposedDistributions.TestUtils.test_node_interface
+ComposedDistributions.TestUtils.test_estimation_dimension
 ComposedDistributions.TestUtils.test_abstract_membership
 ComposedDistributions.TestUtils.test_rejects_invalid
 ComposedDistributions.TestUtils.test_leaf_protocol_completeness

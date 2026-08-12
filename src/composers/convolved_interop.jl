@@ -253,23 +253,25 @@ end
 # recurses), so the uncertain-first codec estimates a spec'd component parameter
 # like any other leaf parameter.
 #
-# So the composite joins the shared `_node_children` / `_rebuild` walk the
+# So the composite joins the shared `node_children` / `node_rebuild` walk the
 # composer nodes use: its components *are* its node children, which lets the
 # deferred-leaf guards (`has_uncertain` / `has_varying`) and `instantiate` recurse
 # through it with the same machinery rather than a parallel per-composite path.
 # It nonetheless stays a single flat scored slot (`length` 1) and an atomic node
 # to the structural edits (`prune` / `splice` navigate by child name and do not
-# read `_node_children`), so only the parameter inventory, reconstruction, and
+# read `node_children`), so only the parameter inventory, reconstruction, and
 # deferred-leaf resolution see inside it.
 
-# A composite's node children are its component delays; `_rebuild` reassembles it
+# A composite's node children are its component delays; `node_rebuild` reassembles it
 # from a new component tuple, preserving the solver method. Pairing these lets the
-# composite ride every `_node_children` / `_rebuild` walk.
-_node_children(d::Convolved) = d.components
-_node_children(d::Difference) = (d.x, d.y)
-_rebuild(d::Convolved, comps::Tuple) = Convolved(comps; method = d.method)
-_rebuild(d::Difference, comps::Tuple) = Difference(comps[1], comps[2];
-    method = d.method)
+# composite ride every `node_children` / `node_rebuild` walk.
+node_children(d::Convolved) = d.components
+node_children(d::Difference) = (d.x, d.y)
+node_rebuild(d::Convolved, comps::Tuple) = Convolved(comps; method = d.method)
+function node_rebuild(d::Difference, comps::Tuple)
+    Difference(comps[1], comps[2];
+        method = d.method)
+end
 
 # The `component_i` path segment names for an `n`-component composite leaf,
 # mirroring the edge/param naming the composers use for their named children.
@@ -285,7 +287,7 @@ function _walk_rows!(sink, seen, d::Union{Convolved, Difference}, path)
     kind = _node_kind(d)
     _push_node!(sink, edge, kind)
     _push_attr_rows!(sink, edge, kind, node_attributes(d))
-    children = _node_children(d)
+    children = node_children(d)
     names = _composite_component_names(length(children))
     for (name, child) in zip(names, children)
         _walk_rows!(sink, seen, child, (path..., name))
@@ -303,26 +305,26 @@ end
 # listing the component keys, rather than vanishing as a silent no-op.
 function _update(d::Union{Convolved, Difference}, params::NamedTuple, shared,
         merge::Bool)
-    children = _node_children(d)
+    children = node_children(d)
     names = _composite_component_names(length(children))
     _check_child_keys(params, names, nameof(typeof(d)), shared)
     updated = ntuple(length(names)) do i
         _update(children[i], _child_params(params, names[i]), shared, merge)
     end
-    return _rebuild(d, updated)
+    return node_rebuild(d, updated)
 end
 
 # Deferred-leaf resolution sees through a composite the same way, riding the
-# shared `_node_children` / `_rebuild` walk: a composite reports `has_uncertain`
+# shared `node_children` / `node_rebuild` walk: a composite reports `has_uncertain`
 # / `has_varying` when any component does (so a fitting-loop guard and
 # `observed_distribution`'s collapse guard catch an un-pinned / un-resolved
 # component), and `instantiate` resolves each component against the context and
 # reassembles the composite. These win over the univariate-leaf base cases
 # (`false` / identity) because the concrete-type union is more specific.
 has_uncertain(d::Union{Convolved, Difference}) = any(has_uncertain,
-    _node_children(d))
+    node_children(d))
 has_varying(d::Union{Convolved, Difference}) = any(has_varying,
-    _node_children(d))
+    node_children(d))
 function instantiate(d::Union{Convolved, Difference}, ctx::AbstractContext)
-    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
+    return node_rebuild(d, map(c -> instantiate(c, ctx), node_children(d)))
 end

@@ -8,18 +8,21 @@
 # when two packages both export a same-named generic function.
 public update
 
-# The composer node/leaf extension contract: a new node implements
-# `child_nleaves` / `child_logpdf` / `child_rand!` for flat-vector scoring and
-# sampling, and a new leaf wrapper `free_leaf` / `rewrap_leaf`.
-# `component_names` reads a node's child names; `node_children` is the single
-# extra hook that gets `has_varying`/`has_uncertain` for free over a
-# third-party node's own children (see its docstring). A node subtyping
-# `AbstractComposedDistribution` composes as a named child of the built-ins
-# with no registration once these are defined; see
-# `docs/src/developer/extending.md` for what is, and is not, supported yet
-# beyond flat-vector scoring for a genuinely new multi-leaf node type.
+# The composer node-extension contract (see
+# `docs/src/developer/extending.md`, "Writing a new composer node"): a new
+# node implements `node_children` / `node_rebuild` / `component_names`, which
+# alone is enough to compose, table, `update` and (given the codec's
+# type-parameter layout convention) flatten/fit, and gets
+# `has_varying`/`has_uncertain` for free over its own children; a node with
+# novel combination semantics (not a plain concatenation of its children, e.g.
+# a disjunction or a mixture) additionally overrides `child_nleaves` /
+# `child_logpdf` / `child_rand!`, which otherwise default generically off
+# `node_children`. A node subtyping `AbstractComposedDistribution` composes as
+# a named child of the built-ins with no registration once these are defined.
+# A new leaf wrapper implements `free_leaf` / `rewrap_leaf`.
 public child_nleaves, child_logpdf, child_rand!
-public free_leaf, rewrap_leaf, component_names, node_children
+public free_leaf, rewrap_leaf, component_names
+public node_children, node_rebuild
 
 # `inner_dist` is the single-layer peel hook the read-through leaf-wrapper hooks
 # recurse through: a wrapper defines one method returning its inner distribution
@@ -126,6 +129,8 @@ public flat_dimension, flatten, unflatten, reconstruct
 # `composed_to_table` rows, reporting the fixed, non-parameter structure it
 # carries. A row's `node` label is read off the type name and a wrapped leaf's
 # layers are peeled through `inner_dist`, so neither is asked of a downstream
-# type. The rebuild half of the contract (`node_rebuild`, `set_node_params`,
-# for `compose(table)` and friends) is deferred to a later slice.
+# type. `node_rebuild` (the round-trip half, `public` above alongside
+# `node_children`) is now part of the node-extension contract; `compose(table)`
+# reconstructing a tree straight from a `composed_to_table`-shaped source is
+# still deferred to a later slice.
 public node_attributes

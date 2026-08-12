@@ -13,8 +13,8 @@
 # *observed* case, `Varying` (`varying.jl`): `Varying` maps an observed covariate
 # read from a `Context` and is resolved by `instantiate`; `Uncertain` maps a
 # latent parameter draw with a prior and is resolved by `rand` (the marginal)
-# or collapsed by `update`. The two share the `_node_children` guard walk (see
-# `has_uncertain` below) and `Varying`'s `instantiate` shares the `_rebuild`
+# or collapsed by `update`. The two share the `node_children` guard walk (see
+# `has_uncertain` below) and `Varying`'s `instantiate` shares the `node_rebuild`
 # reconstruction machinery. Maintenance notes:
 #
 #   - The specs are priors attached to the template's free parameters, so the

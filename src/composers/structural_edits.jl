@@ -23,7 +23,7 @@ function _edit_step(d::Union{Sequential, Parallel}, path::Tuple, op)
         i == idx ? _edit_at(d.components[i], Base.tail(path), op) :
         d.components[i]
     end
-    return _rebuild(d, parts)
+    return node_rebuild(d, parts)
 end
 
 function _edit_step(c::Resolve, path::Tuple, op)
@@ -32,7 +32,7 @@ function _edit_step(c::Resolve, path::Tuple, op)
     delays = ntuple(length(names)) do i
         i == idx ? _edit_at(c.delays[i], Base.tail(path), op) : c.delays[i]
     end
-    return _rebuild(c, delays)
+    return node_rebuild(c, delays)
 end
 
 function _edit_step(c::Compete, path::Tuple, op)
@@ -51,7 +51,7 @@ function _edit_step(d::Choose, path::Tuple, op)
         i == idx ? _edit_at(d.alternatives[i], Base.tail(path), op) :
         d.alternatives[i]
     end
-    return _rebuild(d, alts)
+    return node_rebuild(d, alts)
 end
 
 # A leaf has no children: a non-empty path into it is an error.
@@ -204,7 +204,7 @@ function _drop_child(leaf, name::Symbol)
         "prune: $(nameof(typeof(leaf))) has no child to drop"))
 end
 
-# `_rebuild` taking explicit names (a dropped child changes the name set).
+# `node_rebuild` taking explicit names (a dropped child changes the name set).
 function _rebuild_named(::Sequential, parts::Tuple, names::Tuple)
     return Sequential(parts, names)
 end

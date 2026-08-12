@@ -232,6 +232,17 @@ _child_params(c::Compete) = _hazard_one_of_params(c)
 _child_params(c::Choose) = _select_params(c)
 _child_params(c) = params(c)
 
+# Any OTHER composer node's nested params: name-keyed, recursing into each
+# child through `_child_params` (which falls through to plain `params` for a
+# leaf child, and back into this method for a further-nested custom node).
+# Mirrors `_composed_params` above, generalised off `node_children`/
+# `component_names` rather than the `.components` field.
+function params(d::AbstractComposedDistribution)
+    names = component_names(d)
+    vals = map(_child_params, node_children(d))
+    return NamedTuple{names}(vals)
+end
+
 # A racing-hazard node's nested params: each outcome name -> its delay's params.
 # There is no `branch_probs` entry (the winning probability is derived).
 function _hazard_one_of_params(c::Compete)
@@ -1195,8 +1206,7 @@ tbl.node  # :Sequential, :LogNormal, :Truncated, :Gamma, ...
   type defines to control its own rows here.
 - [`inner_dist`](@ref): the peel a wrapped leaf's per-layer rows follow.
 "
-function composed_to_table(
-        d::Union{Sequential, Parallel, AbstractOneOf, Choose})
+function composed_to_table(d::AbstractComposedDistribution)
     s = _FullSink()
     _walk_rows!(s, Set{Symbol}(), d, ())
     return ComposedTable((edge = s.edge, param = s.param, node = s.node,
@@ -1212,7 +1222,7 @@ end
 # does not restate the walk at every call site; not part of the public API —
 # a user filters `composed_to_table` directly: `filter(row -> row.role ==
 # :param, Tables.rows(composed_to_table(d)))`.
-function _param_rows(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
+function _param_rows(d::AbstractComposedDistribution)
     s = _ParamSink()
     _walk_rows!(s, Set{Symbol}(), d, ())
     return ComposedTable((edge = s.edge, param = s.param,
@@ -1338,6 +1348,26 @@ function _walk_rows!(sink, seen, c::Compete, path)
     _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
         _walk_rows!(sink, seen, delay, (path..., name))
+    end
+    return nothing
+end
+
+# Any OTHER composer node (a downstream type implementing the node-extension
+# contract: [`node_children`](@ref) / [`node_rebuild`](@ref) /
+# [`component_names`](@ref)) walks generically through those three accessors,
+# exactly mirroring the `Sequential`/`Parallel` method above. Dispatch on the
+# shared `AbstractComposedDistribution` supertype rather than the closed Union
+# above means a node subtyping it with no matching method here falls through
+# to THIS method, not silently to the untyped leaf method below — a node
+# missing `node_children`/`component_names` gets a `MethodError` naming the
+# missing method, not a silent zero-row table (#374).
+function _walk_rows!(sink, seen, d::AbstractComposedDistribution, path)
+    edge = _join_path(path)
+    kind = _node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
+    for (name, child) in zip(component_names(d), node_children(d))
+        _walk_rows!(sink, seen, child, (path..., name))
     end
     return nothing
 end
@@ -1735,7 +1765,7 @@ function _update(d::Union{Sequential, Parallel}, params::NamedTuple, shared,
     parts = map(d.components, names) do child, name
         _update(child, _child_params(params, name), shared, merge)
     end
-    return _rebuild(d, parts)
+    return node_rebuild(d, parts)
 end
 
 # A `Choose` updates each alternative; a tag shared across alternatives reads one
@@ -1747,7 +1777,7 @@ function _update(d::Choose, params::NamedTuple, shared, merge::Bool)
         _update(d.alternatives[i], _child_params(params, names[i]), shared,
             merge)
     end
-    return _rebuild(d, alts)
+    return node_rebuild(d, alts)
 end
 
 function _update(c::Resolve, params::NamedTuple, shared, merge::Bool)
@@ -1851,7 +1881,23 @@ function _update(c::Compete, params::NamedTuple, shared, merge::Bool)
     delays = ntuple(length(names)) do i
         _update(c.delays[i], _child_params(params, names[i]), shared, merge)
     end
-    return _rebuild(c, delays)
+    return node_rebuild(c, delays)
+end
+
+# Any OTHER composer node updates its children generically through
+# `component_names`/`node_children`/`node_rebuild`, exactly mirroring the
+# `Sequential`/`Parallel` method above. See the matching `_walk_rows!` method
+# for why dispatching on the shared supertype (rather than a closed Union)
+# matters: a node missing a required method gets a `MethodError` here, not a
+# silently-wrong update.
+function _update(d::AbstractComposedDistribution, params::NamedTuple, shared,
+        merge::Bool)
+    names = component_names(d)
+    _check_child_keys(params, names, nameof(typeof(d)), shared)
+    parts = map(node_children(d), names) do child, name
+        _update(child, _child_params(params, name), shared, merge)
+    end
+    return node_rebuild(d, parts)
 end
 
 # A no-event marker carries no parameters, so `update` leaves it unchanged.
@@ -1950,49 +1996,89 @@ function _check_update_keys(params, ::Tuple, what; optional::Tuple = ())
         "update($what, ...) expects a NamedTuple; got $(typeof(params))"))
 end
 
-# `_rebuild` for the composers (mirrors the extension's helper, kept core-side so
-# `update` is Turing-free). Rebuilds a node of the same type and metadata around
-# a new children tuple (steps/branches, one_of outcome delays, Choose
-# alternatives); shared by the `update` / `prune` / `splice` structural edits.
-function _rebuild(d::Sequential, components::Tuple)
-    Sequential(components, component_names(d))
-end
-function _rebuild(d::Parallel, components::Tuple)
-    Parallel(components, component_names(d))
-end
-function _rebuild(c::Resolve, delays::Tuple)
-    Resolve(component_names(c), delays, c.branch_probs,
-        c.branch_prob_prior)
-end
-_rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
-_rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
-
 @doc """
 
-The immediate children of a composer node, as a `Tuple`.
+Rebuild a composer node around a new children tuple.
 
-`node_children(node)` is the one hook a downstream composer node defines to
-get [`has_varying`](@ref) and [`has_uncertain`](@ref) for free: both walk a
-node generically as `any(f, node_children(node))`, dispatching on the public
-`AbstractComposedDistribution` root rather than a closed list of the built-in
-types, so a third-party node needs no registration to answer either
-predicate. The built-ins each hold their children in a differently-named
-field (`.components`, `.delays`, `.alternatives`), which is exactly what this
-accessor is for: one uniform name over that variation.
+`node_rebuild(node, children)` returns a node of the same type and own fixed
+structure (a `Choose`'s `selector`, a `Resolve`'s branch probabilities) as
+`node`, with its children replaced by `children` (in the same order as
+[`component_names`](@ref)`(node)`). Part of the public node-extension
+contract, alongside [`node_children`](@ref); see
+[Writing a new composer node](@ref new-composer-node). Required from every
+composer node: only the node's own constructor knows how to put a new set of
+children back together (a leaf recurses no further, so it needs no method).
 
 # Arguments
-- `node`: the composer node whose immediate children are read.
+- `node`: the composer node to rebuild.
+- `children`: a `Tuple` of replacement children, one per
+  [`component_names`](@ref)`(node)`.
 
 # Examples
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-ComposedDistributions.node_children(tree)
+node = compose((onset = Gamma(2.0, 1.0), report = Gamma(1.5, 1.0)))
+ComposedDistributions.node_rebuild(node, (LogNormal(0.5, 0.4), Gamma(1.5, 1.0)))
 ```
 
 # See also
+- [`node_children`](@ref): the matching read accessor.
+""" function node_rebuild end
+
+# The composers (mirrors the extension's helper, kept core-side so `update`
+# is Turing-free). Rebuilds a node of the same type and metadata around a new
+# children tuple (steps/branches, one_of outcome delays, Choose
+# alternatives); shared by the `update` / `prune` / `splice` structural edits.
+function node_rebuild(d::Sequential, components::Tuple)
+    Sequential(components, component_names(d))
+end
+function node_rebuild(d::Parallel, components::Tuple)
+    Parallel(components, component_names(d))
+end
+function node_rebuild(c::Resolve, delays::Tuple)
+    Resolve(component_names(c), delays, c.branch_probs,
+        c.branch_prob_prior)
+end
+node_rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
+node_rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
+
+@doc """
+
+The children of a composer node, positionally matching its names.
+
+`node_children(node)` returns the `Tuple` of `node`'s children (steps,
+branches, outcome delays or alternatives), in the same order as
+[`component_names`](@ref)`(node)`. Part of the public node-extension
+contract, alongside [`node_rebuild`](@ref); see
+[Writing a new composer node](@ref new-composer-node). Required from every
+composer node: only the node's own type knows which field holds them (a leaf
+has no children, so it needs no method — every leaf's flat width is its own
+free-parameter count, read from [`params`](@ref) instead). The built-ins each
+hold their children in a differently-named field (`.components`, `.delays`,
+`.alternatives`), which is exactly what this accessor is for: one uniform
+name over that variation.
+
+Defining it also gets [`has_varying`](@ref) and [`has_uncertain`](@ref) for
+free: both walk a node generically as `any(f, node_children(node))`,
+dispatching on the public `AbstractComposedDistribution` root rather than a
+closed list of the built-in types, so a third-party node needs no
+registration to answer either predicate.
+
+# Arguments
+- `node`: the composer node whose children are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+node = compose((onset = Gamma(2.0, 1.0), report = Gamma(1.5, 1.0)))
+ComposedDistributions.node_children(node)
+```
+
+# See also
+- [`node_rebuild`](@ref): the matching rebuild verb.
+- [`component_names`](@ref): the matching names.
 - [`has_varying`](@ref), [`has_uncertain`](@ref): the two generic walks built
   on this accessor.
 """ function node_children end
@@ -2001,8 +2087,10 @@ node_children(d::Union{Sequential, Parallel}) = d.components
 node_children(c::AbstractOneOf) = c.delays
 node_children(d::Choose) = d.alternatives
 
-# Retained for the package's own pre-existing internal call sites; `node_children`
-# is the public name (see `public.jl`).
+# A transitional alias for this accessor's original (leading-underscore)
+# internal name, kept — like `_centred_pool_rows` in `public.jl` — so a
+# downstream package reaching in by the old qualified name keeps working.
+# `node_children` is the public name.
 const _node_children = node_children
 
 # --- build_priors: composed_to_table + flat priors -> nested NamedTuple -----

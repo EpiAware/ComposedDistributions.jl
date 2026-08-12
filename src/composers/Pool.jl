@@ -821,7 +821,7 @@ const _validate_pool_groups = validate_pool_groups
 
 function _collect_pools!(acc::Dict,
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    for c in _node_children(d)
+    for c in node_children(d)
         _collect_pools!(acc, c)
     end
     return nothing
