@@ -466,39 +466,50 @@ end
 # exactly like `_pool_hyper_flatten_reads!`'s removed matching read) back out
 # as a flat value sequence in the SAME interleaved order `_leaf_entry_grouped`
 # consumes, so the two stay inverse.
+#
+# The walk order comes from `entry`'s own `keys` (via `Val`) rather than from
+# a fresh `leaf_param_names(leaf)` call, and the whole recursion dispatches on
+# `Val{names}` rather than looping over a runtime `Tuple` -- the same move
+# `_leaf_extract` (introspection.jl) and `_hyper_flatten_walk` (below) already
+# made, for the same reason: relying on `leaf_param_names(leaf)` folding to a
+# compile-time constant is fragile (#352). It holds for every built-in leaf
+# tested here only because `param_names` happens to return a literal tuple;
+# a leaf whose native names come from anything less trivially foldable (a
+# `Ref`, a field read behind a branch) breaks the fold, and `pname` stops
+# being a `Core.Const`. `specs[pname]` then can't resolve which field of a
+# heterogeneous `NamedTuple` it is indexing, and the whole walk (and `flatten`
+# after it) widens to `Union`/`Any` -- silently, with no error, only a slower
+# and boxed gradient. Driving the recursion off `Val{names}` sidesteps this
+# entirely: `pname` is part of the TYPE at every step, so it is a `Core.Const`
+# regardless of whether `leaf_param_names` itself folds.
 function _leaf_flatten_grouped(leaf, ::Val{speckeys}, ::Val{pool_names},
-        ::Val{materialize}, entry::NamedTuple, nt::NamedTuple) where
-        {speckeys, pool_names, materialize}
-    names = leaf_param_names(leaf)
+        ::Val{materialize}, entry::NamedTuple{names},
+        nt::NamedTuple) where
+        {speckeys, pool_names, materialize, names}
     specs = _uncertain_specs(leaf)
     return _leaf_flatten_walk_grouped(
-        names, speckeys, pool_names, materialize, specs, entry, nt)
+        Val(names), Val(speckeys), Val(pool_names), Val(materialize),
+        specs, entry, nt)
 end
 
-@inline function _leaf_flatten_walk_grouped(::Tuple{}, ::Tuple, ::Tuple, ::Tuple,
-        specs, entry::NamedTuple, nt::NamedTuple)
-    return ()
-end
-@inline function _leaf_flatten_walk_grouped(names::Tuple, speckeys::Tuple,
-        pool_names::Tuple, materialize::Tuple, specs, entry::NamedTuple,
-        nt::NamedTuple)
+@inline _leaf_flatten_walk_grouped(::Val{()}, ::Val, ::Val, ::Val,
+    specs, entry::NamedTuple, nt::NamedTuple) = ()
+@inline function _leaf_flatten_walk_grouped(::Val{names}, ::Val{speckeys},
+        ::Val{pool_names}, ::Val{materialize}, specs, entry::NamedTuple,
+        nt::NamedTuple) where {names, speckeys, pool_names, materialize}
+    rest = _leaf_flatten_walk_grouped(Val(Base.tail(names)), Val(speckeys),
+        Val(pool_names), Val(materialize), specs, entry, nt)
     pname = names[1]
-    hit = pname in speckeys
-    hyper_vals = if hit && pname in materialize
+    pname in speckeys || return rest
+    hyper_vals = if pname in materialize
         spec = specs[pname]
         _pool_hyper_flatten(spec.population, getproperty(nt, pool_group(spec)))
     else
         ()
     end
-    own_vals = if hit
-        raw = getproperty(entry, pname)
-        (pname in pool_names ? raw.z : raw,)
-    else
-        ()
-    end
-    rest = _leaf_flatten_walk_grouped(Base.tail(names), speckeys, pool_names,
-        materialize, specs, entry, nt)
-    return (hyper_vals..., own_vals..., rest...)
+    raw = getproperty(entry, pname)
+    own_val = pname in pool_names ? raw.z : raw
+    return (hyper_vals..., own_val, rest...)
 end
 
 # The dual of `_pool_hyper_entry`: the population's spec'd values read back
