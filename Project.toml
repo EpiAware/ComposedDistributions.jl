@@ -24,11 +24,13 @@ ComposedDistributionsMooncakeExt = "Mooncake"
 ConvolvedDistributions = "0.4.1, 1"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
-# Floored at 0.1.3: the release that hosts the shared `xlogy`/`xlog1py`
-# Mooncake rules this package used to carry itself (#99, #214). Nothing here
-# resolves until 0.1.3 is in General, so this branch must not merge before
-# that release.
-EpiAwareADTools = "0.1.2"
+# Floored at 0.1.2: the release that hosts the shared `xlogy`/`xlog1py`
+# Mooncake rules this package used to carry itself (#99, #214). Widened to
+# admit 0.2 (a breaking release upstream, but nothing this package uses from
+# EpiAwareADTools's public surface changed shape — the Gamma/Beta AD-safe
+# fixes it shipped only make `logccdf_ad_safe`/`ccdf_ad_safe` more accurate,
+# not differently shaped).
+EpiAwareADTools = "0.1.2, 0.2"
 LogExpFunctions = "0.3, 1"
 Mooncake = "0.5"
 Random = "1"
