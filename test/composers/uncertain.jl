@@ -140,6 +140,47 @@ end
     @test all(>=(0), [rand(Xoshiro(i), nested) for i in 1:50])
 end
 
+@testitem "rand: refuses to draw an unresolved no_prior() parameter" begin
+    using Distributions, Random
+
+    # `Uncertain`'s `rand` checks every spec eagerly, before drawing anything,
+    # and names the unresolved parameter. Pinned here because the check would
+    # otherwise survive its own deletion undetected: `NoPrior` also has its own
+    # `Base.rand` fallback (tested below), which throws too if the eager check
+    # is removed and a `no_prior()` spec is drawn like any other — but with a
+    # generic message that does not name the parameter, which the assertions
+    # below distinguish.
+    u = uncertain(Gamma(2.0, 1.0); shape = no_prior())
+    @test_throws ArgumentError rand(u)
+    @test_throws "shape" rand(u)
+    @test_throws "no_prior()" rand(u)
+    @test_throws "update(tree, params)" rand(u)
+
+    # A resolved sibling parameter alongside the unresolved one still names
+    # only the unresolved one: the eager check runs before any spec is drawn,
+    # so `shape`'s real prior is never reached.
+    mixed = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2),
+        scale = no_prior())
+    @test_throws "scale" rand(Xoshiro(1), mixed)
+
+    # A fully resolved leaf still draws normally (the guard is not a blanket
+    # refusal).
+    resolved = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    @test rand(Xoshiro(1), resolved) isa Real
+end
+
+@testitem "rand: NoPrior's own guard refuses a direct draw" begin
+    using Random
+
+    # `Base.rand(::AbstractRNG, ::NoPrior)` is a defensive fallback for a
+    # marker reaching `rand` some other way than through `Uncertain`'s eager
+    # check (e.g. nested inside a `pool(...)` population); pinned directly so
+    # it cannot be deleted unnoticed even though `Uncertain`'s own guard
+    # already covers the ordinary leaf path.
+    @test_throws ArgumentError rand(Xoshiro(1), no_prior())
+    @test_throws "cannot draw from no_prior()" rand(Xoshiro(1), no_prior())
+end
+
 @testitem "truncated pushes inside an uncertain leaf" begin
     using Distributions, Random
 
@@ -261,8 +302,7 @@ end
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
 end
 
-@testitem "composed_to_table prior column and build_priors precedence" begin
-    using ComposedDistributions: _param_rows
+@testitem "composed_to_table prior column carries attached specs" begin
     using Distributions
 
     u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
@@ -280,39 +320,15 @@ end
         eachindex(tbl.edge))
     @test tbl.prior[fixed] === nothing
 
-    # Precedence: attached spec beats the default, override beats both.
-    nested = build_priors(tbl)
-    @test nested.onset_admit.alpha == LogNormal(log(2.0), 0.2)
-    @test nested.onset_admit.theta isa Distribution
-    ovr = build_priors(tbl;
-        priors = (onset_admit = (alpha = Exponential(1.0),),))
-    @test ovr.onset_admit.alpha == Exponential(1.0)
-
-    # A four-column table (no prior, no role column) still works.
-    param_tbl = _param_rows(tree)
-    legacy = (edge = collect(param_tbl.edge), param = collect(param_tbl.param),
-        value = collect(param_tbl.value), support = collect(param_tbl.support))
-    @test build_priors(legacy).onset_admit.alpha isa Distribution
+    # Bare uncertain(tree) keeps the attached spec and marks the rest
+    # no_prior() (ComposedDistributions does not guess a default).
+    promoted = uncertain(tree)
+    ptbl = composed_to_table(promoted)
+    @test ptbl.prior[idx] == LogNormal(log(2.0), 0.2)
+    @test ptbl.prior[fixed] == no_prior()
 
     # The table prints, with blank prior cells for fixed rows.
     @test occursin("prior", sprint(show, MIME("text/plain"), tbl))
-end
-
-@testitem "build_priors: a DI-shaped table is refused loudly, not misread" begin
-    using ComposedDistributions: build_priors
-    using Distributions
-
-    # Not a Tables.jl source at all: a bare NamedTuple of scalars.
-    @test_throws ArgumentError build_priors((edge = :a, param = :alpha,
-        value = 2.0, support = (0.0, Inf)))
-
-    # DistributionsInference's dotted-`name` row convention (DI#20): it is
-    # `Tables.istable` (a Tables.jl row table) but lacks `edge`/`param`, so it
-    # must be refused for lacking those columns rather than silently
-    # misread — the same guard `update(d, table)` applies.
-    di_shaped_rows = [(name = :onset_admit_alpha, value = 2.0,
-        support = (0.0, Inf))]
-    @test_throws r"(?=.*edge)(?=.*param)" build_priors(di_shaped_rows)
 end
 
 @testitem "observed_distribution rejects an uncertain chain" begin
@@ -456,14 +472,14 @@ end
     @test cleaf.template == Gamma(3.0, 1.0)
 end
 
-@testitem "promote: update(tree, param_priors(tree)) specs every parameter" begin
+@testitem "promote: bare uncertain(tree) specs every parameter no_prior()" begin
     using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    promoted = update(tree, param_priors(tree))
+    promoted = uncertain(tree)
 
     @test has_uncertain(promoted)
     # Every free parameter is now estimated (the escape hatch to estimate-all).
@@ -471,22 +487,22 @@ end
     oa = event(promoted, :onset_admit)
     @test oa isa Uncertain
     @test keys(oa.specs) == (:alpha, :theta)
-    # The specs are the support-derived defaults.
-    @test oa.specs.theta == param_priors(tree).onset_admit.theta
+    # No prior is guessed: the specs are the no_prior() marker.
+    @test oa.specs.theta == no_prior()
 end
 
-@testitem "promote keeps an existing spec and defaults the rest" begin
+@testitem "promote keeps an existing spec and marks the rest no_prior()" begin
     using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
         alpha = LogNormal(log(2.0), 0.2)),))
-    promoted = update(tree, param_priors(tree))
+    promoted = uncertain(tree)
     oa = event(promoted, :onset_admit)
     @test keys(oa.specs) == (:alpha, :theta)
-    # The user's alpha spec is kept; theta gets the support-derived default.
+    # The user's alpha spec is kept; theta gets no_prior() (no default guessed).
     @test oa.specs.alpha == LogNormal(log(2.0), 0.2)
-    @test oa.specs.theta == param_priors(tree).onset_admit.theta
+    @test oa.specs.theta == no_prior()
 end
 
 @testitem "promote through a shared tag ties the estimated parameter" begin
@@ -496,7 +512,7 @@ end
 
     d = compose((a = shared(:g, Gamma(2.0, 1.0)),
         b = shared(:g, Gamma(2.0, 1.0))))
-    promoted = update(d, param_priors(d))
+    promoted = uncertain(d)
 
     @test has_uncertain(promoted)
     # The tied leaf is inventoried once, so alpha + theta = two estimated rows.
@@ -576,11 +592,12 @@ end
         alpha = LogNormal(log(2.0), 0.2), theta = 2.5))
     @test u3.components[1].template.θ == 2.5
 
-    # Bare `uncertain(tree)` promotes every free parameter (matches
-    # `update(tree, param_priors(tree))`).
+    # Bare `uncertain(tree)` promotes every free parameter to `no_prior()`
+    # (free, no prior guessed).
     everything = uncertain(tree)
     @test has_uncertain(everything)
-    @test everything == update(tree, param_priors(tree))
+    etbl = composed_to_table(everything)
+    @test all(==(no_prior()), etbl.prior[etbl.role .== :param])
 
     # No distribution anywhere: refused, pointed at `update`.
     @test_throws ArgumentError uncertain(tree; onset_admit = (theta = 2.5,))

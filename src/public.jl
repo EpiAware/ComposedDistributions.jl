@@ -33,15 +33,15 @@ public inner_dist
 # The published leaf protocol a downstream leaf-wrapper package (censoring in
 # CensoredDistributions, the modifiers in ModifiedDistributions) extends
 # alongside `free_leaf`/`rewrap_leaf`. `uncertain_specs` routes a leaf's
-# attached prior specs through to `composed_to_table`/`build_priors`;
-# `leaf_detail_lines` routes a leaf's `inspect` rendering; `shared_tag` sees a
-# shared tie through a wrapper; `leaf_param_names` names a leaf's estimable
-# parameters; `leaf_mean`/`leaf_var` give a leaf's per-moment values; and
-# `extra_leaf_params`/`set_extra_leaf_params` carry any modifier-owned free
-# parameters (the thinning factor is the first instance). A leaf-wrapper package
-# that extends only `free_leaf`/`rewrap_leaf` but not these silently drops an
-# attached prior on a wrapped leaf (`build_priors` then treats it as fixed). See
-# `docs/src/developer/extending.md`.
+# attached specs (priors, `pool(...)`, `no_prior()`) through to
+# `composed_to_table`; `leaf_detail_lines` routes a leaf's `inspect` rendering;
+# `shared_tag` sees a shared tie through a wrapper; `leaf_param_names` names a
+# leaf's estimable parameters; `leaf_mean`/`leaf_var` give a leaf's per-moment
+# values; and `extra_leaf_params`/`set_extra_leaf_params` carry any
+# modifier-owned free parameters (the thinning factor is the first instance).
+# A leaf-wrapper package that extends only `free_leaf`/`rewrap_leaf` but not
+# these silently drops an attached spec on a wrapped leaf (`composed_to_table`
+# then treats it as fixed). See `docs/src/developer/extending.md`.
 public uncertain_specs, leaf_detail_lines, shared_tag, leaf_param_names
 public leaf_mean, leaf_var, extra_leaf_params, set_extra_leaf_params
 
@@ -69,7 +69,7 @@ public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
 # The pooling gate surface (#325): DistributionsInference.jl's fit-protocol
 # extension calls `validate_pool_groups` and `validate_tree_names` directly
 # to gate a composed tree once at `distribution_to_logdensity` construction,
-# before `composed_to_table`/`build_priors` walk it per gradient evaluation.
+# before `composed_to_table` walks it per gradient evaluation.
 # `validate_pool_groups` checks every leaf of a pool group agrees on
 # population and parameterisation; `validate_tree_names` checks that no pool
 # group, shared tag, or top-level edge name collides with one from another of
@@ -85,7 +85,7 @@ public validate_pool_groups, validate_tree_names,
 
 # The parameter-coordinate contract. A leaf's free parameters are named by
 # `param_names` and rebuilt by `leaf_ctor`; together they fix the coordinates
-# `composed_to_table`, `uncertain`, `build_priors` and the flat codec work in. A leaf
+# `composed_to_table`, `uncertain` and the flat codec work in. A leaf
 # whose free parameters are its native constructor arguments needs neither. A
 # leaf that reports different parameters — a moment-parameterised wrapper naming
 # a mean and a standard deviation rather than a shape and a scale — overrides

@@ -27,8 +27,11 @@ end
     @test tbl.prior[alpha_idx] == Normal(0.7, 0.2)
     @test tbl.prior[theta_idx] === nothing
 
-    priors = build_priors(tbl)
-    @test priors.onset.alpha == Normal(0.7, 0.2)
+    # Bare uncertain(tree) keeps the attached spec and marks theta no_prior().
+    promoted = uncertain(tree)
+    ptbl = composed_to_table(promoted)
+    @test ptbl.prior[alpha_idx] == Normal(0.7, 0.2)
+    @test ptbl.prior[theta_idx] == no_prior()
 end
 
 @testitem "@uncertain: rewrites leaves inside a composed tree" begin

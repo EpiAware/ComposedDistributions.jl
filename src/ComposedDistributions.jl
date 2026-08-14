@@ -7,12 +7,14 @@ independent branches ([`Parallel`](@ref)), fixed-probability or racing one_of
 outcomes ([`Resolve`](@ref) / [`Compete`](@ref)) and data-selected disjunctions
 ([`Choose`](@ref)); the [`compose`](@ref) front-end lowers a NamedTuple, a
 Tables.jl table, or a nested matrix to the same stack. Read the structure with
-[`composed_to_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), build
-priors with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
-[`prune`](@ref) / [`splice`](@ref). Attach parameter uncertainty with
-[`uncertain`](@ref) (parameters that are themselves distributions, nestable):
-`rand` draws the marginal, and [`update`](@ref) collapses an uncertain leaf to
-its concrete template.
+[`composed_to_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), and edit
+the tree with [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref). Attach
+parameter uncertainty with [`uncertain`](@ref) (parameters that are themselves
+distributions, or the [`no_prior`](@ref) marker for a parameter that is free
+with no prior chosen yet, nestable): `rand` draws the marginal, and
+[`update`](@ref) collapses an uncertain leaf to its concrete template. Prior
+selection itself belongs to DistributionsInference.jl, not this package (see
+[`no_prior`](@ref)).
 
 Hard-deps `ConvolvedDistributions` (a chain collapses to a convolved total via
 [`observed_distribution`](@ref)) and extends its `convolve_series`/`difference`
@@ -102,6 +104,12 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
+# The "free, no prior yet" spec marker: `no_prior()` marks a parameter
+# estimated without choosing a prior for it (prior choice is
+# DistributionsInference.jl's job, not this package's). Bare `uncertain(tree)`
+# applies it to every currently-fixed free parameter.
+export NoPrior, no_prior
+
 # Event-skeleton topology: `@events` declares an event tree's structure (named
 # holes joined by → / | / & operators) with no distributions attached;
 # `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
@@ -126,16 +134,14 @@ export Pool, pool
 export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
        has_varying, required_covariates, required_parameters, missing_covariates
 
-# Introspection: the flat prior table and name introspection. `event_names` is
-# the flat per-event name tuple; `event_tree` the nested tree of event names;
-# `event` fetches a child or descends a path. `param_priors` is the tree-level
-# front-door over `build_priors`; `inspect` is the opt-in detailed tree print.
-# `update` is `public`, not exported (see `public.jl`): several ecosystem
-# packages have their own `update`-shaped verb, and exporting it risks the
-# same ambiguous-binding clash #233 hit with `as_turing` when two packages
-# both export a same-named generic (#221).
-export composed_to_table, event_names, event_tree, event,
-       build_priors, default_prior, param_priors, inspect,
+# Introspection: the flat parameter table and name introspection.
+# `event_names` is the flat per-event name tuple; `event_tree` the nested tree
+# of event names; `event` fetches a child or descends a path. `inspect` is the
+# opt-in detailed tree print. `update` is `public`, not exported (see
+# `public.jl`): several ecosystem packages have their own `update`-shaped
+# verb, and exporting it risks the same ambiguous-binding clash #233 hit with
+# `as_turing` when two packages both export a same-named generic (#221).
+export composed_to_table, event_names, event_tree, event, inspect,
        reserved_record_fields
 
 # Record transforms: `event_times` maps a drawn record of per-step increments
@@ -154,6 +160,10 @@ export elapsed_between
 
 # --- includes --------------------------------------------------------------
 
+# The `NoPrior`/`no_prior()` spec marker: first, before every composer type,
+# so `Resolve.jl`'s `branch_prob_prior` and every later file can dispatch on
+# it directly.
+include("composers/no_prior.jl")
 include("composers/Sequential.jl")
 include("composers/Parallel.jl")
 include("composers/Resolve.jl")

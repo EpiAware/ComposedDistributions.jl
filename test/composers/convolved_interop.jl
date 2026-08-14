@@ -360,12 +360,15 @@ end
     c2 = filter(r -> r.edge == Symbol("total.component_2"), comp_rows)
     @test [(r.param, r.value) for r in c2] == [(:alpha, 1.0), (:theta, 1.5)]
 
-    # build_priors assembles the nested prior tree down to the components.
-    pr = build_priors(tbl)
-    @test pr isa NamedTuple
-    @test haskey(pr, :report)
-    @test haskey(pr.total.component_1, :alpha)
-    @test haskey(pr.total.component_2, :theta)
+    # Bare uncertain(tree) marks every component's parameters, down through
+    # the composite leaf.
+    promoted = uncertain(seq)
+    ptbl = composed_to_table(promoted)
+    prow = Dict((r.edge, r.param) => r.prior
+    for r in Tables.rows(ptbl) if r.role == :param)
+    @test prow[(:report, :mu)] == no_prior()
+    @test prow[(Symbol("total.component_1"), :alpha)] == no_prior()
+    @test prow[(Symbol("total.component_2"), :theta)] == no_prior()
 end
 
 @testitem "Difference leaf: composed_to_table sees through to (x, y) params" begin

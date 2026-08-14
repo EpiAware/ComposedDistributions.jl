@@ -109,7 +109,8 @@ Being univariate, a `Resolve` nests as a child of [`Sequential`](@ref) or
 selection and censoring are not part of this type.
 
 The branch probabilities are ordinarily fixed structure. To estimate them,
-attach a simplex-valued `Distributions.Dirichlet` prior with
+attach a simplex-valued `Distributions.Dirichlet` prior (or the
+[`no_prior`](@ref)`()` marker, free with no prior chosen yet) with
 [`update`](@ref)`(node, (branch_probs = Dirichlet(α),))`: the `Dirichlet` is
 what you write, but the codec estimates the node through the `Dirichlet`'s K-1
 stick-breaking coordinates (`:stick_1 … :stick_{K-1}`, each a `Beta`, so every
@@ -122,12 +123,14 @@ probabilities are recovered from any draw (via [`update`](@ref) /
   (read with [`component_names`](@ref)).
 - `delays`: tuple of the one_of outcome delay distributions.
 - `branch_probs`: tuple of the branch probabilities, summing to one.
-- `branch_prob_prior`: the attached `Dirichlet` prior when the branch
-  probabilities are uncertain, else `nothing` (fixed structure).
+- `branch_prob_prior`: the attached `Dirichlet` prior (or [`no_prior`](@ref)
+  marker) when the branch probabilities are uncertain, else `nothing` (fixed
+  structure).
 
 # See also
 - [`as_mixture`](@ref): the `MixtureModel` lowering
-- [`update`](@ref): attach a `Dirichlet` to estimate the branch probabilities
+- [`update`](@ref): attach a `Dirichlet`/`no_prior()` to estimate the branch
+  probabilities
 - [`Sequential`](@ref): a chain of additive steps
 - [`Parallel`](@ref): independent branches
 "
@@ -137,9 +140,10 @@ struct Resolve{names, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     "Tuple of the branch probabilities, summing to one."
     branch_probs::P
     "The attached simplex-valued prior over the branch probabilities (a
-    `Distributions.Dirichlet`), or `nothing` when the probabilities are fixed
-    structure. When present the branch probabilities are estimated through the
-    stick-breaking codec: the user writes the `Dirichlet`, K-1 stick
+    `Distributions.Dirichlet`, or the `no_prior()` marker), or `nothing` when
+    the probabilities are fixed structure. When present the branch
+    probabilities are estimated through the stick-breaking codec: the user
+    writes the `Dirichlet` (or marks it `no_prior()`), K-1 stick
     coordinates are what the sampler estimates, and the probabilities are
     recovered from any draw (see [`update`](@ref))."
     branch_prob_prior::S
@@ -205,12 +209,16 @@ end
 
 # A fixed node has no branch-probability prior. An attached prior must be a
 # `Distributions.Dirichlet` over the `k` outcomes (one weight per outcome); it
-# is decomposed into K-1 stick-breaking `Beta`s by the codec.
+# is decomposed into K-1 stick-breaking `Beta`s by the codec. `NoPrior`
+# (`no_prior.jl`) marks the simplex estimated with no prior chosen yet — the
+# marker carries no outcome count of its own, so it skips the length check a
+# `Dirichlet` needs.
 _validate_branch_prob_prior(::Nothing, ::Int) = nothing
+_validate_branch_prob_prior(::NoPrior, ::Int) = nothing
 function _validate_branch_prob_prior(prior, k::Int)
     prior isa Distributions.Dirichlet || throw(ArgumentError(
         "the branch-probability prior must be a `Dirichlet` over the $k " *
-        "outcomes; got a $(typeof(prior))"))
+        "outcomes, or no_prior() (free, no prior yet); got a $(typeof(prior))"))
     length(prior) == k || throw(ArgumentError(
         "the branch-probability `Dirichlet` prior must have one weight per " *
         "outcome (length $k); got length $(length(prior))"))
@@ -846,6 +854,12 @@ is the pair's second element). A no-event win yields a `missing` time.
 To recover the marginal time-to-resolution alone (the mixture over outcomes,
 discarding which fired) sample [`as_mixture`](@ref)`(c)` instead.
 
+A [`Resolve`](@ref) whose `branch_prob_prior` still carries an unresolved
+[`no_prior`](@ref)`()` marker has nothing to draw the branch probabilities
+from, so `rand` refuses eagerly, naming the node, rather than silently
+drawing from the node's current fixed `branch_probs` (matching
+[`Uncertain`](@ref)'s leaf-level guard).
+
 # Examples
 ```@example
 using ComposedDistributions, Distributions, Random
@@ -865,11 +879,30 @@ function Base.rand(c::AbstractOneOf; outcome::Bool = false)
     return rand(default_rng(), c; outcome)
 end
 
+# `branch_probs` refuses to draw when its attached prior is still `no_prior()`
+# (estimated, no prior chosen yet), naming the node, exactly like `Uncertain`'s
+# leaf-level guard (`Uncertain.jl`) refuses an unresolved parameter spec — the
+# same class of silence the guard removes there (#366). A fixed node
+# (`branch_prob_prior === nothing`) or one carrying a resolved `Dirichlet`
+# still draws from `branch_probs` as before; only the unresolved marker
+# refuses.
+function _check_branch_probs_resolved(c::Resolve)
+    c.branch_prob_prior isa NoPrior || return nothing
+    throw(ArgumentError(
+        "cannot draw from $(c): branch_probs is marked no_prior() (free, " *
+        "no prior chosen yet); attach a prior with uncertain(tree; " *
+        "branch_probs = prior, ...) or update(tree, table) before " *
+        "drawing, or collapse first with update(tree, params)"))
+end
+
 # The scalar marginal draw of a terminal Resolve (its branch-prob-weighted
 # mixture time-to-resolution, discarding which outcome fired). Used by the plain
 # flat value path (`child_rand!`), where a Resolve child is one value slot, and
 # wherever the marginal time alone is wanted.
-_one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
+function _one_of_marginal_rand(rng::AbstractRNG, c::Resolve)
+    _check_branch_probs_resolved(c)
+    return rand(rng, as_mixture(c))
+end
 
 # Internal: sample a one_of outcome and its time, returning `(name, time)`. This
 # is the compact pair view backing `rand(c; outcome = true)`; it retains which
@@ -889,6 +922,7 @@ _one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 function _rand_outcome end
 
 function _rand_outcome(rng::AbstractRNG, c::Resolve)
+    _check_branch_probs_resolved(c)
     i = _sample_branch(rng, c.branch_probs)
     names = component_names(c)
     # A no-event win yields `missing` (no event time recorded); a real outcome

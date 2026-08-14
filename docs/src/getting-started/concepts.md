@@ -11,7 +11,7 @@ The package has four layers, each building on the one before.
   A leaf can also resolve later: a [`Varying`](@ref) leaf maps an observed covariate to a distribution, and an [`Uncertain`](@ref) leaf carries distribution-valued parameters.
 - **Composers** wire named leaves into an event tree ([`compose`](@ref) and the five composers).
 - **Combination and lowering** join or collapse whole delays (`convolved`, `difference`, [`observed_distribution`](@ref)).
-- **Parameters and edits** read and reshape an assembled tree ([`composed_to_table`](@ref), [`build_priors`](@ref), [`update`](@ref), [`prune`](@ref), [`splice`](@ref)).
+- **Parameters and edits** read and reshape an assembled tree ([`composed_to_table`](@ref), [`update`](@ref), [`prune`](@ref), [`splice`](@ref)).
 
 ## The verb map
 
@@ -49,10 +49,8 @@ See the [Getting started](@ref getting-started) walkthrough for a side-by-side e
 | Verb | What it does | Returns |
 |---|---|---|
 | `composed_to_table` | the full node/attribute/parameter inventory; filter `role == :param` for parameters only | a Tables.jl table |
-| `build_priors` | support-derived default priors from that table | a nested prior `NamedTuple` |
-| `default_prior` | the default prior for one parameter row | a `Distribution` |
-| `param_priors` | `composed_to_table` + `build_priors` in one call, for `uncertain(tree)` (bare) | a nested prior `NamedTuple` |
-| `uncertain(tree, ...)` | promote one or more free parameters of an existing tree; bare `uncertain(tree)` promotes all | a tree |
+| `uncertain(tree, ...)` | promote one or more free parameters of an existing tree; bare `uncertain(tree)` marks all `no_prior()` | a tree |
+| `no_prior()` | free, no prior chosen yet — a spec value alongside a prior | a marker |
 
 See DistributionsInference.jl's [composed-tree tutorial](https://distributionsinference.epiaware.org/dev/getting-started/tutorials/composed-distributions) for how these feed the estimation pipeline.
 
@@ -99,7 +97,6 @@ The deferred-leaf verbs are worked through in [Multi-strata trees and parameter 
 | Mixture view of a one_of node | `as_mixture` | a `MixtureModel` |
 | Collapse a chain to its total | `observed_distribution` | the convolved marginal |
 | The full structural inventory (filter to parameters) | `composed_to_table` | a Tables.jl table |
-| Support-derived priors | `build_priors` | a nested prior `NamedTuple` |
 | Read a child or descend a path | `event` | a node or leaf |
 | Flat / nested event names | `event_names` / `event_tree` | the record key names |
 | Replace values or whole nodes | `update` | a same-shape tree |
