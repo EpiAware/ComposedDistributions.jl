@@ -25,17 +25,9 @@ ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 [sources]
 ADFixtures = {path = "../test/ADFixtures"}
 ComposedDistributions = {path = ".."}
-# `convolved` only exists in ConvolvedDistributions 0.2, which is not yet
-# registered (the registry still has 0.1). Pin it by git so the env resolves.
-# Drop this once 0.2 is released.
-ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
-# EpiAwareADTools (ConvolvedDistributions 0.2 AD-safe helpers, #137) is
-# unregistered; pin it by git so the env resolves. Drop once it registers.
-EpiAwareADTools = {url = "https://github.com/EpiAware/EpiAwareADTools.jl", rev = "main"}
-# Until EpiAwarePackageTools is registered, it is pinned by git so
-# the env resolves out of the box. Switch to a local path to
-# develop the kit alongside this package.
-EpiAwarePackageTools = {url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main"}
 
 [compat]
 BenchmarkTools = "1"
+ConvolvedDistributions = "0.4, 1"
+EpiAwareADTools = "0.1.2, 0.2"
+EpiAwarePackageTools = "0.3"

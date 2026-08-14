@@ -24,14 +24,16 @@ ComposedDistributionsMooncakeExt = "Mooncake"
 ComposedDistributionsOptimizationExt = ["Optimization", "OptimizationOptimJL"]
 
 [compat]
-ConvolvedDistributions = "0.2, 0.3, 1"
+ConvolvedDistributions = "0.4, 1"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
-# Floored at 0.1.3: the release that hosts the shared `xlogy`/`xlog1py`
-# Mooncake rules this package used to carry itself (#99, #214). Nothing here
-# resolves until 0.1.3 is in General, so this branch must not merge before
-# that release.
-EpiAwareADTools = "0.1.2"
+# Floored at 0.1.2: the release that hosts the shared `xlogy`/`xlog1py`
+# Mooncake rules this package used to carry itself (#99, #214). Widened to
+# admit 0.2 (a breaking release upstream, but nothing this package uses from
+# EpiAwareADTools's public surface changed shape — the Gamma/Beta AD-safe
+# fixes it shipped only make `logccdf_ad_safe`/`ccdf_ad_safe` more accurate,
+# not differently shaped).
+EpiAwareADTools = "0.1.2, 0.2"
 LogExpFunctions = "0.3, 1"
 Mooncake = "0.5"
 Optimization = "4, 5"
@@ -41,15 +43,6 @@ Statistics = "1"
 Tables = "1"
 Test = "1"
 julia = "1.11, 1.12"
-
-# TEMPORARY: `ConvolvedDistributions.quantile_by_optimization` (adopted here,
-# #337) only exists on ConvolvedDistributions main, not yet in a registered
-# release (the registry still has 0.3.1). It is a direct dependency, so in the
-# test/docs workspace the pin must live here in the root Project.toml (a
-# workspace member's `[sources]` is not honoured for a root-level dep). Drop
-# once the release carrying #112 registers.
-[sources]
-ConvolvedDistributions = {url = "https://github.com/EpiAware/ConvolvedDistributions.jl", rev = "main"}
 
 [workspace]
 projects = ["test", "docs"]
