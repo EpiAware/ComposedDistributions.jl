@@ -150,22 +150,22 @@ end
     # is removed and a `no_prior()` spec is drawn like any other — but with a
     # generic message that does not name the parameter, which the assertions
     # below distinguish.
-    u = uncertain(Gamma(2.0, 1.0); shape = no_prior())
+    u = uncertain(Gamma(2.0, 1.0); alpha = no_prior())
     @test_throws ArgumentError rand(u)
-    @test_throws "shape" rand(u)
+    @test_throws "alpha" rand(u)
     @test_throws "no_prior()" rand(u)
     @test_throws "update(tree, params)" rand(u)
 
     # A resolved sibling parameter alongside the unresolved one still names
     # only the unresolved one: the eager check runs before any spec is drawn,
-    # so `shape`'s real prior is never reached.
-    mixed = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2),
-        scale = no_prior())
-    @test_throws "scale" rand(Xoshiro(1), mixed)
+    # so `alpha`'s real prior is never reached.
+    mixed = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2),
+        theta = no_prior())
+    @test_throws "theta" rand(Xoshiro(1), mixed)
 
     # A fully resolved leaf still draws normally (the guard is not a blanket
     # refusal).
-    resolved = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    resolved = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     @test rand(Xoshiro(1), resolved) isa Real
 end
 

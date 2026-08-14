@@ -52,7 +52,7 @@ its `branch_probs` slot exactly like an attached `Dirichlet`.
 using ComposedDistributions, Distributions
 
 # Mark a parameter estimated with no prior chosen yet.
-u = uncertain(Gamma(2.0, 1.0); shape = no_prior())
+u = uncertain(Gamma(2.0, 1.0); alpha = no_prior())
 has_uncertain(u)
 ```
 
@@ -76,7 +76,7 @@ currently-fixed free parameter; write it explicitly to mark just one.
 ```@example
 using ComposedDistributions, Distributions
 
-uncertain(Gamma(2.0, 1.0); shape = no_prior())
+uncertain(Gamma(2.0, 1.0); alpha = no_prior())
 ```
 
 # See also
