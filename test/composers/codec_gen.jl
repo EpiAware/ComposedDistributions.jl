@@ -367,10 +367,13 @@ end
     end
 
     # Allocations, pinned to the measured baseline (#372): 0 B on every
-    # non-pooled tree, and 384 B on the pooled tree (case 4, `centred_pop`) --
-    # that 384 B is pre-existing on the base branch and unrelated to this
-    # change, so it is asserted against its measured value, not against 0.
-    expected_allocs = [0, 0, 0, 384, 0, 0]
+    # non-pooled tree. Case 4 (`centred_pop`, the pooled tree) measured 384 B
+    # against EpiAwareADTools 0.1.2; re-measured at 0 B against 0.2.1 (#382's
+    # compat widening, merged separately to main) -- confirmed clean across
+    # all six CI platform/version combinations, with every correctness and
+    # `@inferred` assertion above unaffected, so this is EpiAwareADTools 0.2
+    # allocating less on the pooled codepath, not a regression here.
+    expected_allocs = [0, 0, 0, 0, 0, 0]
     @assert length(expected_allocs) == length(cases)
 
     for (i, (tree, x, expected)) in enumerate(cases)
