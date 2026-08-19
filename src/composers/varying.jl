@@ -161,7 +161,7 @@ design note's open questions).
 - [`instantiate`](@ref): resolves the leaf against a context.
 - [`Context`](@ref): the covariate bag.
 "
-struct Varying{F, D <: UnivariateDistribution} <: UnivariateDistribution{Continuous}
+struct Varying{F, D} <: UnivariateDistribution{Continuous}
     "Map from a covariate value to a `UnivariateDistribution`."
     f::F
     "The `Context` field name this leaf reads (default `:time`)."
@@ -203,8 +203,8 @@ mean(instantiate(d, Context(time = 5.0))) # the delay at t = 5
 - [`instantiate`](@ref): resolve against a context.
 "
 function varying(f; covariate::Symbol = :time, reference = f(0.0))
-    reference isa UnivariateDistribution || throw(ArgumentError(
-        "varying `reference` must be a UnivariateDistribution; got " *
+    is_composable(reference) || throw(ArgumentError(
+        "varying `reference` must be a distribution-like leaf; got " *
         "$(typeof(reference))"))
     return Varying(f, covariate, reference)
 end
@@ -245,8 +245,7 @@ instantiate(sw, Context(x = 15.0))   # the `above` subtree
 - [`varying`](@ref): the general covariate-indexed map this specialises.
 "
 function threshold(covariate::Symbol, cutoff::Real;
-        below::UnivariateDistribution, above::UnivariateDistribution,
-        reference::UnivariateDistribution = below)
+        below, above, reference = below)
     return varying(x -> x < cutoff ? below : above; covariate, reference)
 end
 
@@ -301,6 +300,12 @@ end
 # CSV), and `Varying` is a wrapper layer of its own, peeling to the
 # reference's layers.
 node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
+
+# The reverse. The covariate map is a live function object, which is why this
+# round trip is in-memory only: no text format can carry it back.
+function rewrap_from_table(::Type{<:Varying}, inner, attrs::NamedTuple)
+    return Varying(attrs.map, attrs.covariate, inner)
+end
 _shared_tag(d::Varying) = _shared_tag(d.reference)
 
 @doc "
@@ -429,7 +434,7 @@ observed_distribution(at_day5)                     # the convolution kernel at t
 - [`observed_distribution`](@ref): collapse the resolved chain to its kernel.
 "
 instantiate(d, ::Nothing) = d
-instantiate(d::UnivariateDistribution, ::AbstractContext) = d
+instantiate(d, ::AbstractContext) = d
 # Recurses into the produced subtree, not just `d.f(...)` alone: `f` can
 # itself build a composite node (a `Resolve`/`Compete`) whose own outcomes
 # may embed a further `Varying` leaf, and that nested leaf needs resolving
@@ -514,17 +519,17 @@ has_varying(instantiate(tree, Context(time = 5.0)))  # resolved: false
 - [`has_uncertain`](@ref): the same guard for the latent (uncertain) case.
 "
 has_varying(d::Varying) = true
-has_varying(::UnivariateDistribution) = false
+has_varying(::Any) = false
 has_varying(d::Truncated) = has_varying(d.untruncated)
 has_varying(d::Shared) = has_varying(d.dist)
 # Structural dispatch against the public `AbstractComposedDistribution` root
 # (the one `instantiate` also rebuilds through via `node_children`), not a
 # closed list of the built-in types, so a downstream composer node gets this
-# for free once it defines `node_children` — `has_uncertain` mirrors this.
-# `AbstractOneOf` dispatches on its own line since it is univariate (already
-# matched by the `UnivariateDistribution` method above): parameterising the
-# generic method on `Multivariate` keeps the two from colliding the way
-# `_is_composable` documents (`nesting.jl`).
+# for free once it defines `node_children` — `has_uncertain` mirrors this, and
+# the `::Any` leaf case above matches `has_uncertain`'s own fallback so a
+# duck-typed leaf needs no method. `AbstractOneOf` dispatches on its own line
+# since parameterising the generic method on `Multivariate` leaves a univariate
+# one_of node to the leaf fallback otherwise.
 function has_varying(d::AbstractComposedDistribution{Multivariate})
     return any(has_varying, node_children(d))
 end
@@ -619,7 +624,7 @@ function _walk_covariates!(acc, d::Distributions.Censored, path)
 end
 _walk_covariates!(acc, d::Shared, path) = _walk_covariates!(acc, d.dist, path)
 
-_walk_covariates!(acc, ::UnivariateDistribution, path) = nothing
+_walk_covariates!(acc, ::Any, path) = nothing
 
 @doc "
 

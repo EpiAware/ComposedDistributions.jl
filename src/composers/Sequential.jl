@@ -41,10 +41,10 @@ struct Sequential{names, C <: Tuple} <:
     function Sequential{names}(components::C) where {names, C <: Tuple}
         length(components) >= 1 ||
             throw(ArgumentError("Sequential needs at least one component"))
-        all(_is_composable, components) ||
+        all(is_composable, components) ||
             throw(ArgumentError(
-                "every Sequential component must be a UnivariateDistribution " *
-                "or a nested composer"))
+                "every Sequential component must be a distribution-like leaf " *
+                "or a nested composer; got $(map(typeof, components))"))
         length(names) == length(components) ||
             throw(ArgumentError(
                 "Sequential names must match the number of components"))
@@ -165,7 +165,7 @@ _nt_pairs(nt::NamedTuple) = map(=>, keys(nt), values(nt))
 Base.length(d::Sequential) = _nleaves(d.components)
 
 function Base.eltype(::Type{<:Sequential{names, C}}) where {names, C <: Tuple}
-    return mapreduce(eltype, promote_type, fieldtypes(C))
+    return _composer_eltype(fieldtypes(C))
 end
 
 @doc "

@@ -8,7 +8,7 @@ The reusable interface-conformance suite `ComposedDistributions.TestUtils` check
 ## The type landscape
 
 The composer nodes share one supertype, `AbstractComposedDistribution{F, S}`.
-The named-child composers and the univariate one_of family sit under it; leaves and leaf wrappers are plain univariate distributions under no composer supertype.
+The named-child composers and the univariate one_of family sit under it; a leaf or leaf wrapper is any type implementing the `Distributions.jl` univariate interface (see "Adding a leaf: nothing" below), under no composer supertype of its own.
 
 | Type | Role |
 |---|---|
@@ -21,16 +21,21 @@ The named-child composers and the univariate one_of family sit under it; leaves 
 | `Resolve` | a fixed-probability mixture |
 | `Compete` | racing hazards (soonest cause fires) |
 | `Shared` | a tied leaf (one free parameter across branches); plain univariate leaf, no composer supertype |
-| any `Distributions.jl` `UnivariateDistribution` | a leaf, or the base of a leaf wrapper |
+| any type implementing the `Distributions.jl` univariate interface | a leaf, or the base of a leaf wrapper |
 
 `AbstractComposedDistribution` is parametric on variate form `F` (`Univariate` / `Multivariate`), so one supertype spans the univariate one_of members and the multivariate event-tree composers while preserving `Distribution{F, S}`.
 Downstream extension packages (CensoredDistributions and its siblings) dispatch on these supertypes, so the names and shape match the shared contract; `TestUtils.test_abstract_membership` pins the membership down as a test, so a type filed under the wrong supertype fails.
 
 ## Adding a leaf: nothing
 
-Any `Distributions.jl` distribution is a valid leaf with no package-specific hooks.
+Any type conforming to the `Distributions.jl` univariate interface is a valid leaf with no `ComposedDistributions` method of its own.
+Conformance here means implementing `Distributions.params`, `logpdf`, `rand`, and `minimum`/`maximum`: methods `Distributions.jl` itself requires of a univariate distribution, not a `ComposedDistributions`-specific hook.
+`composed_to_table`'s `support` column reads `minimum`/`maximum` directly, so a leaf missing either composes and scores but cannot table.
 It composes, ties, gets wrapped in `uncertain`, and scores through the flat codec, unchanged.
 Its estimable parameter names come from its own type, so a named parameter table row needs no method either; see [Parameter names](@ref parameter-names) below for the one case that does.
+
+Subtyping `UnivariateDistribution` remains the recommended shape for a leaf: `Distributions.jl`'s own `truncated`/`censored`, and anything else dispatching on that supertype, require it.
+A leaf that only implements the interface above, without subtyping, still composes, tables, scores, flattens and fits — it is the escape hatch for a type that cannot subtype — but it cannot be wrapped by `Distributions.jl`'s own `truncated`/`censored`.
 
 ```@example extending
 using ComposedDistributions, Distributions
@@ -40,16 +45,65 @@ tree = compose((onset = leaf, admit = LogNormal(0.5, 0.4)))
 composed_to_table(tree)
 ```
 
+A user-defined type makes the same claim concrete.
+`Zilch` below is not a `Distributions.jl` built-in, and implements exactly those interface methods, no more.
+
+```@example extending
+using Random
+using ComposedDistributions.TestUtils: test_node_interface
+
+struct Zilch <: ContinuousUnivariateDistribution
+    m::Float64
+    s::Float64
+end
+Distributions.params(d::Zilch) = (d.m, d.s)
+Distributions.logpdf(d::Zilch, x::Real) = logpdf(Normal(d.m, d.s), x)
+Base.rand(rng::AbstractRNG, d::Zilch) = rand(rng, Normal(d.m, d.s))
+Base.minimum(d::Zilch) = -Inf
+Base.maximum(d::Zilch) = Inf
+
+ComposedDistributions.param_names(Zilch(1.0, 2.0))
+```
+
+`param_names` derives `(:m, :s)` from `Zilch`'s own fields, with no method of its own (see [Parameter names](@ref parameter-names) below).
+It composes, tables, scores and samples, and takes an attached prior through `uncertain`, all with no `ComposedDistributions` method:
+
+```@example extending
+zilch_tree = compose((onset = Zilch(1.0, 2.0), admit = LogNormal(0.5, 0.4)))
+composed_to_table(zilch_tree)
+```
+
+```@example extending
+uncertain_zilch = compose((onset = uncertain(
+    Zilch(1.0, 2.0); m = Normal(0.0, 1.0)),))
+ComposedDistributions.flat_dimension(uncertain_zilch)
+```
+
+```@example extending
+test_node_interface(Zilch(1.0, 2.0); name = "Zilch")
+nothing # hide
+```
+
 ## Adding a leaf wrapper
 
 A leaf wrapper carries fixed structure (censoring bounds, a shared tie, an attached prior) around an inner base distribution.
-`inner_dist`/`rewrap_leaf` are the two mandatory hooks; everything else is optional, with a default that is correct for a wrapper that carries *nothing extra* through.
+A wrapper costs exactly two methods.
+`inner_dist` peels one layer to the inner distribution and `rewrap_leaf` rebuilds the wrapper around a new one; everything below them is optional, with a default that is correct for a wrapper carrying *nothing extra* through.
+Defining `inner_dist` without `rewrap_leaf` is refused with an error naming the missing method, because rebuilding such a wrapper would otherwise drop the structure it carries and leave every later `logpdf` and `rand` wrong with no warning.
 A wrapper that does carry something through and does not override the matching hook loses it silently, which is [issue #277](https://github.com/EpiAware/ComposedDistributions.jl/issues/277)'s whole subject and the reason [`TestUtils.test_leaf_protocol_completeness`](@ref) below exists.
 
-| Method | Role | Default when unimplemented |
+The two required methods:
+
+| Method | Role |
+|---|---|
+| [`inner_dist`](@ref) | peel one wrapper layer to the inner distribution |
+| [`rewrap_leaf`](@ref) | rebuild the wrapper around a new inner delay |
+
+Everything else is optional, and each default is correct for a wrapper that
+carries nothing of that kind. Override one only when the wrapper does.
+
+| Optional method | Role | Default when unimplemented |
 |---|---|---|
-| [`inner_dist`](@ref) | peel one wrapper layer to the inner distribution | none — mandatory |
-| [`rewrap_leaf`](@ref) | rebuild the wrapper around a new inner delay | none — mandatory |
 | [`free_leaf`](@ref) | peel to the innermost free delay | recursion through `inner_dist` |
 | [`node_attributes`](@ref) | the layer's own fixed, non-parameter structure | `(;)` (none) |
 | [`param_names`](@ref) | the inner delay's native parameter names | positional (`:param_1`, ...) |
@@ -160,7 +214,7 @@ They default generically off `node_children` for a *concatenating* node, one who
 A node with different combination semantics (a disjunction like `Choose`, a mixture) overrides the three directly.
 
 A univariate leaf is the base case for that walk: it occupies one slot (`child_nleaves == 1`), `child_rand!` writes its single draw, and `child_logpdf` scores `x[offset + 1]`.
-Any `Distributions.jl` distribution is therefore a valid leaf with no package-specific hooks, as the leaf section above says.
+Any type implementing the `Distributions.jl` univariate interface is therefore a valid leaf with no package-specific hooks, as the leaf section above says.
 Its estimable parameter names are derived from its own fields (see [Parameter names](@ref parameter-names)); a leaf whose fields do not line up with its `params`, in order, is the one case that needs a method of its own.
 
 Add [`node_attributes`](@ref) when the node carries fixed structure that is not a free parameter, as a `Choose`'s selector is; its `node` label and its children's rows need no method of their own.
@@ -269,8 +323,26 @@ A composed tree exposes its structure through name introspection.
 
 - `component_names(node)` — the `Tuple` of immediate child names;
 - [`composed_to_table`](@ref) — the full node/attribute/parameter inventory (one row per composer node, leaf wrapper layer, fixed-structure attribute and free parameter); a composed distribution is itself a Tables.jl source over this table. Filter its `role` column to `:param` for the free-parameter-only rows;
-- [`node_attributes`](@ref) — a node or leaf layer's own fixed, non-parameter structure, one `:attribute` row each. This is the only method a downstream type defines to control its rows in that table: the `node` label is read off the type name, and a wrapped leaf's layers are peeled through `inner_dist`;
+- [`node_attributes`](@ref) — a node or leaf layer's own fixed, non-parameter structure, one `:attribute` row each. This is the only method a downstream type defines to control its rows in that table: the `node` column holds the type itself, and a wrapped leaf's layers are peeled through `inner_dist`;
 - over the built-ins: [`event_names`](@ref) (the flat per-event name tuple, one entry per leaf edge plus the origin), [`event_tree`](@ref) (the same names nested) and [`event`](@ref) (fetch a child or descend a name path).
+
+### Reading a table back
+
+`compose(table)` is the inverse of `composed_to_table`: it rebuilds a tree from the rows, so `compose(composed_to_table(d)) == d`.
+It works by dispatching on the table's `node` column, which holds the type itself rather than the type's name, so there is no name-to-type registry for a downstream package to register with.
+
+Three hooks say how a type rebuilds itself, and two of them are defaulted so the extension cost does not move:
+
+- [`from_table`](@ref)`(::Type{T}, values, attrs)` rebuilds a leaf. The default is `T(values...)`, right for any Distributions.jl family whose `params` are its constructor arguments, so **a leaf still costs zero methods**. A leaf whose free parameters are not its constructor arguments (one overriding `param_names`/`rebuild_leaf`) needs a method; the default detects that case and throws rather than building a wrong leaf silently.
+- [`node_from_table`](@ref)`(::Type{T}, names, children, attrs)` rebuilds a composer node. The default is `T(children, names)` — the shape `Sequential`, `Parallel` and the `Both` example above already use — so **a node built that way still costs only the three methods of the node contract**. A node whose constructor takes something else needs a method; `Choose`, `Compete` and `Resolve` each have one.
+- [`rewrap_from_table`](@ref)`(::Type{T}, inner, attrs)` re-applies a leaf-wrapper layer. This one has **no default**: a wrapper's fixed structure is its own, so a wrapper type needs a method here to round-trip. It receives back exactly what that layer's `node_attributes` reported. An `uncertain` layer needs none — its specs ride the `prior` column.
+
+Anything without an applicable method throws, naming the type and the method to define, rather than losing structure quietly.
+
+```@example extending
+tbl = composed_to_table(both)
+compose(tbl) == both
+```
 
 ```@example extending
 using ComposedDistributions, Distributions
@@ -286,6 +358,12 @@ tree = compose((onset_admit = Gamma(2.0, 1.0),
 The reusable suite lives in the `ComposedDistributions.TestUtils` submodule.
 `test_interface` runs the public checklist over the fixture set; `test_node_interface` runs the node-extension checklist, including the `flat_dimension` invariant (`test_estimation_dimension`: the codec's estimated-parameter count must match `composed_to_table`'s estimated-row count, so a node that silently drops an uncertain leaf from the codec fails the harness instead of shipping green); `test_composed_interface` wraps both and asserts the `AbstractComposedDistribution` membership; `test_abstract_membership` asserts the whole hierarchy; `test_leaf_protocol_completeness` closes [#277](https://github.com/EpiAware/ComposedDistributions.jl/issues/277) (a wrapper that silently drops what it wraps); and `test_sampling_consistency` closes [#278](https://github.com/EpiAware/ComposedDistributions.jl/issues/278) (`rand` and `logpdf`/`cdf` silently describing different distributions).
 Drop the same suite into your own tests to verify a custom leaf, wrapper, or composer conforms, and run it after adding a type to a family.
+
+`test_node_interface` and `test_interface` check two different bars.
+`test_node_interface` checks only what `ComposedDistributions` itself requires of a leaf or node: `child_nleaves`, `child_rand!`, `child_logpdf`, and the `flat_dimension` invariant above.
+`test_interface` runs the fuller public checklist over the fixture set, and for a leaf called with `univariate = true` it additionally calls `mean`, `var`, `std` and `cdf` (in `TestUtils.jl`'s `_check_moments_and_rand` and `_check_cdf`): real `Distributions.jl` surface that `ComposedDistributions` never calls on a leaf itself.
+Run `test_node_interface` to verify a custom leaf or node satisfies what this package needs.
+Run `test_interface` too when the leaf is also meant to behave as a fully featured standalone `Distributions.jl` distribution.
 
 ```@docs
 ComposedDistributions.TestUtils

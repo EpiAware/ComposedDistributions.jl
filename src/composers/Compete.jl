@@ -65,6 +65,14 @@ end
 
 component_names(::Compete{names}) where {names} = names
 
+# The reverse of the table walk: a racing-hazard node takes its names first,
+# not the `(children, names)` the default `node_from_table` calls, and has no
+# branch probabilities to restore (the winning probability is derived).
+function node_from_table(::Type{<:Compete}, names::Tuple, children::Tuple,
+        ::NamedTuple)
+    return Compete(names, children)
+end
+
 @doc "
 
 Build a racing-hazard [`Compete`](@ref) node from `name => delay`
@@ -97,7 +105,7 @@ function Compete(outcomes::Pair...)
     # `Resolve`).
     names = map(o -> o.first, outcomes)
     delays = map(o -> o.second, outcomes)
-    all(_is_one_of_branch, delays) || throw(ArgumentError(
+    all(is_composable, delays) || throw(ArgumentError(
         "each racing-hazard outcome payload must be a bare delay distribution " *
         "or composer subtree (no branch probability); got a `(delay, prob)` " *
         "tuple? use `Resolve`"))

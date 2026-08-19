@@ -43,6 +43,11 @@ has_varying(d::Distributions.Censored) = has_varying(d.uncensored)
 # `Truncated`).
 node_attributes(d::Distributions.Censored) = (; lower = d.lower, upper = d.upper)
 
+function rewrap_from_table(::Type{<:Distributions.Censored}, inner,
+        attrs::NamedTuple)
+    return censored(inner; lower = attrs.lower, upper = attrs.upper)
+end
+
 # Upstream gives `Truncated` a one-line `show` but `Censored` only the generic
 # multi-line struct dump (its `uncensored` field is a distribution), which broke
 # out of the tree prefix when a censored leaf printed inline (#282). Label it

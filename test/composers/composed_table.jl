@@ -135,7 +135,9 @@ end
         @test length(full.prior) == n
 
         @test issubset(Set(full.role), Set((:node, :attribute, :param)))
-        @test eltype(full.node) == Symbol
+        # The `node` column holds type objects (a `UnionAll`, a `DataType` for a
+        # parameter-free node), which have no common concrete eltype.
+        @test all(x -> x isa Type, full.node)
         @test eltype(full.param) == Symbol
 
         for i in 1:n
@@ -212,8 +214,8 @@ end
     par = parallel(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4))
     @test _param_rows(seq).edge == _param_rows(par).edge
     @test _param_rows(seq).value == _param_rows(par).value
-    @test composed_to_table(seq).node[1] == :Sequential
-    @test composed_to_table(par).node[1] == :Parallel
+    @test composed_to_table(seq).node[1] === Sequential
+    @test composed_to_table(par).node[1] === Parallel
     @test composed_to_table(seq).node[1] != composed_to_table(par).node[1]
 
     # A Gamma vs a Weibull leaf differ in `node`.
@@ -225,28 +227,28 @@ end
             eachindex(tbl.edge))
         tbl.node[i]
     end
-    @test leaf_node(gtree) == :Gamma
-    @test leaf_node(wtree) == :Weibull
+    @test leaf_node(gtree) === Gamma
+    @test leaf_node(wtree) === Weibull
 
-    # A truncated leaf carries `(:Truncated, :lower)`/`(:Truncated, :upper)`
+    # A truncated leaf carries `(Truncated, :lower)`/`(Truncated, :upper)`
     # attribute rows that a bare leaf does not.
     ttree = compose((a = truncated(Gamma(2.0, 1.0); upper = 10.0),))
     tfull = composed_to_table(ttree)
     attrs = [(tfull.node[i], tfull.param[i])
              for i in eachindex(tfull.node)
              if tfull.role[i] == :attribute]
-    @test (:Truncated, :lower) in attrs
-    @test (:Truncated, :upper) in attrs
+    @test (Truncated, :lower) in attrs
+    @test (Truncated, :upper) in attrs
     plain = composed_to_table(gtree)
     @test !any(==(:attribute), plain.role)
 
-    # A Choose carries a `(:Choose, :selector)` attribute row.
+    # A Choose carries a `(Choose, :selector)` attribute row.
     ctree = choose(:index => Gamma(2.0, 1.0), :sourced => LogNormal(0.5, 0.4))
     cfull = composed_to_table(ctree)
     cattrs = [(cfull.node[i], cfull.param[i])
               for i in eachindex(cfull.node)
               if cfull.role[i] == :attribute]
-    @test (:Choose, :selector) in cattrs
+    @test (Choose, :selector) in cattrs
 
     # Both members of a `shared(:g, ...)` pair get node rows at their real
     # paths, while the param rows stay once under `:g`.
@@ -256,15 +258,15 @@ end
     sfull = composed_to_table(stree)
     node_edges = [sfull.edge[i]
                   for i in eachindex(sfull.edge)
-                  if sfull.role[i] == :node && sfull.node[i] == :Shared]
+                  if sfull.role[i] == :node && sfull.node[i] === Shared]
     @test Set(node_edges) == Set([:index, Symbol("sourced.inc")])
     inc_param_edges = [sfull.edge[i]
                        for i in eachindex(sfull.edge)
-                       if sfull.role[i] == :param && sfull.node[i] == :Gamma]
+                       if sfull.role[i] == :param && sfull.node[i] === Gamma]
     @test inc_param_edges == [:inc, :inc]
 
     # A two-group non-centred pool gives each member's `z` row a
-    # `(:Pool, pname)` attribute row naming its group.
+    # `(Pool, pname)` attribute row naming its group.
     ptree = compose((
         north = uncertain(Gamma(2.0, 1.0); alpha = pool(:region_a)),
         south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region_a)),
@@ -273,7 +275,7 @@ end
     pfull = composed_to_table(ptree)
     pool_attrs = Dict{Symbol, Any}()
     for i in eachindex(pfull.edge)
-        if pfull.role[i] == :attribute && pfull.node[i] == :Pool
+        if pfull.role[i] == :attribute && pfull.node[i] === Pool
             pool_attrs[pfull.edge[i]] = pfull.value[i]
         end
     end
@@ -296,8 +298,8 @@ end
     node_rows = [(ofull.edge[i], ofull.node[i])
                  for i in eachindex(ofull.edge)
                  if ofull.role[i] == :node]
-    @test (:a, :OpaqueWrap) in node_rows
-    @test !((:a, :Gamma) in node_rows)
+    @test (:a, OpaqueWrap) in node_rows
+    @test !((:a, Gamma) in node_rows)
     oparams = [ofull.param[i] for i in eachindex(ofull.edge)
                if ofull.role[i] == :param]
     @test Set(oparams) == Set((:alpha, :theta))
@@ -378,4 +380,114 @@ end
         prior = LogNormal(log(2.0), 0.2), support = (0.0, Inf),
         role = "param")]
     @test_throws r"(?=.*edge)(?=.*param)" update(tree, di_shaped_rows)
+end
+
+@testitem "update(tree, composed_to_table(tree)) is an identity on every shape" begin
+    using ComposedDistributions: update
+    using Distributions, ConvolvedDistributions
+    using ConvolvedDistributions: convolved, NumericSolver
+
+    inc = shared(:inc, Gamma(2.0, 1.0))
+    fixed = resolve(:mild => (Gamma(2.0, 1.0), 0.7),
+        :severe => (LogNormal(0.5, 0.4), 0.3))
+    fixtures = Dict(
+        :plain => sequential(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4)),
+        :truncated => compose((a = truncated(Gamma(2.0, 1.0); upper = 10.0),)),
+        :censored => compose((a = censored(Gamma(2.0, 1.0); upper = 5.0),)),
+        :shared => choose(:index => inc,
+            :sourced => compose((src = LogNormal(0.5, 0.4), inc = inc))),
+        :choose => choose(:index => Gamma(2.0, 1.0),
+            :sourced => LogNormal(0.5, 0.4)),
+        :compete => compete(:a => Gamma(2.0, 1.0), :b => LogNormal(0.5, 0.4)),
+        :no_event => resolve(:event => (Gamma(1.5, 1.0), 0.4),
+            :none => (NoEvent(), 0.6)),
+        :resolve_fixed => fixed,
+        # The two node-level shapes: an uncertain `Resolve`'s simplex prior
+        # rides an `:attribute` row (its `:param` rows are stick coordinates),
+        # as does a pooled parameter's spec, under both parameterisations.
+        :resolve_dirichlet => update(fixed,
+            (branch_probs = Dirichlet([1.0, 1.0]),)),
+        :resolve_no_prior => update(fixed, (branch_probs = no_prior(),)),
+        :pool_noncentred => compose((
+            w = uncertain(Gamma(2.0, 1.0); alpha = pool(:d)),)),
+        :pool_centred => compose((
+            w = uncertain(Gamma(2.0, 1.0);
+            alpha = pool(:d, LogNormal(0.0, 1.0); noncentred = false)),)),
+        :uncertain => compose((
+            u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.5, 0.2)),
+            v = update(Gamma(2.0, 1.0), (theta = no_prior(),)))),
+        :varying => compose((v = varying(x -> Gamma(2.0, x);
+            covariate = :temp, reference = Gamma(2.0, 1.0)),)),
+        :convolved => compose((
+            c = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4)),)),
+        # A non-default solver: the `method` attribute row is the only place
+        # the table records it.
+        :convolved_numeric => compose((c = convolved(Gamma(2.0, 1.0),
+            LogNormal(0.5, 0.4); method = NumericSolver()),)))
+
+    for (name, tree) in fixtures
+        @test update(tree, composed_to_table(tree)) == tree
+    end
+end
+
+@testitem "composed_to_table: node-level attribute rows carry what :param rows cannot" begin
+    using ComposedDistributions: Pool, update
+    using Distributions, ConvolvedDistributions
+    using ConvolvedDistributions: convolved, Convolved, AnalyticalSolver,
+                                  NumericSolver
+
+    attr(tbl, edge, param) = tbl.value[findfirst(
+        i -> tbl.role[i] == :attribute && tbl.edge[i] == edge &&
+             tbl.param[i] == param, eachindex(tbl.edge))]
+
+    # A composite's solver is fixed structure that no other row records: two
+    # trees differing only in it must differ in the table.
+    analytic = compose((c = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4)),))
+    numeric = compose((c = convolved(Gamma(2.0, 1.0), LogNormal(0.5, 0.4);
+        method = NumericSolver()),))
+    atbl, ntbl = composed_to_table(analytic), composed_to_table(numeric)
+    @test attr(atbl, :c, :method) isa AnalyticalSolver
+    @test attr(ntbl, :c, :method) isa NumericSolver
+    @test atbl.value != ntbl.value
+    @test all(x -> x === Convolved, atbl.node[atbl.role .== :attribute])
+
+    # A non-centred pooled parameter's `:param` row is a `Normal(0, 1)` `z`
+    # latent, so the spec and the member's own value ride the `:attribute` row.
+    # Two populations of different families with identically-named parameters
+    # would otherwise be indistinguishable.
+    normal_pop = compose((w = uncertain(Gamma(2.0, 1.0);
+        alpha = pool(:d,
+            uncertain(Normal(0.0, 1.0); mu = Normal(0, 1),
+                sigma = truncated(Normal(0, 1); lower = 0.0)))),))
+    lognormal_pop = compose((w = uncertain(Gamma(2.0, 1.0);
+        alpha = pool(:d,
+            uncertain(LogNormal(0.0, 1.0); mu = Normal(0, 1),
+                sigma = truncated(Normal(0, 1); lower = 0.0)))),))
+    ntbl2 = composed_to_table(normal_pop)
+    ltbl2 = composed_to_table(lognormal_pop)
+    @test attr(ntbl2, :w, :alpha).spec.population isa Uncertain{
+        <:Any, <:Normal}
+    @test attr(ltbl2, :w, :alpha).spec.population isa Uncertain{
+        <:Any, <:LogNormal}
+    # The member's own template value, which the `z` row (always `0.0`) drops.
+    @test attr(ntbl2, :w, :alpha).template == 2.0
+    # A fully FIXED population contributes no hyperparameter rows at all, so
+    # the spec on the attribute row is the table's only record of it.
+    fixed_pop = compose((
+        w = uncertain(Gamma(2.0, 1.0); alpha = pool(:d, Normal(0.0, 1.0))),))
+    ftbl = composed_to_table(fixed_pop)
+    @test !any(==(:d), ftbl.edge)
+    @test attr(ftbl, :w, :alpha).spec.population == Normal(0.0, 1.0)
+
+    # An uncertain `Resolve`'s simplex prior rides its own attribute row; a
+    # fixed one has none (its per-outcome probabilities are `:param` rows).
+    fixed = resolve(:mild => (Gamma(2.0, 1.0), 0.7),
+        :severe => (LogNormal(0.5, 0.4), 0.3))
+    utbl = composed_to_table(update(fixed,
+        (branch_probs = Dirichlet([1.0, 1.0]),)))
+    @test utbl.value[findfirst(
+        i -> utbl.param[i] == :branch_prob_prior, eachindex(utbl.edge))] isa
+          Dirichlet
+    ftbl2 = composed_to_table(fixed)
+    @test !any(==(:branch_prob_prior), ftbl2.param)
 end

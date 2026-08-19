@@ -7,7 +7,7 @@ This page maps the modelling concepts to the verbs that build them, so you can f
 
 The package has four layers, each building on the one before.
 
-- **Leaves** are any `Distributions.jl` `UnivariateDistribution`, used directly as the per-event delays.
+- **Leaves** are any type implementing the `Distributions.jl` univariate interface, used directly as the per-event delays.
   A leaf can also resolve later: a [`Varying`](@ref) leaf maps an observed covariate to a distribution, and an [`Uncertain`](@ref) leaf carries distribution-valued parameters.
 - **Composers** wire named leaves into an event tree ([`compose`](@ref) and the five composers).
 - **Combination and lowering** join or collapse whole delays (`convolved`, `difference`, [`observed_distribution`](@ref)).

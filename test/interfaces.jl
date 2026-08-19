@@ -8,6 +8,56 @@
 # leaf-wrapper contracts). Censoring-free: this package composes any
 # `UnivariateDistribution`.
 
+# Scoping for a check that is MEANT to fail. Three items below run a harness
+# function against a deliberately broken fixture, so the harness reports
+# failures by design; those must be read, not folded into the suite's own
+# tally.
+#
+# `Test.push_testset`/`pop_testset` (the obvious way to swap the ambient
+# testset) were removed in Julia 1.13, so this goes through the documented
+# `AbstractTestSet` extension API instead, which works on every supported
+# version: a testset that absorbs results rather than throwing on them.
+#
+# `@testset` propagates a custom testset TYPE to nested testsets, so every
+# testset inside a scoped block is an `ExpectedFailures` too. That is why the
+# count below is an explicit recursion and not `Test.get_test_counts`, which
+# reads `DefaultTestSet`'s own tallies and does not apply here.
+@testsnippet ExpectedFailureSink begin
+    using Test
+
+    mutable struct ExpectedFailures <: Test.AbstractTestSet
+        description::String
+        results::Vector{Any}
+    end
+    function ExpectedFailures(desc::AbstractString; kwargs...)
+        return ExpectedFailures(String(desc), Any[])
+    end
+    Test.record(ts::ExpectedFailures, res) = (push!(ts.results, res); res)
+    # A nested testset records itself into its parent on finish, exactly as
+    # `DefaultTestSet` does. Without this a failure nested two deep is
+    # silently dropped and the assertions below pass for the wrong reason.
+    function Test.finish(ts::ExpectedFailures)
+        Test.get_testset_depth() > 0 && Test.record(Test.get_testset(), ts)
+        return ts
+    end
+
+    # Run `f` under a throwaway parent, returning what `f` returned (its own
+    # testset), so the caller reads that outcome instead of inheriting it.
+    function scoped_failures(f)
+        inner = Ref{Any}(nothing)
+        @testset ExpectedFailures "expected failures" begin
+            inner[] = f()
+        end
+        return inner[]
+    end
+
+    # How many checks failed or errored anywhere beneath `ts`.
+    function failure_count(ts::ExpectedFailures)
+        return sum(failure_count, ts.results; init = 0)
+    end
+    failure_count(r) = (r isa Test.Fail || r isa Test.Error) ? 1 : 0
+end
+
 @testitem "node interface conformance over every composer shape" begin
     using ComposedDistributions, Distributions
     using ComposedDistributions.TestUtils: test_node_interface
@@ -81,6 +131,68 @@ end
     # Distributions.jl leaf (a valid univariate member).
     test_interface(Gamma(2.0, 1.0); draw = 3.0, univariate = true,
         has_endpoint = false)
+end
+
+@testitem "a leaf costs zero ComposedDistributions methods, given a \
+Distributions.jl-conforming leaf" begin
+    using ComposedDistributions, Distributions, Random
+    using ComposedDistributions.TestUtils: test_node_interface
+
+    # The worked example from the extending-guide docs' "Adding a leaf:
+    # nothing" section (`docs/src/developer/extending.md`): `Zilch` is not a
+    # `Distributions.jl` built-in, and implements only the methods
+    # `Distributions.jl` itself requires of a univariate distribution --
+    # `params`, `logpdf`, `rand`, and `minimum`/`maximum` -- no
+    # `ComposedDistributions` method of its own. `minimum`/`maximum` are not
+    # optional here: `composed_to_table`'s `support` column reads them
+    # directly, and a leaf without them composes and scores but throws
+    # (`MethodError: no method matching iterate(::Zilch)`, from
+    # `Distributions.jl`'s own default `support` machinery) the first time it
+    # is tabled.
+    struct Zilch <: ContinuousUnivariateDistribution
+        m::Float64
+        s::Float64
+    end
+    Distributions.params(d::Zilch) = (d.m, d.s)
+    Distributions.logpdf(d::Zilch, x::Real) = logpdf(Normal(d.m, d.s), x)
+    Base.rand(rng::AbstractRNG, d::Zilch) = rand(rng, Normal(d.m, d.s))
+    Base.minimum(d::Zilch) = -Inf
+    Base.maximum(d::Zilch) = Inf
+
+    # Names are derived from Zilch's own fields, with no `param_names` method.
+    @test ComposedDistributions.param_names(Zilch(1.0, 2.0)) == (:m, :s)
+
+    # It composes and tables: one `:node` row for the leaf plus one `:param`
+    # row per field, at the right edge, value and (unbounded) support.
+    tree = compose((onset = Zilch(1.0, 2.0), admit = LogNormal(0.5, 0.4)))
+    tbl = composed_to_table(tree)
+    onset_params = [i
+                    for i in eachindex(tbl.edge)
+                    if tbl.role[i] == :param && tbl.edge[i] == :onset]
+    @test tbl.param[onset_params] == [:m, :s]
+    @test tbl.value[onset_params] == [1.0, 2.0]
+    @test all(==((-Inf, Inf)), tbl.support[onset_params])
+    onset_node = findfirst(
+        i -> tbl.role[i] == :node && tbl.edge[i] == :onset, eachindex(tbl.edge))
+    @test tbl.node[onset_node] === Zilch
+
+    # It scores and samples through the flat codec, unchanged.
+    @test isfinite(logpdf(tree, [0.5, 1.0]))
+    @test rand(Xoshiro(1), tree) isa NamedTuple
+
+    # It takes an attached prior through `uncertain`, and the codec sees the
+    # one estimable parameter with no further method.
+    uncertain_tree = compose((onset = uncertain(
+        Zilch(1.0, 2.0); m = Normal(0.0, 1.0)),))
+    @test ComposedDistributions.flat_dimension(uncertain_tree) == 1
+    nt = ComposedDistributions.unflatten(uncertain_tree, [3.0])
+    @test nt == (onset = (m = 3.0, s = 2.0),)
+    @test ComposedDistributions.flatten(uncertain_tree, nt) == [3.0]
+
+    # The reusable node-contract harness accepts a bare `Zilch` leaf and a
+    # tree containing one, the same way it checks a built-in leaf.
+    test_node_interface(Zilch(1.0, 2.0); name = "Zilch")
+    test_node_interface(tree; name = "tree-with-Zilch")
 end
 
 @testitem "a user-defined composer node satisfies the node contract" begin
@@ -190,7 +302,7 @@ fits" begin
     # own beyond the three above), reporting one estimated row for the
     # uncertain leaf.
     tbl = composed_to_table(both)
-    @test tbl.node[1] == :Both
+    @test tbl.node[1] === Both
     @test count(!isnothing, tbl.prior) == 1
 
     # Flattens: the codec reads Both's (names, children-types) type
@@ -214,14 +326,14 @@ fits" begin
     # built-in nests under Both, both directions of the same contract), and
     # the whole tree's own table/codec see straight through it.
     seq = Sequential((both, Gamma(1.0, 1.0)), (:branch, :tail2))
-    @test composed_to_table(seq).node[1:2] == [:Sequential, :Both]
+    @test composed_to_table(seq).node[1:2] == [Sequential, Both]
     @test flat_dimension(seq) == 1
     sel = choose(:x => both, :y => Gamma(2.0, 1.0))
     @test flat_dimension(sel) == 1
 end
 
 @testitem "an incomplete composer node fails loudly, not silently \
-(#374)" begin
+(#374)" setup=[ExpectedFailureSink] begin
     using ComposedDistributions, Distributions, Test
     import ComposedDistributions: AbstractComposedDistribution, flat_dimension
 
@@ -259,34 +371,22 @@ end
 
     # `test_node_interface`/`test_estimation_dimension` are EXPECTED to fail
     # on `incomplete` -- that is the point of this fixture -- so each runs
-    # under a throwaway parent testset (`Test.push_testset`/`pop_testset`)
-    # rather than the real one this `@testitem` provides. Left under the real
-    # parent, the inner error would be recorded into the SUITE's own pass/
-    # fail tally (an "errored" count on the whole `Pkg.test` run) even though
-    # every `@test` written here passes; swapping the ambient testset keeps
-    # the expected-failure noise scoped to a throwaway sink this file reads
-    # and discards, exactly as `@test_throws` isolates an expected exception.
-    # A `Test.DefaultTestSet` pushes every non-passing outcome (a `Fail`, an
-    # `Error`, or a failed nested testset) onto its own `results`, and
-    # nothing onto it when everything passes, so `isempty(ts.results)` is a
-    # reliable "did this fully pass" check.
+    # under a throwaway parent testset rather than the real one this
+    # `@testitem` provides. Left under the real parent, the inner error would
+    # be recorded into the SUITE's own pass/fail tally (an "errored" count on
+    # the whole `Pkg.test` run) even though every `@test` written here passes;
+    # swapping the ambient testset keeps the expected-failure noise scoped to
+    # a throwaway sink this file reads and discards, exactly as
+    # `@test_throws` isolates an expected exception. See the
+    # `ExpectedFailureSink` snippet for `scoped_failures`/`failure_count`.
     using ComposedDistributions.TestUtils: test_node_interface,
                                            test_estimation_dimension
-    function _run_scoped(f)
-        scratch = Test.DefaultTestSet("scratch")
-        Test.push_testset(scratch)
-        try
-            return f()
-        finally
-            Test.pop_testset()
-        end
-    end
 
-    node_ts = _run_scoped(() -> test_node_interface(incomplete))
-    @test !isempty(node_ts.results)
+    node_ts = scoped_failures(() -> test_node_interface(incomplete))
+    @test failure_count(node_ts) > 0
 
-    dim_ts = _run_scoped(() -> test_estimation_dimension(incomplete))
-    @test !isempty(dim_ts.results)
+    dim_ts = scoped_failures(() -> test_estimation_dimension(incomplete))
+    @test failure_count(dim_ts) > 0
 
     # A type that DOES implement node_children/node_rebuild/component_names
     # (so it composes and tables correctly) but not the type-parameter
@@ -386,6 +486,58 @@ end
     # still does not need one): the moment is read through to the inner leaf.
     sh = shared(:tag, Gamma(2.0, 1.0))
     @test ComposedDistributions.leaf_mean(sh) == mean(Gamma(2.0, 1.0))
+end
+
+@testitem "a wrapper defining only inner_dist is refused, not silently \
+dropped" begin
+    using ComposedDistributions, Distributions, Random
+
+    # A wrapper carrying fixed structure (`scale`) that defines the peel hook
+    # but not the rebuild. Before this was guarded, `rewrap_leaf` fell through
+    # to the bare-leaf base case and returned the new inner delay alone, so the
+    # `scale` was discarded with no error and every later `logpdf`/`rand` was
+    # wrong by that factor -- on the fit path too, since `reconstruct` rebuilds
+    # through `update`.
+    struct HalfWrap{D} <: ContinuousUnivariateDistribution
+        dist::D
+        scale::Float64
+    end
+    ComposedDistributions.inner_dist(w::HalfWrap) = w.dist
+    Distributions.params(w::HalfWrap) = params(w.dist)
+    function Distributions.logpdf(w::HalfWrap, x::Real)
+        return logpdf(w.dist, x / w.scale) - log(w.scale)
+    end
+    Base.rand(rng::AbstractRNG, w::HalfWrap) = w.scale * rand(rng, w.dist)
+    Base.minimum(w::HalfWrap) = minimum(w.dist)
+    Base.maximum(w::HalfWrap) = maximum(w.dist)
+
+    w = HalfWrap(Gamma(2.0, 1.0), 3.0)
+    err = try
+        ComposedDistributions.rewrap_leaf(w, Gamma(5.0, 1.0))
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    msg = sprint(showerror, err)
+    @test occursin("HalfWrap", msg)
+    @test occursin("rewrap_leaf", msg)
+
+    # The same refusal reaches the tree path rather than dropping the layer.
+    tree = compose((a = w, b = LogNormal(0.5, 0.4)))
+    @test_throws ArgumentError ComposedDistributions.update(
+        tree, (a = (alpha = 5.0, theta = 1.0), b = (mu = 0.5, sigma = 0.4)))
+
+    # A wrapper that completes the pair rebuilds and keeps its fixed field.
+    ComposedDistributions.rewrap_leaf(d::HalfWrap, inner) = HalfWrap(inner, d.scale)
+    rebuilt = ComposedDistributions.rewrap_leaf(w, Gamma(5.0, 1.0))
+    @test rebuilt isa HalfWrap
+    @test rebuilt.scale == 3.0
+    @test params(rebuilt) == (5.0, 1.0)
+
+    # A bare leaf is its own inner distribution, so the base case is unchanged.
+    @test ComposedDistributions.rewrap_leaf(Gamma(2.0, 1.0), Gamma(5.0, 1.0)) ==
+          Gamma(5.0, 1.0)
 end
 
 @testitem "leaf-wrapper contract: free_leaf / rewrap_leaf round-trip" begin
@@ -533,7 +685,8 @@ end
         name = "censored")
 end
 
-@testitem "leaf-protocol completeness (#277): an incomplete wrapper fails, naming the hook" begin
+@testitem "leaf-protocol completeness (#277): an incomplete wrapper fails, \
+naming the hook" setup=[ExpectedFailureSink] begin
     using ComposedDistributions, Distributions, Random, Test
     using ComposedDistributions.TestUtils: test_leaf_protocol_completeness
     import ComposedDistributions: free_leaf, rewrap_leaf
@@ -561,20 +714,15 @@ end
     # not folded into this @testitem's own count; the check reads the
     # returned testset's counts instead. The failure summary still prints
     # below (expected -- that IS the demonstration).
-    scratch = Test.DefaultTestSet("scratch")
-    Test.push_testset(scratch)
-    result = try
-        test_leaf_protocol_completeness(
-            d -> IncompleteWrap(d); name = "IncompleteWrap")
-    finally
-        Test.pop_testset()
-    end
-    counts = Test.get_test_counts(result)
+    result = scoped_failures(
+        () -> test_leaf_protocol_completeness(
+        d -> IncompleteWrap(d); name = "IncompleteWrap"))
     # Both dropped hooks are caught (uncertain_specs and shared_tag).
-    @test counts.cumulative_fails + counts.cumulative_errors >= 2
+    @test failure_count(result) >= 2
 end
 
-@testitem "sampling-vs-density consistency (#278): built-ins pass, a corrupted rand fails" begin
+@testitem "sampling-vs-density consistency (#278): built-ins pass, a \
+corrupted rand fails" setup=[ExpectedFailureSink] begin
     using ComposedDistributions, Distributions, Random, Test
     using ComposedDistributions.TestUtils: test_sampling_consistency
 
@@ -603,14 +751,8 @@ end
     Distributions.var(d::BrokenGamma) = var(d.inner)
     Base.rand(rng::AbstractRNG, d::BrokenGamma) = 1.5 * rand(rng, d.inner)
 
-    scratch = Test.DefaultTestSet("scratch")
-    Test.push_testset(scratch)
-    result = try
-        test_sampling_consistency(
-            BrokenGamma(Gamma(2.0, 1.0)); nsamples = 20_000, name = "broken")
-    finally
-        Test.pop_testset()
-    end
-    counts = Test.get_test_counts(result)
-    @test counts.cumulative_fails + counts.cumulative_errors >= 1
+    result = scoped_failures(
+        () -> test_sampling_consistency(
+        BrokenGamma(Gamma(2.0, 1.0)); nsamples = 20_000, name = "broken"))
+    @test failure_count(result) >= 1
 end

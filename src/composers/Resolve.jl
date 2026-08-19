@@ -195,9 +195,46 @@ component_names(::Resolve{names}) where {names} = names
 # structure at the node itself, not a per-outcome free parameter (its K-1
 # stick coordinates ride the node's own `:param` rows separately). A fixed
 # node (no attached prior) reports no attributes.
+#
+# An UNCERTAIN node also reports its probabilities here, because its `:param`
+# rows are the K-1 stick coordinates rather than the simplex: recovering the
+# probabilities from those is a stick-breaking round trip that agrees only to
+# floating-point rounding (a `(0.7, 0.3)` node comes back `(0.7,
+# 0.30000000000000004)`), so the node's own point rides an `:attribute` row
+# instead. Exactly the reason a pooled parameter's `:attribute` row carries its
+# `template` value (`Pool.jl`): wherever the `:param` rows are a reparameterised
+# latent, the node's own value is fixed structure alongside them. A FIXED node
+# needs none — its `:param` rows ARE its probabilities, one per outcome.
 function node_attributes(c::Resolve)
     return c.branch_prob_prior === nothing ? (;) :
-           (; branch_prob_prior = c.branch_prob_prior)
+           (; branch_prob_prior = c.branch_prob_prior,
+        branch_probs = c.branch_probs)
+end
+
+# The reverse. Names come first, and the branch probabilities are node-level
+# rather than children, so they reach `attrs` by one of two routes depending on
+# whether the node is uncertain -- and the `branch_prob_prior` entry is what
+# says which:
+#
+#   - FIXED (no prior): the probabilities are `:param` rows, one per outcome,
+#     under the node's `<edge>.branch_probs` edge, and arrive as that block.
+#   - UNCERTAIN: the `:param` rows there are stick coordinates, so the node's
+#     own probabilities ride its `:attribute` row instead (see
+#     `node_attributes` above) and win the merge.
+#
+# `update(d, table)` writes the prior back over this afterwards; the
+# probabilities it leaves alone (merge mode keeps the node's own), which is
+# why they have to be right here rather than approximately right.
+function node_from_table(::Type{<:Resolve}, names::Tuple, children::Tuple,
+        attrs::NamedTuple)
+    prior = get(attrs, :branch_prob_prior, nothing)
+    haskey(attrs, :branch_probs) || throw(ArgumentError(
+        "compose(table): a Resolve node has neither `branch_probs` rows nor " *
+        "a `branch_probs` attribute; composed_to_table writes one or the " *
+        "other for every Resolve"))
+    block = attrs.branch_probs
+    probs = prior === nothing ? Tuple(block[n] for n in names) : Tuple(block)
+    return Resolve(names, children, probs, prior)
 end
 
 # A `Resolve` with no attached prior is fixed structure; this three-argument
@@ -525,22 +562,26 @@ function _fill_residual_outcome(outcomes::Tuple)
 end
 
 # A `(delay, branch_prob)` mixture payload vs a bare-delay hazard payload. A
-# one_of outcome delay may be a plain univariate leaf or a composer subtree
+# one_of outcome delay may be a plain leaf or a composer subtree
 # (`Sequential` / `Parallel` / `Choose` / nested `Resolve`, the non-terminal
-# branch of #466 Feature 3); `_is_one_of_branch` (defined in `nesting.jl`, once
-# those types exist) is the runtime admit-check, so the predicates stay value-based
-# rather than referencing the later-loaded composer types in their signatures. A
-# `NoEvent` marker is admitted only in the mixture (it carries the no-event mass
-# `q`); a bare `NoEvent` in a hazard node has no hazard and is rejected by the
-# `Compete` constructor.
-_is_prob_payload(p::Tuple{Any, <:Real}) = _is_one_of_branch(p[1])
+# branch of #466 Feature 3); `is_composable` (defined in `nesting.jl`, once
+# those types exist) is the runtime admit-check, so the predicates stay
+# value-based rather than referencing the later-loaded composer types in their
+# signatures. It doubles as the payload-shape discriminator here, so a
+# duck-typed leaf reads as the delay it is rather than falling through to a
+# misleading "the given mix is unclear" error, which is what a whitelist that
+# did not know the leaf produced.
+# A `NoEvent` marker is admitted only in the mixture (it carries
+# the no-event mass `q`); a bare `NoEvent` in a hazard node has no hazard and is
+# rejected by the `Compete` constructor.
+_is_prob_payload(p::Tuple{Any, <:Real}) = is_composable(p[1])
 _is_prob_payload(::Any) = false
-_is_bare_payload(x) = _is_one_of_branch(x)
+_is_bare_payload(x) = is_composable(x)
 
 function _one_of_delay(payload::Tuple{Any, <:Real})
-    _is_one_of_branch(payload[1]) || throw(ArgumentError(
+    is_composable(payload[1]) || throw(ArgumentError(
         "each one_of outcome payload must be a `(delay, branch_prob)` tuple " *
-        "whose delay is a univariate distribution or a composer subtree; got " *
+        "whose delay is a distribution-like leaf or a composer subtree; got " *
         "$(typeof(payload[1]))"))
     return payload[1]
 end

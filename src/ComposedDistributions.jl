@@ -43,8 +43,9 @@ import Base: minimum, maximum
 
 # Types, constructors, and helpers used without method extension.
 using Distributions: Distributions, UnivariateDistribution, Distribution,
-                     Continuous, Multivariate, Univariate, VariateForm,
-                     ValueSupport, MixtureModel, Truncated, truncated, censored
+                     Continuous, Discrete, Multivariate, Univariate,
+                     VariateForm, ValueSupport, MixtureModel, Truncated,
+                     truncated, censored
 
 using LogExpFunctions: log1mexp
 
@@ -233,6 +234,11 @@ include("composers/observed.jl")
 # and Uncertain.jl
 # (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")
+# compose(table): the round-trip reader for a `composed_to_table` table. Last
+# of the composer files it walks — every node, leaf-wrapper and composite type
+# it rebuilds, and the `update(d, table)` writer it finishes with, must exist
+# first.
+include("composers/table_compose.jl")
 # Distribution-level elapsed-distance accessors over a named chain: after
 # observed.jl (`_observed_leaves`), introspection.jl (`event_names`) and the
 # `convolved` re-export, whose public verbs it reads.

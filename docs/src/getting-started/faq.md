@@ -6,9 +6,9 @@ For a full walkthrough see [Composing distributions](@ref composing-distribution
 ## Where did censoring go?
 
 ComposedDistributions is the generic composition layer, split out from [CensoredDistributions.jl](https://github.com/EpiAware/CensoredDistributions.jl).
-It composes any `Distributions.jl` `UnivariateDistribution` and adds no censoring of its own.
+It composes any type implementing the `Distributions.jl` univariate interface and adds no censoring of its own.
 If you need primary-event censoring, interval censoring, or truncation of the observation process, use CensoredDistributions.jl, which builds its censored leaves on top of this composition algebra.
-Right-truncation of a plain leaf is still available through `truncated()` from Distributions.jl, since any leaf is an ordinary distribution.
+Right-truncation of a plain leaf is still available through `truncated()` from Distributions.jl, for a leaf that subtypes `UnivariateDistribution`; a duck-typed leaf that only implements the interface cannot be wrapped this way (see the [extending guide](@ref extending)).
 
 ## What does `rand` of a `Resolve` or `Compete` node return?
 

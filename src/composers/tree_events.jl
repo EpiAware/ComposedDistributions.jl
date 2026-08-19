@@ -88,7 +88,7 @@ end
 
 # The origin event name implied by an edge: the first half of a split edge name,
 # recursing into a nested child's first edge. `nothing` when no name splits.
-function _edge_origin_pair(edge_name::Symbol, child::UnivariateDistribution)
+function _edge_origin_pair(edge_name::Symbol, child)
     split = _split_edge_name(edge_name)
     return split === nothing ? nothing : split[1]
 end
@@ -132,7 +132,7 @@ end
 # (the second half of its split name, else positional); a nested composer
 # recurses and returns its terminal (its last leaf for a chain, the shared origin
 # for a parallel, mirroring `_terminal_offset`).
-function _walk_edge!(names, edge_name::Symbol, child::UnivariateDistribution,
+function _walk_edge!(names, edge_name::Symbol, child,
         origin::Symbol, counter)
     split = _split_edge_name(edge_name)
     target = split === nothing ? _next_event_name(counter) : split[2]
@@ -175,7 +175,7 @@ end
 # anchor shared into the subtree (no extra slot), so the subtree's own target
 # events fill the outcome's slice.
 function _walk_one_of_outcome!(names, oname::Symbol,
-        delay::UnivariateDistribution, origin::Symbol, counter)
+        delay, origin::Symbol, counter)
     push!(names, oname)
     return nothing
 end

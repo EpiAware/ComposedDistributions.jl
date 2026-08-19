@@ -273,6 +273,29 @@ function node_rebuild(d::Difference, comps::Tuple)
         method = d.method)
 end
 
+# The solver is the composite's fixed structure -- the one thing `node_rebuild`
+# above preserves that is not a component -- so it rides an `:attribute` row,
+# exactly as a `Truncated`'s bounds or a `Varying`'s covariate map do. Without
+# this the composite's rows named the type and its components and silently
+# dropped the solver, which is the only piece of a composite that cannot be
+# re-derived from the rest of the table. Like a `Varying`'s map it is a live
+# object, so the table stays an in-memory round trip.
+node_attributes(d::Convolved) = (; method = d.method)
+node_attributes(d::Difference) = (; method = d.method)
+
+# The reverse: a composite takes its components positionally with the solver as
+# a keyword, not the `(children, names)` the default `node_from_table` calls.
+# The `component_i` names are positional labels the walk generates and carry no
+# information, so they are discarded here rather than restored.
+function node_from_table(::Type{<:Convolved}, ::Tuple, children::Tuple,
+        attrs::NamedTuple)
+    return Convolved(children; method = attrs.method)
+end
+function node_from_table(::Type{<:Difference}, ::Tuple, children::Tuple,
+        attrs::NamedTuple)
+    return Difference(children[1], children[2]; method = attrs.method)
+end
+
 # The `component_i` path segment names for an `n`-component composite leaf,
 # mirroring the edge/param naming the composers use for their named children.
 _composite_component_names(n::Int) = ntuple(i -> Symbol(:component_, i), n)

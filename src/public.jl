@@ -21,6 +21,22 @@ public update
 # a named child of the built-ins with no registration once these are defined.
 # A new leaf wrapper implements `free_leaf` / `rewrap_leaf`.
 public child_nleaves, child_logpdf, child_rand!
+
+# The composer child-admission gate. A leaf needs no method here: any object
+# implementing the univariate Distributions interface (`params` / `logpdf` /
+# `rand` / `minimum` / `maximum`) composes without subtyping
+# `UnivariateDistribution`, and only the shapes the `compose` front ends already
+# spend on something else (a branch probability, a chain to lower, a row label)
+# are rejected. `public` so a leaf that genuinely subtypes one of those -- a
+# `Number`-backed leaf, say -- can opt back in with one method rather than
+# reaching for an internal name.
+public is_composable
+
+# The type-domain companion to `is_composable`: the `ValueSupport` a leaf's
+# draws take, which fixes the parameter an `Uncertain` leaf reports on its own
+# supertype. Defaulted off `Base.eltype`, so a duck-typed leaf needs no method
+# unless it wants a support its element type does not imply.
+public value_support
 public free_leaf, rewrap_leaf, component_names
 public node_children, node_rebuild
 
@@ -103,6 +119,22 @@ public param_names, leaf_ctor
 # just to satisfy `tie`.
 public rebuild_leaf, leaf_signature
 
+# The table round trip's reconstruction half (`compose(table)`, the inverse of
+# `composed_to_table`). Each is the type-dispatched counterpart of a hook that
+# takes an instance — `from_table` of `leaf_ctor`/`rebuild_leaf`,
+# `rewrap_from_table` of `inner_dist`, `node_from_table` of `node_rebuild` —
+# because when a table is being read there is no instance yet, only the type
+# its `node` column carries. Dispatching on the type is what lets the round
+# trip work with no name-to-type registry anywhere.
+#
+# Two of the three are defaulted so the extension cost does not move: a leaf
+# family whose parameters are its constructor arguments needs no `from_table`,
+# and a node constructed as `T(children, names)` (the shape `Sequential` /
+# `Parallel` and the documented third-party pattern use) needs no
+# `node_from_table`. `rewrap_from_table` has no default — a wrapper's fixed
+# structure is its own — so a leaf-wrapper type defines one to round-trip.
+public from_table, rewrap_from_table, node_from_table
+
 # The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
 # root the composer nodes subtype; `AbstractMultiChild` groups the positional
 # multi-child composers (`Sequential` / `Parallel`); `AbstractOneOf` is the
@@ -127,7 +159,7 @@ public flat_dimension, flatten, unflatten, reconstruct
 # The node-emission half of the single-table contract (#227 slice 1): the one
 # method a composer node or leaf (wrapper) type defines to control its own
 # `composed_to_table` rows, reporting the fixed, non-parameter structure it
-# carries. A row's `node` label is read off the type name and a wrapped leaf's
+# carries. A row's `node` label is the type itself and a wrapped leaf's
 # layers are peeled through `inner_dist`, so neither is asked of a downstream
 # type. `node_rebuild` (the round-trip half, `public` above alongside
 # `node_children`) is now part of the node-extension contract; `compose(table)`

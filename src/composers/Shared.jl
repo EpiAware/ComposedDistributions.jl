@@ -26,8 +26,7 @@ inventoried, sampled and reconstructed.
 - [`shared`](@ref): constructor over a name and a distribution.
 - [`composed_to_table`](@ref), [`update`](@ref): dedup occurrences by tag.
 "
-struct Shared{tag, D <: UnivariateDistribution} <:
-       UnivariateDistribution{ValueSupport}
+struct Shared{tag, D} <: UnivariateDistribution{ValueSupport}
     "The wrapped leaf distribution."
     dist::D
 end
@@ -35,10 +34,10 @@ end
 # The tag lives in the `tag` type parameter (like `NamedTuple{names}`); these
 # instantiate it directly from the runtime `Symbol` `shared`/`tie` pass, with no
 # call-site change from the field-based constructor.
-function Shared{tag}(dist::D) where {tag, D <: UnivariateDistribution}
+function Shared{tag}(dist::D) where {tag, D}
     return Shared{tag, D}(dist)
 end
-Shared(tag::Symbol, dist::UnivariateDistribution) = Shared{tag}(dist)
+Shared(tag::Symbol, dist) = Shared{tag}(dist)
 
 @doc "
 
@@ -76,7 +75,7 @@ event_names(d)
 - [`Shared`](@ref): the tagged-leaf type.
 - [`tie`](@ref): the tree-level, path-based spelling of the same tie.
 "
-shared(name::Symbol, dist::UnivariateDistribution) = Shared(name, dist)
+shared(name::Symbol, dist) = Shared(name, dist)
 
 @doc raw"
 The shared tag of a (possibly wrapped) leaf, or `nothing` when untagged.
@@ -126,6 +125,12 @@ end
 # layer of its own in `composed_to_table` (peeling to the wrapped `dist`'s
 # layers through `inner_dist` above), mirroring `Truncated`/`Censored`.
 node_attributes(d::Shared{tag}) where {tag} = (; tag = tag)
+
+# The reverse: the tag lives in the type parameter, so it is read back off the
+# layer's own `:attribute` row rather than passed to a constructor argument.
+function rewrap_from_table(::Type{<:Shared}, inner, attrs::NamedTuple)
+    return Shared{attrs.tag}(inner)
+end
 
 # Any modifier-owned extra parameters of the wrapped leaf survive the tag (a
 # `shared(:tag, thin(...))`); the setter re-applies the tag around the rebuilt

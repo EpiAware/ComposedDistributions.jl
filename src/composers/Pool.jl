@@ -74,7 +74,7 @@ population).
 - [`shared`](@ref)/[`tie`](@ref): complete pooling (the tied extreme).
 - [`uncertain`](@ref): builds a population with hyperparameter priors.
 "
-struct Pool{group, noncentred, P <: UnivariateDistribution}
+struct Pool{group, noncentred, P}
     "The population distribution; its free parameters are the hyperparameters."
     population::P
 end
@@ -83,7 +83,7 @@ end
 # instantiates them directly from the runtime `pool(...)` call, with no
 # call-site change from the field-based constructor.
 function Pool{group, noncentred}(population::P) where {
-        group, noncentred, P <: UnivariateDistribution}
+        group, noncentred, P}
     return Pool{group, noncentred, P}(population)
 end
 
@@ -193,7 +193,7 @@ ComposedDistributions.flat_dimension(model)
 - [`shared`](@ref)/[`tie`](@ref): the complete-pooling (tied) extreme.
 "
 function pool(group::Symbol,
-        population::UnivariateDistribution = _default_pool_population();
+        population = _default_pool_population();
         noncentred::Union{Bool, Nothing} = nothing)
     ls = _is_location_scale(_population_family(population))
     nc = noncentred === nothing ? ls : noncentred
@@ -214,9 +214,9 @@ end
 # overrides `leaf_ctor` returns a callable that is not a family: routing this
 # through the hook would make `_is_location_scale` false for such a leaf and
 # silently demote a non-centred pool to a centred one.
-_population_template(pop::UnivariateDistribution) = pop
+_population_template(pop) = pop
 _population_template(pop::Uncertain) = pop.template
-function _population_family(pop::UnivariateDistribution)
+function _population_family(pop)
     return Base.typename(typeof(free_leaf(_population_template(pop)))).wrapper
 end
 
@@ -252,7 +252,7 @@ _pool_seen_key(group::Symbol) = Symbol("pool.", group)
 function _collapse_population(pop::Uncertain, hyper::NamedTuple)
     _uncertain_leaf(pop.template, hyper)
 end
-_collapse_population(pop::UnivariateDistribution, ::NamedTuple) = pop
+_collapse_population(pop, ::NamedTuple) = pop
 
 # The pattern-match target for the fit-protocol extension's prior
 # translation was settled in issue #212.
@@ -298,24 +298,37 @@ end
 #
 # Emit the population's hyperparameter rows once per group (deduped through the
 # walk's `seen` set, so they precede every member's latent and the flat vector
-# opens with `[hyper..., ...]`), then an `:attribute` row naming this member's
-# group (so a member row's group identity is recoverable from
+# opens with `[hyper..., ...]`), then an `:attribute` row describing this
+# member's pooling (so a member row's pooling is recoverable from
 # `composed_to_table` without joining on `edge`), then this member's latent: a
 # `Normal(0, 1)` `z` row (non-centred) or the member's own parameter carrying
-# the centred-pool marker (centred). All ordinary scalar rows (`node = :Pool`).
+# the centred-pool marker (centred). All ordinary scalar rows (`node = Pool`).
+#
+# The `:attribute` row carries the `Pool` spec itself and the member's own
+# template value alongside the group/centring pair, because the `:param` rows
+# alone do not determine either under the NON-CENTRED parameterisation: that
+# member's row is a `Normal(0, 1)` `z` latent (`_pool_z_prior`, a fresh
+# distribution unrelated to the spec) at a synthetic `<leaf>.<param>` edge, and
+# `_pool_hyper_rows!` below lists only the population's SPEC'D names under the
+# group edge -- so the population family, its fixed parameters and this
+# member's own value would all be unrecoverable. (Centred pooling never had the
+# gap: its `:param` row carries both the value and the whole spec, wrapped in
+# `CentredPoolPrior`.) Emitted for both parameterisations so a reader has one
+# place to look rather than two.
 function _pool_rows!(sink, seen, p::Pool, leaf_edge, pname, v, s)
     gkey = _pool_seen_key(pool_group(p))
     if !(gkey in seen)
         push!(seen, gkey)
         _pool_hyper_rows!(sink, p)
     end
-    _push_attr!(sink, leaf_edge, :Pool, pname,
-        (; group = pool_group(p), noncentred = pool_noncentred(p)))
+    _push_attr!(sink, leaf_edge, Pool, pname,
+        (; group = pool_group(p), noncentred = pool_noncentred(p),
+            spec = p, template = v))
     if pool_noncentred(p)
         edge = _join_path((_split_edge(leaf_edge)..., pname))
-        _push_param!(sink, edge, :z, :Pool, 0.0, (-Inf, Inf), _pool_z_prior(p))
+        _push_param!(sink, edge, :z, Pool, 0.0, (-Inf, Inf), _pool_z_prior(p))
     else
-        _push_param!(sink, leaf_edge, pname, :Pool, v, s, CentredPoolPrior(p))
+        _push_param!(sink, leaf_edge, pname, Pool, v, s, CentredPoolPrior(p))
     end
     return nothing
 end
@@ -340,7 +353,7 @@ function _pool_hyper_rows!(sink, p::Pool)
         # than one of unknown type.
         name = pname::Symbol
         haskey(specs, name) || continue
-        _push_param!(sink, pool_group(p), name, :Pool, v, sup, specs[name])
+        _push_param!(sink, pool_group(p), name, Pool, v, sup, specs[name])
     end
     return nothing
 end
@@ -441,7 +454,7 @@ end
 # names, walked in the population's NATIVE order (mirroring
 # `_pool_hyper_rows!` exactly), each consuming one `slots` value. A fully
 # fixed population contributes no names and consumes nothing.
-_pool_hyper_entry(pop::UnivariateDistribution, slots::Tuple) = NamedTuple(), slots
+_pool_hyper_entry(pop, slots::Tuple) = NamedTuple(), slots
 function _pool_hyper_entry(pop::Uncertain, slots::Tuple)
     specs = _uncertain_specs(pop)
     pnames = leaf_param_names(_population_template(pop))
@@ -527,7 +540,7 @@ end
 # return type on every pooled tree. The unflatten direction has no such
 # shortcut (it is the side that constructs the names) and keeps deriving them
 # from the population template.
-_pool_hyper_flatten(pop::UnivariateDistribution, ::NamedTuple) = ()
+_pool_hyper_flatten(pop, ::NamedTuple) = ()
 function _pool_hyper_flatten(pop::Uncertain, hyper_nt::NamedTuple)
     return _hyper_flatten_walk(_uncertain_specs(pop), hyper_nt)
 end

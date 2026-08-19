@@ -44,11 +44,19 @@
 #     verb with a confusing `MethodError`, not just the moments this file
 #     otherwise guards.
 
-# A spec value: a prior (a `UnivariateDistribution`), a `pool(...)` group, or
+# A spec value: a prior (any distribution-like leaf), a `pool(...)` group, or
 # the `no_prior()` marker (free, no prior chosen yet). Shared by the
 # `Uncertain` constructor, `uncertain`'s keyword form and `_merge_leaf` so the
 # three accepted kinds cannot drift apart.
-_is_spec_value(v) = v isa Union{UnivariateDistribution, Pool, NoPrior}
+# A prior is drawn and scored exactly as a leaf is, so it is admitted on the
+# same terms a leaf is (`is_composable`) rather than by subtyping. A
+# multivariate composer is excluded: a prior is over ONE scalar parameter, and
+# `is_composable` admits composer nodes as well as leaves.
+function _is_spec_value(v)
+    v isa Union{Pool, NoPrior} ||
+        (is_composable(v) &&
+         !(v isa AbstractComposedDistribution{Multivariate}))
+end
 
 @doc raw"
 
@@ -92,8 +100,8 @@ with [`update`](@ref)`(tree, params)`.
 - [`uncertain`](@ref): the public constructor.
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 "
-struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
-    S <: NamedTuple} <: UnivariateDistribution{VS}
+struct Uncertain{VS <: ValueSupport, L, S <: NamedTuple} <:
+       UnivariateDistribution{VS}
     "The concrete (possibly wrapped) template leaf: family, fixed parameter
     values, and fixed wrapper structure (truncation / censoring)."
     template::L
@@ -101,9 +109,7 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
     template's free delay, each value a distribution (possibly `Uncertain`)."
     specs::S
 
-    function Uncertain(template::L,
-            specs::S) where {
-            VS <: ValueSupport, L <: UnivariateDistribution{VS}, S <: NamedTuple}
+    function Uncertain(template::L, specs::S) where {L, S <: NamedTuple}
         template isa Uncertain && throw(ArgumentError(
             "the template of an Uncertain must be a concrete distribution; " *
             "nest uncertainty in the parameter specs instead"))
@@ -126,12 +132,12 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
                 "unknown uncertain parameter $(repr(k)); the template " *
                 "$(template) has parameters $(collect(pnames))"))
             _is_spec_value(v) || throw(ArgumentError(
-                "the spec for $(repr(k)) must be a UnivariateDistribution " *
+                "the spec for $(repr(k)) must be a distribution-like leaf " *
                 "(a distribution over the parameter), a `pool(...)` spec " *
                 "(partial pooling across a group), or `no_prior()` (free, " *
                 "no prior yet); got $(typeof(v))"))
         end
-        return new{VS, L, S}(template, specs)
+        return new{value_support(L), L, S}(template, specs)
     end
 end
 
@@ -212,7 +218,7 @@ uncertain(Gamma(2.0, 1.0);
 - [`Uncertain`](@ref): the wrapper type.
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 "
-function uncertain(template::UnivariateDistribution; kwargs...)
+function uncertain(template; kwargs...)
     nt = values(kwargs)
     pnames = _leaf_param_names(template)
     for (k, v) in pairs(nt)
@@ -222,7 +228,7 @@ function uncertain(template::UnivariateDistribution; kwargs...)
         v isa Real || _is_spec_value(v) ||
             throw(ArgumentError(
                 "the value for $(repr(k)) must be a Real (a fixed value), " *
-                "a UnivariateDistribution (an uncertain parameter), a " *
+                "a distribution-like leaf (an uncertain parameter), a " *
                 "`pool(...)` spec (partial pooling), or `no_prior()` " *
                 "(free, no prior yet); got $(typeof(v))"))
     end
@@ -257,9 +263,7 @@ end
 # parameter uncertain, a `Real` fixes it. The family's default instance supplies
 # a valid concrete placeholder for the uncertain slots (the specs then drive the
 # draws), and the `Real` slots re-pin it, so this reduces to the keyword form.
-function uncertain(::Type{D}, arg1::Union{Real, UnivariateDistribution},
-        args::Union{Real, UnivariateDistribution}...) where {
-        D <: UnivariateDistribution}
+function uncertain(::Type{D}, arg1, args...) where {D}
     probe = try
         D()
     catch
@@ -277,7 +281,7 @@ function uncertain(::Type{D}, arg1::Union{Real, UnivariateDistribution},
     return uncertain(probe; kwargs...)
 end
 
-function uncertain(::Type{D}; kwargs...) where {D <: UnivariateDistribution}
+function uncertain(::Type{D}; kwargs...) where {D}
     probe = try
         D()
     catch

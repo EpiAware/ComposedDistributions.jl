@@ -71,10 +71,10 @@ struct Choose{names, A <: Tuple} <:
                 "$(length(alternatives)) alternatives"))
         allunique(names) ||
             throw(ArgumentError("Choose alternative names must be unique"))
-        all(_is_composable, alternatives) ||
+        all(is_composable, alternatives) ||
             throw(ArgumentError(
-                "every Choose alternative must be a UnivariateDistribution " *
-                "or a nested composer"))
+                "every Choose alternative must be a distribution-like leaf " *
+                "or a nested composer; got $(map(typeof, alternatives))"))
         new{names, A}(alternatives, selector)
     end
 end
@@ -92,6 +92,13 @@ component_names(::Choose{names}) where {names} = names
 # The selector field name is fixed structure, not a free parameter, so it
 # rides `composed_to_table`'s `:attribute` rows rather than the `:param` rows.
 node_attributes(d::Choose) = (; selector = d.selector)
+
+# The reverse: a `Choose` takes its names first and its selector last, not the
+# `(children, names)` the default `node_from_table` calls.
+function node_from_table(::Type{<:Choose}, names::Tuple, children::Tuple,
+        attrs::NamedTuple)
+    return Choose(names, children, attrs.selector)
+end
 
 @doc "
 
@@ -261,16 +268,19 @@ function _no_kind_error()
         "logpdf(::Choose, x) needs a `kind` choose the alternative")
 end
 
-# Resolve what a flat vector means under the named alternative. A univariate
-# alternative realises a scalar, so the vector is a batch of independent draws
-# and the batch score is their sum — without this it would forward whole to the
-# leaf's element-wise `logpdf` and return a vector, not a density. Every other
-# alternative realises a flat vector, so the vector is a single record.
-# Dispatching on the picked alternative keeps this inferable.
-function _alternative_vector_logpdf(alt::UnivariateDistribution, x)
-    return sum(logpdf(alt, xi) for xi in x)
+# Resolve what a flat vector means under the named alternative. A multivariate
+# composer alternative realises a flat vector, so the vector is a single record.
+# Every other alternative — a leaf, a duck-typed leaf, or a univariate one_of
+# node — realises a scalar, so the vector is a batch of independent draws and
+# the batch score is their sum; without the split it would forward whole to the
+# leaf's element-wise `logpdf` and return a vector, not a density. The composer
+# case is the annotated one and the leaf case the fallback, so a leaf needs no
+# method here. Dispatching on the picked alternative keeps this inferable.
+function _alternative_vector_logpdf(
+        alt::AbstractComposedDistribution{Multivariate}, x)
+    return logpdf(alt, x)
 end
-_alternative_vector_logpdf(alt, x) = logpdf(alt, x)
+_alternative_vector_logpdf(alt, x) = sum(logpdf(alt, xi) for xi in x)
 
 @doc "
 
@@ -329,15 +339,20 @@ end
 
 # Score the chosen alternative on its slice of the record (the selector field
 # dropped), through the alternative's own `logpdf` so the same shape its `rand`
-# produced round-trips: a leaf alternative scores its single `:value` field; a
-# composer alternative scores its labelled record.
-function _choose_record_logpdf(d::UnivariateDistribution, inner::NamedTuple)
+# produced round-trips: a multivariate composer alternative scores its labelled
+# record; every other alternative is a leaf and scores its single `:value`
+# field. The composer case is the annotated one and the leaf case the fallback,
+# so a duck-typed leaf needs no method here.
+function _choose_record_logpdf(
+        d::AbstractComposedDistribution{Multivariate}, inner::NamedTuple)
+    return logpdf(d, inner)
+end
+function _choose_record_logpdf(d, inner::NamedTuple)
     haskey(inner, :value) || throw(ArgumentError(
         "a leaf Choose alternative record needs a `value` field; got fields " *
         "$(collect(keys(inner)))"))
     return logpdf(d, inner.value)
 end
-_choose_record_logpdf(d, inner::NamedTuple) = logpdf(d, inner)
 
 # Drop a single named field from a NamedTuple, preserving the order of the
 # rest.

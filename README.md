@@ -23,9 +23,13 @@ A verb grammar for n-ary composition over any `Distributions.jl` distribution.
 - Parameter uncertainty is an ordinary leaf, not a separate PPL-specific
   layer, so a delay's literature uncertainty is written once and reused
   whether it is sampled or just drawn from.
-- Every leaf is an ordinary Distributions.jl distribution, so nothing needs
-  reimplementing to compose it, and the composed result is itself a
-  distribution that drops into code expecting one.
+- Composing a leaf costs nothing to reimplement, and the composed result is
+  itself a Distributions.jl distribution that drops into code expecting one.
+- A leaf is required to implement the Distributions.jl univariate methods, not
+  to subtype them. The package calls `params`, `logpdf`, `rand`, `minimum` and
+  `maximum` on a leaf and never asks what it subtypes, so a type carrying those
+  methods composes as it stands. The interface tests check the same thing: the
+  methods the package calls and the shapes they return, not a type hierarchy.
 - A composed tree is inspectable, editable data — a parameter table, a nested
   prior, a rendered tree — rather than an opaque function, so its structure
   and priors can be read and changed without rereading the model code.
@@ -84,13 +88,14 @@ node, collapsing a chain to its observed total, and fitting it.
 ## Relationship to Distributions.jl
 
 ComposedDistributions builds on Distributions.jl rather than replacing it.
-Every leaf is a Distributions.jl `UnivariateDistribution`, and a composed object is itself a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged.
+A composed object is itself a `Distribution`, so `logpdf`, `rand`, `mean`, `var` and the rest of the interface work unchanged.
+A leaf is any type implementing the Distributions.jl univariate methods the package calls, whether or not it subtypes `UnivariateDistribution`.
 
 | Aspect | Distributions.jl | ComposedDistributions |
 |--------|------------------|-----------------------|
 | **Scope** | one distribution | many delays wired into an event tree |
 | **Question** | "what is this delay?" | "how do these events relate?" |
-| **Builds on** | — | any Distributions.jl `UnivariateDistribution` as a leaf |
+| **Builds on** | — | any type implementing the Distributions.jl univariate methods as a leaf |
 | **Adds** | — | `compose`, the five composers, a parameter table and structural edits |
 
 Standard Distributions.jl wrappers slot in as leaves inside a tree: both `truncated()` and `censored()` work as ordinary leaves, as `onset_report` and `onset_referral` show above.

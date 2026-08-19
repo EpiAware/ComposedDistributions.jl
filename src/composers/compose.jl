@@ -15,12 +15,20 @@ composers, not a new tree type.
   A child that is itself a `NamedTuple` nests as a `Parallel`, a child that is a
   `Vector` or `Tuple` of distributions nests as a [`Sequential`](@ref), and a
   bare `UnivariateDistribution` is a leaf branch.
-- Tables.jl table with `name` and `dist` columns: a [`Parallel`](@ref) over the
-  rows, the column-table equivalent of a flat `NamedTuple`. An optional `chain`
-  column folds rows sharing a non-zero group id into a [`Sequential`](@ref)
-  branch, and an optional `compete`/`prob` column pair folds rows sharing a
-  non-zero `compete` id into a [`Resolve`](@ref) node whose `prob` entries are
-  the branch probabilities (each in ``[0, 1]`` and summing to one per group).
+- Tables.jl AUTHORING table, with `name` and `dist` columns: a
+  [`Parallel`](@ref) over the rows, the column-table equivalent of a flat
+  `NamedTuple`. An optional `chain` column folds rows sharing a non-zero group
+  id into a [`Sequential`](@ref) branch, and an optional `compete`/`prob`
+  column pair folds rows sharing a non-zero `compete` id into a
+  [`Resolve`](@ref) node whose `prob` entries are the branch probabilities
+  (each in ``[0, 1]`` and summing to one per group). One row per branch, a
+  whole distribution per `dist` cell: the shape for writing a tree by hand.
+- Tables.jl ROUND-TRIP table, with the `edge`/`param`/`node`/`role`/`value`
+  columns [`composed_to_table`](@ref) writes: the inverse of that function, so
+  `compose(composed_to_table(d)) == d`. One row per structural atom with
+  scalar values, so a parameter can be edited in place (in a `DataFrame`, say)
+  and composed back. Only an in-memory round trip is supported, as
+  [`composed_to_table`](@ref) documents.
 - nested `Matrix` of distributions: rows are [`Parallel`](@ref) branches and the
   columns within a row are [`Sequential`](@ref) steps. This orientation is
   canonical, so a one-column matrix is parallel leaf branches (one row each) and
@@ -31,6 +39,12 @@ A varargs-pairs spelling, `compose(:a => d1, :b => d2, ...)`, is also
 available as a convenience over the NamedTuple form (see the
 `compose(pairs::Pair{Symbol}...)` method below); the NamedTuple form above
 stays primary.
+
+The two table shapes are told apart by their columns, not by a separate
+function, and they are deliberately different because they do different jobs:
+the authoring shape puts a whole distribution in a cell, the round-trip shape
+one scalar per row. A table carrying both column sets is refused as ambiguous.
+Only the round-trip shape is an inverse; the authoring shape has none.
 
 # Contract
 
@@ -87,14 +101,12 @@ end
 # branches fan out from one origin, so the result is a Sequential whose last step
 # is a Parallel of the branch tails. Convolving the stack returns one series per
 # branch, each delayed by `origin` convolved with the branch tail (e.g. a shared
-# incubation, then a reporting branch and a death branch).
-function compose(
-        origin::Union{UnivariateDistribution,
-            AbstractComposedDistribution{Multivariate}};
-        branches...)
-    isempty(branches) &&
-        throw(ArgumentError("compose(origin; branches...) needs ≥1 branch"))
-    nt = NamedTuple(branches)
+# incubation, then a reporting branch and a death branch). The origin is not
+# type-bounded (a duck-typed leaf is a valid origin), so this shares its
+# positional signature with the table front-end below -- keyword arguments do
+# not dispatch -- and the two live in one method there, splitting on whether any
+# branch was given. This worker does the fan-out half.
+function _compose_origin(origin, nt::NamedTuple)
     tails = map(_compose_child, Tuple(nt))
     return Sequential((_compose_child(origin), Parallel(tails, keys(nt))))
 end
@@ -147,10 +159,24 @@ end
 # carrying distribution vectors, e.g. `(name = [d1, d2], dist = [d3, d4])` —
 # two named chain branches, not a table.
 function _is_column_table(nt::NamedTuple)
+    return _is_authoring_column_table(nt) || _is_round_trip_column_table(nt)
+end
+
+function _is_authoring_column_table(nt::NamedTuple)
     haskey(nt, :name) && haskey(nt, :dist) &&
         nt.name isa AbstractVector && nt.dist isa AbstractVector &&
-        all(d -> d isa UnivariateDistribution, nt.dist) &&
-        !any(n -> n isa UnivariateDistribution, nt.name)
+        all(is_composable, nt.dist) && !any(is_composable, nt.name)
+end
+
+# The round-trip shape as a `NamedTuple` of columns, which is what
+# `Tables.columntable(composed_to_table(d))` (or of the tree itself) gives. Its
+# `edge`/`param`/`role` columns hold `Symbol`s, never distributions, so this
+# cannot be confused with a structural NamedTuple whose branch names happen to
+# be `:edge`/`:param`/`:role` — those would carry composables.
+function _is_round_trip_column_table(nt::NamedTuple)
+    cols = (:edge, :param, :role)
+    all(c -> haskey(nt, c) && nt[c] isa AbstractVector, cols) || return false
+    return !any(c -> any(is_composable, nt[c]), cols)
 end
 
 # Lower a single front-end value to a composer child. A nested NamedTuple
@@ -159,16 +185,14 @@ end
 # A pre-built multivariate composer value (Sequential/Parallel/Choose, or a
 # downstream `AbstractComposedDistribution` node) drops in unchanged, so a
 # `compose(...)` result nests as a child and a `Sequential((...), names)` value
-# keeps readable step names. A `Resolve` is a UnivariateDistribution leaf and is
-# covered by the first method.
-_compose_child(d::UnivariateDistribution) = d
-_compose_child(c::AbstractComposedDistribution{Multivariate}) = c
+# keeps readable step names. Anything else drops in unchanged: a leaf (a plain
+# distribution, a `Resolve`, or a duck-typed leaf implementing the univariate
+# interface without subtyping it) or a pre-built composer value. The elements
+# are not re-checked here -- the composer constructor this feeds is the single
+# front door, so `is_composable` is applied once rather than twice.
+_compose_child(x) = x
 _compose_child(nt::NamedTuple) = compose(nt)
 function _compose_child(v::Union{AbstractVector, Tuple})
-    all(_is_composable, v) ||
-        throw(ArgumentError(
-            "a sequential child must hold UnivariateDistributions or " *
-            "composers"))
     return Sequential(map(_compose_child, Tuple(v)))
 end
 
@@ -183,7 +207,7 @@ end
 # labels the row branches and `step_names` labels the columns within each
 # multi-step row. Both fall back to positional defaults (`:branch_i` /
 # `:step_j`) when omitted, so the matrix form still works name-free.
-function compose(m::AbstractMatrix{<:UnivariateDistribution};
+function compose(m::AbstractMatrix;
         names = nothing, step_names = nothing)
     nrows, ncols = size(m)
     (nrows >= 1 && ncols >= 1) ||
@@ -208,24 +232,75 @@ end
 # one_of-outcome set. The generic method accepts any Tables.jl source (a
 # column table is also matched by the NamedTuple method, which delegates here);
 # the `_compose_table` worker does the shared build.
-function compose(table)
-    Tables.istable(table) ||
-        throw(ArgumentError(
-            "compose expects a NamedTuple, a Tables.jl table with `name` and " *
-            "`dist` columns, or a nested Matrix; got $(typeof(table))"))
-    return _compose_table(table)
+# Shares its positional signature with the shared-origin front-end above (a
+# duck-typed origin cannot be told from a table by dispatch, and keyword
+# arguments do not dispatch), so the two are one method splitting on whether any
+# branch was given. The `is_composable` check preserves the origin form's own
+# "needs a branch" error rather than sending a lone distribution into the table
+# reader.
+function compose(table; branches...)
+    isempty(branches) || return _compose_origin(table, NamedTuple(branches))
+    # A table wins over the origin reading: `is_composable` admits anything not
+    # positively excluded, and a `Tables.jl` source (a DataFrame, say) is not
+    # one of the excluded shapes, so the table check has to come first.
+    Tables.istable(table) && return _compose_table(table)
+    is_composable(table) &&
+        throw(ArgumentError("compose(origin; branches...) needs ≥1 branch"))
+    throw(ArgumentError(
+        "compose expects a NamedTuple, a Tables.jl table with `name` and " *
+        "`dist` columns, or a nested Matrix; got $(typeof(table))"))
 end
 
+# `compose` reads TWO table shapes, told apart by their columns rather than by
+# a separate verb, and they are deliberately different because they do
+# different jobs:
+#
+#   - the AUTHORING table (`name`/`dist`, optional `chain`/`compete`/`prob`):
+#     one row per branch, a whole distribution in the `dist` cell, the
+#     `chain`/`compete` ids a compact grouping notation. For writing a tree by
+#     hand or from a spreadsheet.
+#   - the ROUND-TRIP table (`edge`/`param`/`node`/`role`/`value`, the shape
+#     `composed_to_table` writes): one row per structural atom, scalar values,
+#     per-parameter editable. The inverse of `composed_to_table`.
+#
+# Neither subsumes the other: collapsing them would make an author write
+# node/attribute/param rows by hand, or make the round-trip shape smuggle whole
+# distributions into cells and lose the per-parameter editing that is its
+# point. A table carrying both column sets is ambiguous and is refused rather
+# than guessed at.
 function _compose_table(table)
     cols = Tables.columns(table)
     names = Tables.columnnames(cols)
-    (:name in names && :dist in names) ||
-        throw(ArgumentError("the table needs `name` and `dist` columns"))
+    authoring = :name in names && :dist in names
+    round_trip = :edge in names && :param in names && :role in names
+    authoring && round_trip &&
+        throw(ArgumentError(
+            "compose(table): the table has both the authoring columns " *
+            "(`name`/`dist`) and the round-trip columns (`edge`/`param`/`role`), " *
+            "so which shape it is meant to be is ambiguous; drop one set"))
+    round_trip && return _compose_round_trip_table(table)
+    # The parameter-only projection (`edge`/`param`, no `role`) is the shape a
+    # reader most plausibly reaches for, and it is exactly the one that cannot
+    # work: it carries no `:node` or `:attribute` rows, so it says nothing
+    # about the tree's structure. Say that rather than list columns.
+    (:edge in names && :param in names) && throw(ArgumentError(
+        "compose(table): this looks like the parameter-only projection of a " *
+        "composed table (`edge`/`param` but no `role` column), which cannot " *
+        "be composed — it carries only `:param` rows, so it records the " *
+        "tree's parameters but not its structure. Pass the whole " *
+        "composed_to_table(d) instead, or use update(d, table) to write " *
+        "these values onto an existing tree"))
+    authoring ||
+        throw(ArgumentError(
+            "compose(table): the table needs either `name` and `dist` " *
+            "columns (the authoring shape) or the `edge`/`param`/`node`/" *
+            "`role`/`value` columns composed_to_table writes (the round-trip " *
+            "shape); got columns $(collect(names))"))
     dists = Tables.getcolumn(cols, :dist)
     row_names = Tables.getcolumn(cols, :name)
-    all(d -> d isa UnivariateDistribution, dists) ||
+    all(is_composable, dists) ||
         throw(ArgumentError(
-            "every `dist` entry must be a UnivariateDistribution"))
+            "every `dist` entry must be a distribution-like leaf"))
     # A `prob` column only makes sense alongside `compete`, which marks the rows
     # the probabilities apply to; reject it alone rather than silently ignoring.
     (:prob in names && !(:compete in names)) &&
