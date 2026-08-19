@@ -87,8 +87,6 @@ function Choose(names::K, alternatives::A, selector::Symbol) where {
     return Choose{names}(alternatives, selector)
 end
 
-component_names(::Choose{names}) where {names} = names
-
 # The selector field name is fixed structure, not a free parameter, so it
 # rides `composed_to_table`'s `:attribute` rows rather than the `:param` rows.
 node_attributes(d::Choose) = (; selector = d.selector)

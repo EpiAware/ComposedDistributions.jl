@@ -96,8 +96,6 @@ leaf_var(leaf::Truncated) = _wrapper_moment(var, leaf)
 leaf_var(leaf::Distributions.Censored) = _wrapper_moment(var, leaf)
 # The underscored aliases retained for internal callers and the modifier
 # extension's overrides; `const` makes each the same function object.
-const _leaf_mean = leaf_mean
-const _leaf_var = leaf_var
 
 # --- overall observed-level moments on the composer itself ------------------
 
@@ -137,7 +135,7 @@ mean(seq)                 # overall mean delay (a scalar)
 - [`event_names`](@ref): the flat per-event labels
 - [`observed_distribution`](@ref): collapse a chain to its terminal scalar
 "
-mean(d::Sequential) = _overall_moment(d, _leaf_mean)
+mean(d::Sequential) = _overall_moment(d, leaf_mean)
 
 @doc "
 
@@ -152,7 +150,7 @@ delay for a univariate-collapsible composer (the variance of
 # See also
 - [`mean`](@ref), [`std`](@ref), [`event`](@ref)
 "
-var(d::Sequential) = _overall_moment(d, _leaf_var)
+var(d::Sequential) = _overall_moment(d, leaf_var)
 
 @doc "
 
@@ -172,10 +170,10 @@ std(d::Sequential) = sqrt(var(d))
 # events are not included; fetch a branch's own distribution via
 # `event(d, name)` for its moment.
 function mean(d::Parallel)
-    return _as_named(_endpoint_names(d), _endpoint_moment_vector(d, _leaf_mean))
+    return _as_named(_endpoint_names(d), _endpoint_moment_vector(d, leaf_mean))
 end
 function var(d::Parallel)
-    return _as_named(_endpoint_names(d), _endpoint_moment_vector(d, _leaf_var))
+    return _as_named(_endpoint_names(d), _endpoint_moment_vector(d, leaf_var))
 end
 std(d::Parallel) = map(sqrt, var(d))
 
@@ -240,15 +238,15 @@ end
 # sum is the sum of means and the variance of the sum is the sum of variances, so
 # a `Sequential` is the additive total over its free-delay leaf steps (the moment
 # of `observed_distribution(d)`, computed free-delay-transparently). `f` is
-# `_leaf_mean` or `_leaf_var`.
+# `leaf_mean` or `leaf_var`.
 function _overall_moment(d::Sequential, f::F) where {F}
     sum(_overall_moment(c, f) for c in d.components)
 end
-_overall_moment(c::Resolve, ::typeof(_leaf_mean)) = _one_of_mix_mean(c)
-_overall_moment(c::Resolve, ::typeof(_leaf_var)) = _one_of_mix_var(c)
+_overall_moment(c::Resolve, ::typeof(leaf_mean)) = _one_of_mix_mean(c)
+_overall_moment(c::Resolve, ::typeof(leaf_var)) = _one_of_mix_var(c)
 # A racing-hazard node collapses to its marginal any-event (min) moment.
-_overall_moment(c::Compete, ::typeof(_leaf_mean)) = mean(c)
-_overall_moment(c::Compete, ::typeof(_leaf_var)) = var(c)
+_overall_moment(c::Compete, ::typeof(leaf_mean)) = mean(c)
+_overall_moment(c::Compete, ::typeof(leaf_var)) = var(c)
 # A `Parallel` step inside a chain has several independent endpoints, so the chain
 # has no single observed scalar to collapse to (mirroring `observed_distribution`,
 # which rejects a `Sequential` whose step is a `Parallel`).
@@ -287,30 +285,30 @@ end
 # moment; a `Resolve`'s branch-prob-weighted mixture moment (over its free
 # per-outcome moments, seeing through censored leaves, not the censored
 # `mean`/`var(Resolve)`); a `Compete`'s marginal any-event moment.
-_outcome_scalar_moment(leaf, ::typeof(_leaf_mean)) = _leaf_mean(leaf)
-_outcome_scalar_moment(leaf, ::typeof(_leaf_var)) = _leaf_var(leaf)
-function _outcome_scalar_moment(c::Resolve, ::typeof(_leaf_mean))
+_outcome_scalar_moment(leaf, ::typeof(leaf_mean)) = leaf_mean(leaf)
+_outcome_scalar_moment(leaf, ::typeof(leaf_var)) = leaf_var(leaf)
+function _outcome_scalar_moment(c::Resolve, ::typeof(leaf_mean))
     return _one_of_mix_mean(c)
 end
-function _outcome_scalar_moment(c::Resolve, ::typeof(_leaf_var))
+function _outcome_scalar_moment(c::Resolve, ::typeof(leaf_var))
     return _one_of_mix_var(c)
 end
 # A racing-hazard outcome's scalar moment is the node's marginal any-event moment.
-_outcome_scalar_moment(c::Compete, ::typeof(_leaf_mean)) = mean(c)
-_outcome_scalar_moment(c::Compete, ::typeof(_leaf_var)) = var(c)
+_outcome_scalar_moment(c::Compete, ::typeof(leaf_mean)) = mean(c)
+_outcome_scalar_moment(c::Compete, ::typeof(leaf_var)) = var(c)
 
 # A `Resolve`'s branch-prob-weighted mixture mean / variance, built from the
 # free per-outcome moments so it sees through censored leaves (not the censored
 # `mean(Resolve)`/`var(Resolve)`, which lower through `as_mixture` and have
 # no analytic moment for a censored leaf).
 function _one_of_mix_mean(c::Resolve)
-    scalar_means = map(d -> _outcome_scalar_moment(d, _leaf_mean), c.delays)
+    scalar_means = map(d -> _outcome_scalar_moment(d, leaf_mean), c.delays)
     return sum(c.branch_probs .* scalar_means)
 end
 
 function _one_of_mix_var(c::Resolve)
-    scalar_means = map(d -> _outcome_scalar_moment(d, _leaf_mean), c.delays)
-    scalar_vars = map(d -> _outcome_scalar_moment(d, _leaf_var), c.delays)
+    scalar_means = map(d -> _outcome_scalar_moment(d, leaf_mean), c.delays)
+    scalar_vars = map(d -> _outcome_scalar_moment(d, leaf_var), c.delays)
     mix_mean = sum(c.branch_probs .* scalar_means)
     second = sum(c.branch_probs .* (scalar_vars .+ scalar_means .^ 2))
     return second - mix_mean^2

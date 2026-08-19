@@ -191,7 +191,6 @@ ComposedDistributions.component_names(tree)
 - [`event_names`](@ref): the public *edge*-name accessor
 - `_flat_event_names`: the flat *event* names
 "
-component_names(::Sequential{names}) where {names} = names
 
 @doc "
 

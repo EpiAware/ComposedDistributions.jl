@@ -26,6 +26,15 @@ function _named_children(d::Union{Sequential, Parallel})
     names = component_names(d)
     return ntuple(i -> (names[i], d.components[i], ""), length(d.components))
 end
+# Any other composer node: read children and names off the contract, so a
+# downstream node renders as a tree in `show`/`inspect` rather than falling
+# back to a raw struct dump. The built-ins below are more specific.
+function _named_children(d::AbstractComposedDistribution)
+    names = component_names(d)
+    children = node_children(d)
+    return ntuple(i -> (names[i], children[i], ""), length(names))
+end
+
 function _named_children(c::Resolve)
     names = component_names(c)
     return ntuple(length(names)) do i
@@ -166,10 +175,10 @@ function _inspect_children(io::IO, node, prefix::String)
 end
 
 # A leaf's detail lines, indented under `prefix`, one line at a time (so a
-# multi-line detail stays aligned). The lines come from the `_leaf_detail_lines`
+# multi-line detail stays aligned). The lines come from the `leaf_detail_lines`
 # hook so a leaf-wrapper layer can supply richer per-leaf detail.
 function _inspect_leaf(io::IO, leaf, prefix::String)
-    for line in _leaf_detail_lines(leaf)
+    for line in leaf_detail_lines(leaf)
         println(io, prefix, line)
     end
     return nothing
@@ -203,7 +212,6 @@ ComposedDistributions.leaf_detail_lines(Gamma(2.0, 1.0))
 - [`inspect`](@ref): the tree-printing entry point this feeds.
 "
 leaf_detail_lines(leaf) = split(sprint(show, MIME"text/plain"(), leaf), '\n')
-const _leaf_detail_lines = leaf_detail_lines
 
 # --- nested name-keyed params (hand-rolled, type-stable) --------------------
 
@@ -480,7 +488,7 @@ function leaf_ctor(leaf)
     inner === leaf && return Base.typename(typeof(leaf)).wrapper
     # A wrapper (`Truncated`, `Uncertain`, `Shared`, a censored or modified
     # leaf): recurse rather than read the peeled type directly, so an inner
-    # leaf's override is honoured through the wrapper. `_leaf_param_names` peels
+    # leaf's override is honoured through the wrapper. `leaf_param_names` peels
     # and then dispatches `param_names` for the same reason; the two must agree
     # or a wrapped leaf would report one set of names and rebuild from another.
     return leaf_ctor(inner)
@@ -490,7 +498,6 @@ end
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
 # makes it the same function object, so dropping the underscore is
 # source-compatible.
-const _leaf_ctor = leaf_ctor
 
 @doc raw"
 
@@ -584,7 +591,6 @@ end
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
 # makes it the same function object, so dropping the underscore is
 # source-compatible.
-const _uncertain_specs = uncertain_specs
 
 @doc raw"
 The extra, modifier-owned parameters of a leaf, keyed by name.
@@ -812,7 +818,6 @@ function leaf_param_names(leaf)
     # append after the delay params, in `extra_leaf_params` order.
     return (names..., keys(extra_leaf_params(leaf))...)
 end
-const _leaf_param_names = leaf_param_names
 
 @doc raw"
 
@@ -1548,7 +1553,7 @@ end
 # its inner free delay's params and that delay's support (the censoring
 # bounds are fixed structure, see `free_leaf`); its wrapper layer still gets
 # its own node/attribute rows via `_leaf_layers`. A shared-tagged leaf
-# (`_shared_tag`) is inventoried once under its tag as the PARAM edge: the
+# (`shared_tag`) is inventoried once under its tag as the PARAM edge: the
 # first occurrence emits the param rows, later occurrences with the same tag
 # are skipped so the tied parameter is listed once. The leaf's node/attribute
 # rows are emitted BEFORE that dedup check and always use the leaf's real
@@ -1559,11 +1564,11 @@ end
 function _walk_rows!(sink, seen, leaf, path)
     edge_path = _join_path(path)
     _emit_layers!(sink, edge_path, leaf)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     tag !== nothing && tag in seen && return nothing
     inner = free_leaf(leaf)
-    pnames = _leaf_param_names(leaf)
-    specs = _uncertain_specs(leaf)
+    pnames = leaf_param_names(leaf)
+    specs = uncertain_specs(leaf)
     sup = (minimum(inner), maximum(inner))
     # The native delay params take the inner leaf's own support; each
     # modifier-owned extra parameter (e.g. a thinned leaf's `:thin` factor)
@@ -2096,19 +2101,19 @@ end
 # A no-event marker carries no parameters, so `update` leaves it unchanged.
 _update(d::NoEvent, ::NamedTuple, shared, ::Bool) = d
 
-# Leaf: in strict mode take the new concrete values in `_leaf_param_names` order
+# Leaf: in strict mode take the new concrete values in `leaf_param_names` order
 # and rebuild (collapsing any uncertain leaf); in merge mode introduce/extend
 # uncertainty via `_merge_leaf`. A shared-tagged leaf reads its entry from the
 # top-level `shared` under its tag; in merge mode an absent tag entry is a no-op
 # (an empty merge keeps the leaf), so a partial merge leaves untouched leaves be.
 function _update(leaf, params::NamedTuple, shared, merge::Bool)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     if merge
         updates = tag === nothing ? params : get(shared, tag, NamedTuple())
         return _merge_leaf(leaf, updates)
     end
     leaf_params = tag === nothing ? params : _shared_entry(shared, tag, leaf)
-    pnames = _leaf_param_names(leaf)
+    pnames = leaf_param_names(leaf)
     # A pooled leaf reconstructs each pooled parameter from the group's shared
     # hyperparameters (read from the top-level group entry, threaded like a
     # shared tag) and the member's own latent, rather than taking scalar values.
@@ -2287,7 +2292,6 @@ node_children(d::Choose) = d.alternatives
 # internal name, kept — like `_centred_pool_rows` in `public.jl` — so a
 # downstream package reaching in by the old qualified name keeps working.
 # `node_children` is the public name.
-const _node_children = node_children
 
 # --- nested-tree assembly: flat table rows -> nested NamedTuple ------------
 #

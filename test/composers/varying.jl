@@ -235,7 +235,7 @@ end
     # A shared tag is visible through a Varying leaf.
     tagged = varying(t -> Gamma(2.0, 1.0 + 0.1 * t);
         reference = ComposedDistributions.shared(:inc, Gamma(2.0, 1.0)))
-    @test ComposedDistributions._shared_tag(tagged) == :inc
+    @test ComposedDistributions.shared_tag(tagged) == :inc
 
     # The parameter-only walk over a tree with a varying leaf matches the same
     # tree built from the leaf's reference: the varying map is fixed

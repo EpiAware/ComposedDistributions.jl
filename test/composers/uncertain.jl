@@ -290,7 +290,7 @@ end
     @test rand(Xoshiro(1), su) == rand(Xoshiro(1), u)
 
     # The specs stay visible through the tag (routing + the prior column).
-    @test ComposedDistributions._uncertain_specs(su) == u.specs
+    @test ComposedDistributions.uncertain_specs(su) == u.specs
     @test has_uncertain(su)
 
     # It composes and samples as a leaf, and is inventoried once under its tag.
@@ -508,7 +508,7 @@ end
 @testitem "promote through a shared tag ties the estimated parameter" begin
     using ComposedDistributions: update
     using Distributions
-    using ComposedDistributions: flat_dimension, _shared_tag
+    using ComposedDistributions: flat_dimension, shared_tag
 
     d = compose((a = shared(:g, Gamma(2.0, 1.0)),
         b = shared(:g, Gamma(2.0, 1.0))))
@@ -518,7 +518,7 @@ end
     # The tied leaf is inventoried once, so alpha + theta = two estimated rows.
     @test flat_dimension(promoted) == 2
     la = event(promoted, :a)
-    @test _shared_tag(la) == :g
+    @test shared_tag(la) == :g
     @test has_uncertain(la)
     # Collapsing the promoted tree from a flat draw keeps the tie: both
     # occurrences are the same shared leaf at the drawn values.
@@ -618,7 +618,7 @@ end
         alpha = LogNormal(log(2.0), 0.2)),))
 
     replaced = uncertain(tree; onset_admit = (alpha = Normal(2.0, 0.5),))
-    spec = ComposedDistributions._uncertain_specs(replaced.components[1])
+    spec = ComposedDistributions.uncertain_specs(replaced.components[1])
     # Replace semantics, not hyperprior nesting: the new spec is the plain
     # Normal, not a distribution wrapping the old LogNormal.
     @test spec.alpha == Normal(2.0, 0.5)

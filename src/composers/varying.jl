@@ -306,7 +306,7 @@ node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
 function rewrap_from_table(::Type{<:Varying}, inner, attrs::NamedTuple)
     return Varying(attrs.map, attrs.covariate, inner)
 end
-_shared_tag(d::Varying) = _shared_tag(d.reference)
+shared_tag(d::Varying) = shared_tag(d.reference)
 
 @doc "
 

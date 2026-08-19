@@ -156,7 +156,6 @@ function Base.eltype(::Type{<:Parallel{names, C}}) where {names, C <: Tuple}
 end
 
 # Branch names, one per component.
-component_names(::Parallel{names}) where {names} = names
 
 @doc "
 

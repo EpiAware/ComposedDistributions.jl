@@ -1000,7 +1000,7 @@ end
     using Distributions
 
     inc = shared(:inc, Gamma(2.0, 1.0))
-    @test ComposedDistributions._shared_tag(inc) == :inc
+    @test ComposedDistributions.shared_tag(inc) == :inc
     @test logpdf(inc, 1.5) ≈ logpdf(Gamma(2.0, 1.0), 1.5)  # transparent
     d = compose((a = Gamma(2.0, 1.0), b = Gamma(2.0, 1.0)))
     tied = tie(d, :a, :b; name = :g)

@@ -23,8 +23,8 @@
 #     the template's free delay and `rewrap_leaf`/`_update_leaf` rebuild the
 #     concrete leaf *without* the specs. Pinning values with `update` therefore
 #     collapses the uncertainty by design.
-#   - `_uncertain_specs` is the routing hook (default `nothing`,
-#     introspection.jl); wrapper types forward it exactly like `_shared_tag`
+#   - `uncertain_specs` is the routing hook (default `nothing`,
+#     introspection.jl); wrapper types forward it exactly like `shared_tag`
 #     (`Shared` here, `Truncated` in introspection.jl, the modifiers in the
 #     ModifiedDistributions extension).
 #   - The one special behaviour is `rand`, which draws the marginal by drawing
@@ -126,7 +126,7 @@ struct Uncertain{VS <: ValueSupport, L, S <: NamedTuple} <:
             "or target one via `update(tree, (leaf = (component_1 = " *
             "(param = prior,),),))`"))
         _check_leaf_param_alignment(free_leaf(template))
-        pnames = _leaf_param_names(template)
+        pnames = leaf_param_names(template)
         for (k, v) in pairs(specs)
             k in pnames || throw(ArgumentError(
                 "unknown uncertain parameter $(repr(k)); the template " *
@@ -220,7 +220,7 @@ uncertain(Gamma(2.0, 1.0);
 "
 function uncertain(template; kwargs...)
     nt = values(kwargs)
-    pnames = _leaf_param_names(template)
+    pnames = leaf_param_names(template)
     for (k, v) in pairs(nt)
         k in pnames || throw(ArgumentError(
             "unknown parameter $(repr(k)) for $(template); expected one of " *
@@ -272,7 +272,7 @@ function uncertain(::Type{D}, arg1, args...) where {D}
             "instead, e.g. uncertain($(nameof(D))(...); ...)"))
     end
     positional = (arg1, args...)
-    pnames = _leaf_param_names(probe)
+    pnames = leaf_param_names(probe)
     length(positional) == length(pnames) || throw(ArgumentError(
         "uncertain($(nameof(D)), ...) needs one positional argument per " *
         "parameter; $(D) has parameters $(collect(pnames)) but got " *
@@ -290,7 +290,7 @@ function uncertain(::Type{D}; kwargs...) where {D}
             "instead, e.g. uncertain($(nameof(D))(...); ...)"))
     end
     nt = values(kwargs)
-    pnames = _leaf_param_names(probe)
+    pnames = leaf_param_names(probe)
     for n in pnames
         haskey(nt, n) || throw(ArgumentError(
             "uncertain($(nameof(D)); ...) needs every parameter given " *
@@ -425,14 +425,14 @@ rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
 # A shared tag survives an uncertain leaf (a `shared(:inc, uncertain(...))`
 # is tagged outside, but forward for robustness when nested the other way).
-_shared_tag(d::Uncertain) = _shared_tag(d.template)
+shared_tag(d::Uncertain) = shared_tag(d.template)
 
 # The uncertain-spec protocol hook (default `nothing` in introspection.jl):
 # an `Uncertain` reports its own specs, and the known wrapper leaves forward so
 # a wrapped uncertain leaf still exposes them to `composed_to_table`'s prior
 # column. (Extension wrapper types add their own forwarding methods.)
-_uncertain_specs(d::Uncertain) = d.specs
-_uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
+uncertain_specs(d::Uncertain) = d.specs
+uncertain_specs(d::Shared) = uncertain_specs(d.dist)
 
 # --- merge mode: `update` introduces or extends uncertainty ------------------
 #
@@ -457,11 +457,11 @@ function _merge_leaf(leaf::Shared{tag}, updates::NamedTuple) where {tag}
 end
 
 function _merge_leaf(leaf, updates::NamedTuple)
-    pnames = _leaf_param_names(leaf)
+    pnames = leaf_param_names(leaf)
     _check_merge_keys(updates, pnames, nameof(typeof(leaf)))
     tvals = params(free_leaf(leaf))
     extras = extra_leaf_params(leaf)
-    existing = _uncertain_specs(leaf)
+    existing = uncertain_specs(leaf)
     # Re-pin the fixed value at any `Real` update; keep the current value else.
     # A native parameter's current value comes from `tvals` positionally; an
     # extra (modifier-owned) parameter's from the extra map (`tvals` holds only
@@ -558,7 +558,7 @@ end
 # the `free_leaf`/`rewrap_leaf` protocol so the fixed wrapper structure carries
 # through. Reused by `rand` (and available for a hand-written two-stage draw).
 function _uncertain_leaf(template, drawn::NamedTuple)
-    pnames = _leaf_param_names(template)
+    pnames = leaf_param_names(template)
     tvals = params(free_leaf(template))
     extras = extra_leaf_params(template)
     # A native parameter's fallback is its current value in `tvals`; an extra
@@ -623,7 +623,7 @@ Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # The composer nodes recurse through the shared `node_children` accessor,
 # mirroring `has_varying` (the two deferred-leaf guards share one walk); the
-# leaf base case reports a spec via the `_uncertain_specs` routing hook.
+# leaf base case reports a spec via the `uncertain_specs` routing hook.
 # Structural dispatch against the public `AbstractComposedDistribution` root,
 # not a closed list of the built-in types (`has_varying` in `varying.jl`
 # mirrors this exactly, including the `Multivariate`/`AbstractOneOf` split
@@ -646,7 +646,7 @@ logpdf(collapsed, x)
 ```
 
 `has_uncertain` walks the tree (through `Sequential`/`Parallel`/`Choose`/the
-one_of composers, and through wrapper leaves via the `_uncertain_specs` routing
+one_of composers, and through wrapper leaves via the `uncertain_specs` routing
 hook so a `shared`/modifier-wrapped uncertain leaf is still seen) and returns
 `true` as soon as any leaf carries a spec; a fully collapsed tree returns
 `false`.
@@ -682,4 +682,4 @@ has_uncertain(d::AbstractOneOf) = any(has_uncertain, node_children(d))
 function has_uncertain(c::Resolve)
     return c.branch_prob_prior !== nothing || any(has_uncertain, c.delays)
 end
-has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing
+has_uncertain(leaf) = uncertain_specs(leaf) !== nothing

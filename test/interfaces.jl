@@ -252,9 +252,9 @@ end
 
     # The underscored aliases still resolve the same public methods, for callers
     # that reached the contract before it was made public.
-    @test ComposedDistributions._child_nleaves === child_nleaves
-    @test ComposedDistributions._child_logpdf === child_logpdf
-    @test ComposedDistributions._child_rand! === child_rand!
+    @test ComposedDistributions.child_nleaves === child_nleaves
+    @test ComposedDistributions.child_logpdf === child_logpdf
+    @test ComposedDistributions.child_rand! === child_rand!
 
     # `Both` nests as a named child of a built-in: construction accepts it
     # (the `_is_composable` structural check), the flat-vector `logpdf` scores
@@ -353,8 +353,19 @@ end
         uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
         Gamma(1.5, 1.0))
 
-    @test_throws MethodError composed_to_table(incomplete)
-    @test_throws MethodError ComposedDistributions.update(incomplete,
+    # An `ArgumentError` naming the type and the missing layout, not a bare
+    # `MethodError`: `component_names` is derived from the node's first type
+    # parameter, so a type without that shape is told exactly what to add.
+    err = try
+        composed_to_table(incomplete)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("NoMethods", sprint(showerror, err))
+    @test occursin("component_names", sprint(showerror, err))
+    @test_throws ArgumentError ComposedDistributions.update(incomplete,
         (a = (alpha = 3.0, theta = 1.0), b = (alpha = 1.5, theta = 1.0)))
     # `flat_dimension` never even reaches `node_children`/`component_names`
     # for a type with no (names, children-types) type-parameter shape at

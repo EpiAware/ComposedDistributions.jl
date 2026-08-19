@@ -63,8 +63,6 @@ function Compete(names::C, delays::D) where {C <: Tuple, D <: Tuple}
     return Compete{names}(delays)
 end
 
-component_names(::Compete{names}) where {names} = names
-
 # The reverse of the table walk: a racing-hazard node takes its names first,
 # not the `(children, names)` the default `node_from_table` calls, and has no
 # branch probabilities to restore (the winning probability is derived).

@@ -196,8 +196,8 @@ include("composers/events_macro.jl")
 # `free_leaf`/`rewrap_leaf`, and after the structural edits (reuses `_edit_at`).
 include("composers/Shared.jl")
 # Uncertain (distribution-valued parameters): after introspection (extends
-# `free_leaf` / `rewrap_leaf` / `_uncertain_specs`, reuses `_update_leaf` /
-# `node_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
+# `free_leaf` / `rewrap_leaf` / `uncertain_specs`, reuses `_update_leaf` /
+# `node_rebuild`) and Shared (forwards `shared_tag` / `uncertain_specs` through
 # the tag wrapper).
 include("composers/Uncertain.jl")
 # The `@uncertain` syntax front-end over the positional `uncertain` family
@@ -211,7 +211,7 @@ include("composers/Pool.jl")
 # Context-indexed leaves + the `instantiate` resolution seam. After every
 # composer type exists (it rebuilds Sequential/Parallel/Choose/Resolve/Compete/
 # Shared against a context) and after introspection (it extends free_leaf/
-# rewrap_leaf/_shared_tag for the Varying leaf).
+# rewrap_leaf/shared_tag for the Varying leaf).
 include("composers/varying.jl")
 # `Censored` (Distributions.jl's `censored(...)` wrapper) leaf-protocol parity
 # with `Truncated`, plus the tree-level truncated/censored guard. After

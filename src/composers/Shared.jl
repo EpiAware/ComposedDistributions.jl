@@ -109,7 +109,6 @@ shared_tag(::Shared{tag}) where {tag} = tag
 end
 # The underscored alias retained for internal callers and the leaf-wrapper
 # method definitions; `const` makes it the same function object.
-const _shared_tag = shared_tag
 
 # `Shared` is transparent: every distribution method delegates to the wrapped
 # leaf, so the hot path (logpdf/rand/cdf/quantile/...) is unchanged and AD flows
@@ -203,7 +202,7 @@ function _collect_shared!(acc, seen, c::AbstractOneOf)
     return nothing
 end
 function _collect_shared!(acc, seen, leaf)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     (tag === nothing || tag in seen) && return nothing
     push!(seen, tag)
     push!(acc, tag => leaf)

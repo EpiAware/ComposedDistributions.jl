@@ -189,8 +189,6 @@ function Resolve(names::C, delays::D, branch_probs::P,
     return Resolve{names}(delays, branch_probs, branch_prob_prior)
 end
 
-component_names(::Resolve{names}) where {names} = names
-
 # The attached `branch_prob_prior` (an uncertain node's `Dirichlet`) is fixed
 # structure at the node itself, not a per-outcome free parameter (its K-1
 # stick coordinates ride the node's own `:param` rows separately). A fixed

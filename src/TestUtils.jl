@@ -267,7 +267,7 @@ end
 # check below; not part of the public interface.
 function _each_real_leaf(f, d)
     if ComposedDistributions._is_composer_node(d)
-        for child in ComposedDistributions._node_children(d)
+        for child in ComposedDistributions.node_children(d)
             _each_real_leaf(f, child)
         end
     else

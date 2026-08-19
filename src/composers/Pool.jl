@@ -287,7 +287,7 @@ end
 # The pooled subset of a leaf's uncertain specs (`param => Pool`), or `nothing`
 # when the leaf pools nothing. Drives the pooled reconstruction in `_update`.
 function _pool_specs(leaf)
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     specs === nothing && return nothing
     ks = filter(k -> specs[k] isa Pool, keys(specs))
     isempty(ks) && return nothing
@@ -338,16 +338,16 @@ end
 # uncertain specs (a fully fixed population) contributes no hyperparameters.
 # This is exactly the uncertain-leaf param walk restricted to the spec'd rows.
 function _pool_hyper_rows!(sink, p::Pool)
-    specs = _uncertain_specs(p.population)
+    specs = uncertain_specs(p.population)
     specs === nothing && return nothing
     tmpl = _population_template(p.population)
     inner = free_leaf(tmpl)
-    pnames = _leaf_param_names(tmpl)
+    pnames = leaf_param_names(tmpl)
     vals = params(inner)
     sup = (minimum(inner), maximum(inner))
     for (pname, v) in zip(pnames, vals)
         # A leaf's parameter names are `Symbol`s by contract, but the element
-        # type of `_leaf_param_names(tmpl)` is not inferable for a population
+        # type of `leaf_param_names(tmpl)` is not inferable for a population
         # template whose type is not concrete here. The assertion states the
         # contract, so the row push resolves against a `Symbol` name rather
         # than one of unknown type.
@@ -418,7 +418,7 @@ function _leaf_entry_grouped(leaf, ::Val{speckeys}, ::Val{pool_names},
         ::Val{materialize}, slots::Tuple) where {speckeys, pool_names, materialize}
     names = leaf_param_names(leaf)
     vals = leaf_param_values(leaf)
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     entry_vals, group_keys, group_vals, _ = _leaf_walk_grouped(
         names, vals, speckeys, materialize, specs, slots)
     entry = NamedTuple{names}(entry_vals)
@@ -456,7 +456,7 @@ end
 # fixed population contributes no names and consumes nothing.
 _pool_hyper_entry(pop, slots::Tuple) = NamedTuple(), slots
 function _pool_hyper_entry(pop::Uncertain, slots::Tuple)
-    specs = _uncertain_specs(pop)
+    specs = uncertain_specs(pop)
     pnames = leaf_param_names(_population_template(pop))
     ks, vs, rest = _hyper_walk(pnames, specs, slots)
     return NamedTuple{ks}(vs), rest
@@ -499,7 +499,7 @@ function _leaf_flatten_grouped(leaf, ::Val{speckeys}, ::Val{pool_names},
         ::Val{materialize}, entry::NamedTuple{names},
         nt::NamedTuple) where
         {speckeys, pool_names, materialize, names}
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     return _leaf_flatten_walk_grouped(
         Val(names), Val(speckeys), Val(pool_names), Val(materialize),
         specs, entry, nt)
@@ -542,7 +542,7 @@ end
 # from the population template.
 _pool_hyper_flatten(pop, ::NamedTuple) = ()
 function _pool_hyper_flatten(pop::Uncertain, hyper_nt::NamedTuple)
-    return _hyper_flatten_walk(_uncertain_specs(pop), hyper_nt)
+    return _hyper_flatten_walk(uncertain_specs(pop), hyper_nt)
 end
 
 @inline function _hyper_flatten_walk(
@@ -592,7 +592,7 @@ end
 # with no estimated hyperparameters carries no group entry, so an empty
 # NamedTuple (the population stays at its template) is returned.
 function _pool_hyper(shared, p::Pool)
-    _uncertain_specs(p.population) === nothing && return NamedTuple()
+    uncertain_specs(p.population) === nothing && return NamedTuple()
     group = pool_group(p)
     (shared isa NamedTuple && haskey(shared, group)) || throw(ArgumentError(
         "update(...) is missing the pooled population $(repr(group)); a " *
@@ -852,7 +852,7 @@ function _collect_pools!(acc::Dict,
 end
 
 function _collect_pools!(acc::Dict, leaf)
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     specs === nothing && return nothing
     for (k, v) in pairs(specs)
         v isa Pool || continue
