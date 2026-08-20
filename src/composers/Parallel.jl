@@ -38,10 +38,10 @@ struct Parallel{names, C <: Tuple} <:
     function Parallel{names}(components::C) where {names, C <: Tuple}
         length(components) >= 1 ||
             throw(ArgumentError("Parallel needs at least one branch"))
-        all(_is_composable, components) ||
+        all(is_composable, components) ||
             throw(ArgumentError(
-                "every Parallel branch must be a UnivariateDistribution or " *
-                "a nested composer"))
+                "every Parallel branch must be a distribution-like leaf or " *
+                "a nested composer; got $(map(typeof, components))"))
         length(names) == length(components) ||
             throw(ArgumentError(
                 "Parallel names must match the number of components"))
@@ -152,11 +152,10 @@ parallel(branches::NamedTuple) = parallel(_nt_pairs(branches)...)
 Base.length(d::Parallel) = _nleaves(d.components)
 
 function Base.eltype(::Type{<:Parallel{names, C}}) where {names, C <: Tuple}
-    return mapreduce(eltype, promote_type, fieldtypes(C))
+    return _composer_eltype(fieldtypes(C))
 end
 
 # Branch names, one per component.
-component_names(::Parallel{names}) where {names} = names
 
 @doc "
 
@@ -165,10 +164,10 @@ Nested, name-keyed parameters of the branches.
 Returns a `NamedTuple` keyed by the branch names, each value the `params` of that
 branch (recursing into nested composers; a leaf delegates to its standard/
 extended `Distributions.params`). This nested form is for prior introspection
-via [`params_table`](@ref); a composed distribution reconstructs through
+via [`composed_to_table`](@ref); a composed distribution reconstructs through
 [`compose`](@ref), not through `Distribution(params...)`.
 
-See also: [`params_table`](@ref), [`event_names`](@ref), [`event`](@ref)
+See also: [`composed_to_table`](@ref), [`event_names`](@ref), [`event`](@ref)
 "
 params(d::Parallel) = _composed_params(d)
 

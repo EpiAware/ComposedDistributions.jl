@@ -81,10 +81,10 @@ unrewritten; reach those through the explicit [`uncertain`](@ref) constructor.
 ```@example
 using ComposedDistributions, Distributions
 
-# `shape` uncertain, `scale` fixed at 1.0.
+# `alpha` uncertain, `theta` fixed at 1.0.
 @uncertain Gamma(Normal(0.7, 0.2), 1.0)
 
-# A whole tree: only the Gamma leaf's shape is made uncertain.
+# A whole tree: only the Gamma leaf's alpha is made uncertain.
 @uncertain compose((
     onset = Gamma(LogNormal(log(2.0), 0.2), 1.0),
     admit = LogNormal(0.5, 0.4)))

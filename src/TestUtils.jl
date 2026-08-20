@@ -8,10 +8,13 @@ distribution (or a bare leaf), so a downstream author writing a new leaf or
 composer can drop it into their own `@testset` to verify conformance against the
 package's public interface. `test_node_interface(node)` is the companion check
 for a new composer node, asserting its `child_nleaves` / `child_logpdf` /
-`child_rand!` methods round-trip on a flat event vector. [`test_interface`](@ref),
+`child_rand!` methods round-trip on a flat event vector and its
+[`ComposedDistributions.flat_dimension`](@ref) matches its own table.
+[`test_interface`](@ref),
 [`example_fixtures`](@ref), [`test_rejects_invalid`](@ref),
-[`test_node_interface`](@ref), [`test_composed_interface`](@ref) and
-[`test_abstract_membership`](@ref) are exported from this submodule.
+[`test_node_interface`](@ref), [`test_estimation_dimension`](@ref),
+[`test_composed_interface`](@ref) and [`test_abstract_membership`](@ref) are
+exported from this submodule.
 
 The harness is dependency-light — `Test` (a stdlib), `Tables`, and the
 package's own public surface — and each check returns its `@testset` result
@@ -34,20 +37,27 @@ module TestUtils
 using Random: Random, AbstractRNG, Xoshiro
 using Test: Test, @testset, @test, @test_nowarn, @test_throws
 using Distributions: Distributions, mean, var, std, logpdf, cdf, params,
-                     UnivariateDistribution, Distribution, Multivariate
+                     UnivariateDistribution, Distribution, Multivariate,
+                     LogNormal
 import Tables
+import Statistics
 
 using ..ComposedDistributions: ComposedDistributions, Sequential, Parallel,
                                Resolve, Compete, AbstractOneOf, Choose,
                                compose, resolve, compete, choose,
-                               event, event_names, event_tree, params_table,
+                               event, event_names, event_tree, composed_to_table,
                                observed_distribution, component_names,
                                AbstractComposedDistribution, AbstractMultiChild,
-                               child_nleaves, child_logpdf, child_rand!
+                               child_nleaves, child_logpdf, child_rand!,
+                               free_leaf, rewrap_leaf, uncertain_specs,
+                               shared_tag, leaf_mean, leaf_var, has_uncertain,
+                               uncertain, shared
 
 export test_interface, example_fixtures, test_rejects_invalid,
-       test_node_interface, test_ad_safety, registry_types,
-       test_registry_coverage, test_composed_interface, test_abstract_membership
+       test_node_interface, test_estimation_dimension, test_ad_safety,
+       registry_types, test_registry_coverage, test_composed_interface,
+       test_abstract_membership, test_leaf_protocol_completeness,
+       test_sampling_consistency
 
 # --- per-fixture descriptor -------------------------------------------------
 #
@@ -106,8 +116,8 @@ The checklist asserts, where applicable to the node's shape:
   for a `Parallel`);
 - `logpdf` is finite on the supplied in-support `draw`;
 - a univariate `cdf` is monotone and in `[0, 1]`;
-- `params` works and `params_table` is a Tables.jl table
-  (`Tables.istable(params_table(d))`);
+- `params` works and `composed_to_table` is a Tables.jl table
+  (`Tables.istable(composed_to_table(d))`);
 - `event_names` (flat) and `event_tree` agree in leaf count;
 - `event(d, path...)` round-trips the supplied known path;
 - `observed_distribution` collapses a chain to a univariate scalar.
@@ -152,6 +162,7 @@ function test_interface(fix::InterfaceFixture; ad_gradient = nothing)
         _check_logpdf(d, fix)
         _check_cdf(d, fix)
         _check_params(d)
+        _check_estimation_dimension(d)
         _check_event_names(d, fix)
         _check_event_path(d, fix)
         _check_endpoint(d, fix)
@@ -251,15 +262,85 @@ function _check_cdf(d, fix)
     return nothing
 end
 
+# Walk `d` down to its real leaves (peeling wrapper layers with `free_leaf`),
+# calling `f` on each. Used only by the `param_names`/`params` alignment
+# check below; not part of the public interface.
+function _each_real_leaf(f, d)
+    if ComposedDistributions._is_composer_node(d)
+        for child in ComposedDistributions.node_children(d)
+            _each_real_leaf(f, child)
+        end
+    else
+        f(ComposedDistributions.free_leaf(d))
+    end
+    return nothing
+end
+
 function _check_params(d)
-    @testset "params / params_table" begin
+    @testset "params / composed_to_table" begin
         @test_nowarn params(d)
-        if d isa Union{Sequential, Parallel, Resolve, Choose}
-            tbl = params_table(d)
+        @test_nowarn _each_real_leaf(
+            ComposedDistributions._check_leaf_param_alignment, d)
+        if d isa AbstractComposedDistribution
+            tbl = composed_to_table(d)
             @test Tables.istable(tbl)
         end
     end
     return nothing
+end
+
+# The `flat_dimension` invariant (#374): the codec's estimated-parameter count
+# must agree with the table's estimated-row count (the `composed_to_table`
+# `:param` rows carrying an attached `uncertain` prior), so a node that
+# silently drops an uncertain leaf from the flat-vector codec (rather than
+# raising a loud error for a layout it cannot handle) is caught here instead
+# of shipping green. Skipped for a bare leaf (`flat_dimension` is defined
+# only over `AbstractComposedDistribution`).
+function _check_estimation_dimension(d)
+    d isa AbstractComposedDistribution || return nothing
+    @testset "flat_dimension matches composed_to_table's estimated rows" begin
+        tbl = composed_to_table(d)
+        expected = count(!isnothing, tbl.prior)
+        @test ComposedDistributions.flat_dimension(d) == expected
+    end
+    return nothing
+end
+
+@doc """
+
+Assert a composed distribution's estimated-parameter dimension matches its table.
+
+`test_estimation_dimension(d)` checks that
+[`ComposedDistributions.flat_dimension`](@ref)`(d)` equals the number of
+[`composed_to_table`](@ref)`(d)` rows carrying an attached prior (an
+[`ComposedDistributions.uncertain`](@ref) spec, or a `Resolve`'s
+uncertain `branch_probs`) — the flat-vector codec and the table walk must agree
+on how many free parameters a tree has. A composer node that silently drops an
+uncertain leaf from the codec (reporting a smaller `flat_dimension` than the
+table's estimated-row count, rather than raising a loud error for a layout it
+cannot handle) fails here (#374): [`test_interface`](@ref) and
+[`test_node_interface`](@ref) both call this, so this is normally exercised
+through them rather than called directly. Skipped for a bare leaf
+(`flat_dimension` is defined only over `AbstractComposedDistribution`). Returns
+the `@testset` object.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+using ComposedDistributions.TestUtils: test_estimation_dimension
+
+tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
+    alpha = LogNormal(log(2.0), 0.2)), admit_death = LogNormal(0.5, 0.4)))
+test_estimation_dimension(tree)
+nothing # hide
+```
+""" function test_estimation_dimension end
+
+function test_estimation_dimension(d;
+        name::AbstractString = string(nameof(typeof(d))))
+    return @testset "estimation dimension: $name" begin
+        _check_estimation_dimension(d)
+    end
 end
 
 # The flat event path and the nested `event_tree` must agree in leaf count:
@@ -551,15 +632,23 @@ end
 
 Assert a composer node satisfies the public node-extension contract.
 
-`test_node_interface(node)` checks the three methods a new composer node
-implements (`child_nleaves`, `child_logpdf`, `child_rand!`) round-trip on a flat
-event vector, the same way the composers walk one. It asserts that
+`test_node_interface(node)` checks that `node`'s `child_nleaves` / `child_logpdf`
+/ `child_rand!` (whether the node's own methods or the generic defaults derived
+from [`ComposedDistributions.node_children`](@ref)) round-trip on a flat event
+vector, the same way the composers walk one, and that its estimated-parameter
+dimension agrees with its own table (see below). It asserts that
 
 - `child_nleaves(node)` is a positive `Int`;
 - `child_rand!` fills exactly the node's `offset + 1 : offset + n` slot, leaving
   any padding either side untouched;
 - `child_logpdf(node, x, offset, n)` is a finite scalar on that drawn vector and
-  does not depend on the surrounding padding.
+  does not depend on the surrounding padding;
+- [`ComposedDistributions.flat_dimension`](@ref)`(node)` matches
+  [`composed_to_table`](@ref)`(node)`'s
+  estimated-row count (see [`test_estimation_dimension`](@ref)) — a node that
+  silently drops an uncertain leaf from the flat-vector codec instead of raising
+  a loud error fails here (#374), rather than passing with a smaller
+  `flat_dimension` than the table reports.
 
 Pass `offset` and `pad` to place the node inside a wider vector, and `rng` for a
 reproducible draw. Returns the `@testset` object.
@@ -605,6 +694,9 @@ function test_node_interface(node; name::AbstractString =
         # vector gives the same value (the node reads only its own slice).
         tight = out[slot]
         @test child_logpdf(node, tight, 0, n) ≈ lp
+
+        # The flat_dimension invariant (#374): see `test_estimation_dimension`.
+        _check_estimation_dimension(node)
     end
 end
 
@@ -663,6 +755,230 @@ under the wrong family fails here. Returns the `@testset` object.
         @test Sequential <: Distribution{Multivariate}
         @test Parallel <: Distribution{Multivariate}
         @test Choose <: Distribution{Multivariate}
+    end
+end
+
+# --- leaf-protocol completeness (#277) ---------------------------------------
+#
+# `free_leaf`/`rewrap_leaf` are the only two mandatory leaf-wrapper hooks; every
+# other hook (`uncertain_specs`, `shared_tag`, `leaf_mean`/`leaf_var`,
+# `extra_leaf_params`/`set_extra_leaf_params`) has a base default that a wrapper
+# implementing only the mandatory pair silently inherits. The defaults are
+# correct for a *fixed-structure* wrapper (nothing extra to report), so a
+# wrapper that DOES carry something through — an attached prior on the leaf it
+# wraps, a shared tie, a distinguishable moment — inherits the *wrong* default
+# and drops it with no error: `composed_to_table` shows the parameter as
+# fixed, `has_uncertain` is false, a tied leaf stops deduplicating. This builds
+# that exact scenario (an attached prior, a tie) around a caller-supplied
+# wrapper constructor and asserts each survives, naming the specific hook to
+# define when one does not.
+
+@doc """
+
+Assert a leaf-wrapper constructor implements the optional leaf-protocol hooks
+its wrapped content needs to stay visible.
+
+`test_leaf_protocol_completeness(wrap; leaf, prior, param, tag)` builds an
+[`uncertain`](@ref)-attached leaf and a [`shared`](@ref)-tagged leaf, applies
+the caller's wrapper constructor `wrap` (a one-argument function taking a
+`UnivariateDistribution` and returning the wrapped leaf) to each, and checks
+that what went in comes back out through the public leaf-protocol surface:
+
+- [`free_leaf`](@ref)/[`rewrap_leaf`](@ref) peel to and rebuild around the
+  native leaf (the two mandatory hooks; every wrapper needs these regardless
+  of what else it carries);
+- the attached `prior` on `param` survives into `wrap(...)`'s
+  [`uncertain_specs`](@ref) and `composed_to_table`'s `prior` column, and
+  [`has_uncertain`](@ref) is `true` (needs `uncertain_specs`, #277's headline
+  case: a wrapper implementing only `free_leaf`/`rewrap_leaf` silently reports
+  the parameter as fixed);
+- the `tag` survives into `wrap(...)`'s [`shared_tag`](@ref) (needs
+  `shared_tag`);
+- [`leaf_mean`](@ref)/[`leaf_var`](@ref) stay finite through the wrapper
+  (needs an override only when the wrapper's own structure changes the
+  moment — see the leaf-protocol guide).
+
+Each failure names the specific hook to define on the wrapper's own type, not
+just that the check failed. A wrapper that owns its own free parameter beyond
+the inner leaf's native ones (`extra_leaf_params`/`set_extra_leaf_params`) is
+not covered here — round-trip that pair directly in the wrapper's own tests,
+the way the package's own `Pool`/`Varying` extras are tested. Returns the
+`@testset` object.
+
+# Arguments
+- `wrap`: a one-argument function, `UnivariateDistribution -> leaf wrapper`.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+using ComposedDistributions.TestUtils: test_leaf_protocol_completeness
+
+# `truncated` is a built-in leaf wrapper implementing the full protocol.
+test_leaf_protocol_completeness(d -> truncated(d; upper = 10.0))
+nothing # hide
+```
+""" function test_leaf_protocol_completeness end
+
+function test_leaf_protocol_completeness(wrap::Function;
+        leaf::UnivariateDistribution = Distributions.Gamma(2.0, 1.0),
+        prior::UnivariateDistribution = LogNormal(0.0, 0.5),
+        param::Symbol = :alpha, tag::Symbol = :leaf_protocol_completeness_tag,
+        name::AbstractString = "wrapper")
+    return @testset "leaf-protocol completeness: $name" begin
+        # free_leaf / rewrap_leaf: the two mandatory hooks, checked on a plain
+        # (unattached) wrap of `leaf` so a failure here is not confused with the
+        # optional hooks checked below.
+        plain = wrap(leaf)
+        @testset "free_leaf / rewrap_leaf (mandatory)" begin
+            @test free_leaf(plain) == leaf
+            other = Distributions.Gamma(3.0, 1.5)
+            @test free_leaf(rewrap_leaf(plain, other)) == other
+        end
+
+        # uncertain_specs: an attached prior on the wrapped leaf must survive
+        # into composed_to_table's prior column and has_uncertain.
+        uleaf = uncertain(leaf; NamedTuple{(param,)}((prior,))...)
+        wrapped = wrap(uleaf)
+        @testset "uncertain_specs (prior survives the wrapper)" begin
+            specs = uncertain_specs(wrapped)
+            if specs === nothing || !haskey(specs, param)
+                wt = nameof(typeof(wrapped))
+                error("$name does not implement ComposedDistributions." *
+                      "uncertain_specs: the prior attached to :$param was " *
+                      "dropped and would be treated as fixed. Define " *
+                      "ComposedDistributions.uncertain_specs(::$wt) " *
+                      "forwarding to the wrapped leaf.")
+            else
+                @test specs[param] == prior
+            end
+            @test has_uncertain(wrapped)
+            # `composed_to_table` is a composer-tree method; wrap the leaf in
+            # a one-branch tree to reach it, matching how a leaf-protocol
+            # question is normally asked (a bare leaf never appears alone at
+            # the top of a fitted tree). Only the `:param` rows carry priors.
+            tbl = composed_to_table(compose((leaf_protocol_leaf = wrapped,)))
+            rows = findall(
+                i -> tbl.role[i] === :param && tbl.param[i] === param,
+                eachindex(tbl.param))
+            @test !isempty(rows)
+            @test any(!isnothing, tbl.prior[rows])
+        end
+
+        # shared_tag: a tie on the wrapped leaf must survive into the wrapper.
+        tagged = shared(tag, leaf)
+        wtagged = wrap(tagged)
+        @testset "shared_tag (tie survives the wrapper)" begin
+            got = shared_tag(wtagged)
+            if got !== tag
+                error("$name does not implement ComposedDistributions." *
+                      "shared_tag: the :$tag tie on the wrapped leaf was " *
+                      "not visible through the wrapper (got $(repr(got))). " *
+                      "Define ComposedDistributions.shared_tag(::" *
+                      "$(nameof(typeof(wtagged)))) forwarding to the wrapped " *
+                      "leaf.")
+            else
+                @test got == tag
+            end
+        end
+
+        # leaf_mean / leaf_var: must resolve to finite reals through the
+        # wrapper (correctness of the value, when the wrapper changes the
+        # moment, is the wrapper package's own responsibility to assert).
+        @testset "leaf_mean / leaf_var (moments visible through the wrapper)" begin
+            m, v = try
+                leaf_mean(plain), leaf_var(plain)
+            catch e
+                error("$name does not resolve ComposedDistributions.leaf_mean" *
+                      "/leaf_var through the wrapper ($(sprint(showerror, e)))" *
+                      ". Override them on $(nameof(typeof(plain))) if the " *
+                      "wrapper's structure changes the moment, or make sure " *
+                      "mean/var resolve on the wrapped leaf otherwise.")
+            end
+            @test m isa Real && isfinite(m)
+            @test v isa Real && isfinite(v)
+        end
+    end
+end
+
+# --- sampling-versus-density consistency (#278) -------------------------------
+
+@doc """
+
+Assert a univariate-collapsible distribution's `rand` and `logpdf`/`cdf`
+describe the same distribution.
+
+`test_sampling_consistency(d; nsamples, rng, cdf_tol_factor, moment_se)` draws
+`nsamples` realisations of `d` (a bare leaf, [`Resolve`](@ref)/[`Compete`](@ref)
+directly — both draw a scalar marginal — or any other composer's
+[`observed_distribution`](@ref), since a `Sequential`/`Parallel` itself draws a
+labelled `NamedTuple`, not a scalar) and checks that the empirical distribution
+agrees with the analytic one `logpdf`/`cdf` describe:
+
+- the empirical CDF stays within a Kolmogorov band of the analytic `cdf` at a
+  grid of quantiles (`cdf_tol_factor / sqrt(nsamples)`, `cdf_tol_factor = 1.36`
+  is the two-sided 95% band);
+- the empirical mean and variance stay within `moment_se` Monte Carlo standard
+  errors of `mean(d)` / `var(d)`.
+
+This catches a `rand` and `logpdf`/`cdf` that silently diverge — a class of bug
+interface conformance alone (shape and finiteness only) cannot see. `rng` is
+fixed by default so the check is reproducible, not a flaky statistical test;
+widen `cdf_tol_factor`/`moment_se` rather than reseeding if a true (not
+corrupted) fixture is marginal. Returns the `@testset` object.
+
+# Arguments
+- `d`: the univariate-collapsible distribution to check (`rand(d)` a scalar).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions, Random
+using ComposedDistributions.TestUtils: test_sampling_consistency
+
+test_sampling_consistency(Gamma(2.0, 1.0); rng = Xoshiro(1))
+nothing # hide
+```
+""" function test_sampling_consistency end
+
+function test_sampling_consistency(d; nsamples::Int = 100_000,
+        rng::AbstractRNG = Xoshiro(1), cdf_tol_factor::Float64 = 1.36,
+        moment_se::Float64 = 5.0,
+        name::AbstractString = string(nameof(typeof(d))))
+    r1 = rand(rng, d)
+    r1 isa Real || throw(ArgumentError(
+        "test_sampling_consistency needs a scalar-realising `d` (rand(d) " *
+        "gave a $(typeof(r1))); pass observed_distribution(d) for a " *
+        "Sequential/Parallel, or a genuinely univariate object directly."))
+    return @testset "sampling-vs-density consistency: $name" begin
+        draws = [r1; [rand(rng, d) for _ in 1:(nsamples - 1)]]
+
+        # Empirical CDF versus the analytic `cdf` on a grid of quantiles of the
+        # sample itself (so the grid always lands where the mass is).
+        sorted = sort(Float64.(draws))
+        band = cdf_tol_factor / sqrt(nsamples)
+        @testset "empirical cdf within the Kolmogorov band of the analytic cdf" begin
+            qs = (0.05, 0.25, 0.5, 0.75, 0.95)
+            for q in qs
+                x = sorted[clamp(round(Int, q * nsamples), 1, nsamples)]
+                emp = Statistics.mean(<=(x), sorted)
+                ana = cdf(d, x)
+                @test abs(emp - ana) <= band
+            end
+        end
+
+        @testset "empirical moments within the Monte Carlo error of mean/var" begin
+            n = length(sorted)
+            emp_mean = Statistics.mean(sorted)
+            emp_var = Statistics.var(sorted)
+            true_mean = mean(d)
+            true_var = var(d)
+            se_mean = sqrt(true_var / n)
+            @test abs(emp_mean - true_mean) <= moment_se * se_mean
+            # A rough SE for the sample variance (Normal-theory approximation);
+            # generous on purpose since this check only needs to catch a gross
+            # rand/logpdf divergence, not certify the estimator.
+            se_var = true_var * sqrt(2 / n)
+            @test abs(emp_var - true_var) <= moment_se * se_var
+        end
     end
 end
 

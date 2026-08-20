@@ -26,7 +26,7 @@ observed_distribution(seq)
 # See also
 - `convolved`: the chain-step convolution
 "
-observed_distribution(d::UnivariateDistribution) = d
+observed_distribution(d) = d
 
 function observed_distribution(d::Sequential)
     # Structural errors (a Parallel step) first: they name the real
@@ -77,19 +77,24 @@ end
 # throws the ordinary `MethodError` for the missing `Convolved` quantile.
 quantile(d::Sequential, p::Real) = quantile(observed_distribution(d), p)
 
-# Flatten a composer's components to the univariate leaves whose sum is the
-# chain's terminal time. A nested `Sequential` contributes its own steps; a
-# nested `Parallel` has no single terminal time, so a chain step that is itself
-# a `Parallel` cannot be collapsed and is rejected with a clear message.
+# Flatten a composer's components to the leaves whose sum is the chain's
+# terminal time. A nested `Sequential` contributes its own steps; a nested
+# `Parallel` has no single terminal time, so a chain step that is itself a
+# `Parallel` cannot be collapsed and is rejected with a clear message. The
+# accumulator is untyped so a duck-typed leaf (which need not subtype
+# `UnivariateDistribution`) can be pushed, then `map(identity, ...)` narrows the
+# element type on the way out: a chain of plain distributions must come back as
+# a distribution vector to reach `convolved`'s
+# `AbstractVector{<:UnivariateDistribution}` method.
 function _observed_leaves(components::Tuple)
-    leaves = UnivariateDistribution[]
+    leaves = Any[]
     for c in components
         _append_observed_leaves!(leaves, c)
     end
-    return leaves
+    return map(identity, leaves)
 end
 
-_append_observed_leaves!(leaves, c::UnivariateDistribution) = push!(leaves, c)
+_append_observed_leaves!(leaves, c) = push!(leaves, c)
 function _append_observed_leaves!(leaves, c::Sequential)
     for child in c.components
         _append_observed_leaves!(leaves, child)

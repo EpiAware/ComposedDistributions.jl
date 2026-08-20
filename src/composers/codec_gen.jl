@@ -7,7 +7,7 @@
 # count -- is a function of `typeof(d)` alone. This file walks that type once
 # per distinct concrete tree shape (inside `@generated` function bodies) and
 # emits code with the slot indices baked in as literals, replacing the old
-# runtime `Dict{Symbol, Any}` walk (`params_table` + `_nest_insert!` +
+# runtime `Dict{Symbol, Any}` walk (the `_ParamSink` walk + `_nest_insert!` +
 # `_freeze_tree`) that `unflatten` used to re-run on every call. That
 # Dict/`Any`-typed walk is #162's root cause (Enzyme's type analysis cannot
 # see through a `Dict{Symbol, Any}`/heap-boxed reconstruction); the generated
@@ -91,60 +91,35 @@ _CodecCtx() = _CodecCtx(0, Set{Symbol}(), Set{Symbol}(), Symbol[], Any[],
 # `Symbol` reading the node from the top-level `d` argument.
 
 function _unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
-    if T <: Sequential || T <: Parallel
-        return _composer_unflatten_expr(access, :components, T, ctx)
-    elseif T <: Choose
-        return _composer_unflatten_expr(access, :alternatives, T, ctx)
-    elseif T <: Resolve
+    if T <: Resolve
         return _resolve_unflatten_expr(access, T, ctx)
-    elseif T <: Compete
-        return _composer_unflatten_expr(access, :delays, T, ctx)
     elseif T <: Union{Convolved, Difference}
         return _composite_unflatten_expr(access, T, ctx)
+    elseif T <: AbstractComposedDistribution
+        return _generic_node_unflatten_expr(access, T, ctx)
     else
         return _leaf_unflatten_expr(access, T, ctx)
     end
 end
 
-# The component types of a see-through composite leaf (`Convolved`/
-# `Difference` used as a leaf, `convolved_interop.jl`), mirroring
-# `_node_children` at the type level: `Convolved{C<:Tuple, Method}`'s
-# components are `C`'s own type parameters; `Difference{X, Y, Method}` has
-# exactly the two fixed operand types.
-_composite_child_types(::Type{<:Convolved{C}}) where {C} = Tuple(C.parameters)
-_composite_child_types(::Type{<:Difference{X, Y}}) where {X, Y} = (X, Y)
-
-# A composite leaf's node children are namespaced `component_1, component_2,
-# ...` (mirroring `_composite_component_names` in `convolved_interop.jl`,
-# computed independently here so this file has no include-order dependency on
-# it) and read at runtime through the generic `_node_children` accessor (so
-# `Convolved`'s `.components` tuple and `Difference`'s `(.x, .y)` pair share
-# one code path, exactly as `_walk_rows!`/`_update` already do).
-function _composite_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
-    ctypes = _composite_child_types(T)
-    keys_out = Symbol[]
-    vals_out = Any[]
-    for i in eachindex(ctypes)
-        child_access = :(ComposedDistributions._node_children($access)[$i])
-        e = _unflatten_expr(child_access, ctypes[i], ctx)
-        e === nothing && continue
-        push!(keys_out, Symbol(:component_, i))
-        push!(vals_out, e)
-    end
-    return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
-end
-
-# Sequential/Parallel/Choose/Compete share the same shape: named children
-# recursed positionally, skipping any `nothing` (tag-suppressed) entry.
-function _composer_unflatten_expr(
-        access, field::Symbol, ::Type{T}, ctx::_CodecCtx) where {T}
-    names = T.parameters[1]::Tuple
-    C = T.parameters[2]
-    ctypes = C.parameters
+# EVERY composer node except `Resolve`, whose stick-breaking simplex needs its
+# own handling: the built-ins and a downstream type take the same path, so the
+# shipped composers exercise exactly what a third-party node does rather than a
+# parallel branch that can drift from it -- which is the class of bug #374 was.
+#
+# The (names, child types) layout is read purely from the node's own type
+# parameters -- see `_generic_node_layout`'s docstring for why this must never
+# call a method the generator cannot see -- and each child is reached at
+# RUNTIME through the public `node_children` accessor: a plain call embedded in
+# the returned code, not evaluated by the generator itself, so it carries no
+# world-age risk. Landing here rather than falling through to the leaf branch
+# below (and silently reporting zero estimated parameters) is what #374 closes.
+function _generic_node_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
+    names, ctypes = _generic_node_layout(T)
     keys_out = Symbol[]
     vals_out = Any[]
     for i in eachindex(names)
-        child_access = :($access.$field[$i])
+        child_access = :(ComposedDistributions.node_children($access)[$i])
         e = _unflatten_expr(child_access, ctypes[i], ctx)
         e === nothing && continue
         push!(keys_out, names[i])
@@ -153,11 +128,77 @@ function _composer_unflatten_expr(
     return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
 end
 
+# The (names, child types) layout of a downstream composer node, read purely
+# from its own type parameters -- no method call, so reading it cannot hit the
+# world-age wall a `@generated` function calling a downstream-extensible
+# method would (measured: a `@generated` function cannot see a method a
+# downstream package defines, even after both packages are fully loaded and
+# precompiled -- see `docs/src/developer/extending.md`). By
+# convention, a node wanting codec (`flat_dimension`/`flatten`/`unflatten`/
+# `reconstruct`) support declares its own child names (a `Tuple` of `Symbol`,
+# matching `component_names`) and its children's types (a `Tuple` type,
+# matching `node_children`'s return type) as its first two type parameters,
+# in that order -- exactly the shape `Sequential`/`Parallel`/`Choose`/
+# `Compete` already use. Throws a clear, actionable error naming the type
+# when a node subtyping `AbstractComposedDistribution` does not have that
+# shape, rather than silently falling through to the leaf branch (#374's
+# root cause).
+function _generic_node_layout(::Type{T}) where {T}
+    P = T.parameters
+    if length(P) < 2 || !(P[1] isa Tuple) || !all(n -> n isa Symbol, P[1]) ||
+       !(P[2] isa Type) || !(P[2] <: Tuple)
+        throw(ArgumentError(
+            "$T subtypes AbstractComposedDistribution but does not expose " *
+            "a (names::Tuple{Vararg{Symbol}}, children::Tuple-type) layout " *
+            "as its first two type parameters, so the flat-vector codec " *
+            "cannot read its layout at compile time. Give it that shape " *
+            "(see the \"Writing a new composer node\" developer docs " *
+            "section on node_children/node_rebuild), or avoid calling " *
+            "flat_dimension/flatten/unflatten/reconstruct on a tree " *
+            "containing it."))
+    end
+    names = P[1]::Tuple
+    ctypes = P[2].parameters
+    length(names) == length(ctypes) || throw(ArgumentError(
+        "$T declares $(length(names)) names but $(length(ctypes)) child " *
+        "types; node_children(::$(nameof(T))) must return one child per " *
+        "name, matching component_names(::$(nameof(T)))"))
+    return names, ctypes
+end
+
+# The component types of a see-through composite leaf (`Convolved`/
+# `Difference` used as a leaf, `convolved_interop.jl`), mirroring
+# `node_children` at the type level: `Convolved{C<:Tuple, Method}`'s
+# components are `C`'s own type parameters; `Difference{X, Y, Method}` has
+# exactly the two fixed operand types.
+_composite_child_types(::Type{<:Convolved{C}}) where {C} = Tuple(C.parameters)
+_composite_child_types(::Type{<:Difference{X, Y}}) where {X, Y} = (X, Y)
+
+# A composite leaf's node children are namespaced `component_1, component_2,
+# ...` (mirroring `_composite_component_names` in `convolved_interop.jl`,
+# computed independently here so this file has no include-order dependency on
+# it) and read at runtime through the generic `node_children` accessor (so
+# `Convolved`'s `.components` tuple and `Difference`'s `(.x, .y)` pair share
+# one code path, exactly as `_walk_rows!`/`_update` already do).
+function _composite_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
+    ctypes = _composite_child_types(T)
+    keys_out = Symbol[]
+    vals_out = Any[]
+    for i in eachindex(ctypes)
+        child_access = :(ComposedDistributions.node_children($access)[$i])
+        e = _unflatten_expr(child_access, ctypes[i], ctx)
+        e === nothing && continue
+        push!(keys_out, Symbol(:component_, i))
+        push!(vals_out, e)
+    end
+    return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
+end
+
 # `Resolve{names, D, P, S}`: the outcome delays (skipping a `NoEvent` branch,
 # which carries no parameters and no entry, mirroring `_walk_rows!`), plus a
-# `branch_probs` entry: the K-1 stick coordinates when `S <: Dirichlet` (the
-# node's simplex is estimated), else the current fixed per-outcome
-# probabilities (read at runtime, not baked in).
+# `branch_probs` entry: the K-1 stick coordinates when `S <: Dirichlet` or
+# `S <: NoPrior` (the node's simplex is estimated), else the current fixed
+# per-outcome probabilities (read at runtime, not baked in).
 function _resolve_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
     names = T.parameters[1]::Tuple
     D = T.parameters[2]
@@ -173,7 +214,7 @@ function _resolve_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
         push!(keys_out, names[i])
         push!(vals_out, e)
     end
-    bp_expr = if S <: Distributions.Dirichlet
+    bp_expr = if S <: Union{Distributions.Dirichlet, NoPrior}
         K = length(names)
         stick_names = ntuple(k -> Symbol(:stick_, k), K - 1)
         stick_vals = map(1:(K - 1)) do _
@@ -202,8 +243,8 @@ end
 #
 # `_leaf_entry`'s own substitution contract (introspection.jl) consumes
 # `slots` positionally IN `leaf_param_names(leaf)` ORDER, not `speckeys`'s own
-# kwargs order (a user can write `uncertain(Gamma(2, 1); scale = ..., shape =
-# ...)`, scale first, while Gamma's native order is `(shape, scale)`). Since
+# kwargs order (a user can write `uncertain(Gamma(2, 1); theta = ..., alpha =
+# ...)`, theta first, while Gamma's native order is `(alpha, theta)`). Since
 # S3 removed the type-level table this generator once used to compute that
 # order at generation time, this walk cannot bake per-name literal `x`
 # indices in `leaf_param_names` order any more -- so it does not try to:
@@ -361,9 +402,9 @@ differentiate through it.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# One estimated parameter (onset_admit.shape); the rest stay at the template.
+# One estimated parameter (onset_admit.alpha); the rest stay at the template.
 # Public but not exported; reach it by the qualified name.
 update(tree, ComposedDistributions.unflatten(tree, [3.0]))
 ```
@@ -391,9 +432,10 @@ end
 The estimated parameter dimension of a composed distribution.
 
 `flat_dimension(d)` is the number of scalar estimated parameters: the count of
-[`uncertain`](@ref) specs across the tree, i.e. the [`params_table`](@ref) rows
-whose `prior` column carries a spec. A fixed (non-uncertain) leaf contributes
-nothing, so a tree with no uncertain leaves has flat dimension 0. It is the
+[`uncertain`](@ref) specs across the tree, i.e. the [`composed_to_table`](@ref)
+`:param` rows whose `prior` column carries a spec. A fixed (non-uncertain) leaf
+contributes nothing, so a tree with no uncertain leaves has flat dimension 0.
+It is the
 length of the flat vector [`flatten`](@ref) produces and [`unflatten`](@ref)
 consumes. Read straight off the same compile-time layout walk `unflatten` uses
 (a literal count baked in at generation time), so it cannot drift from the
@@ -407,10 +449,10 @@ codec.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
 # Public but not exported; reach it by the qualified name. Only onset_admit's
-# shape is uncertain, so the dimension is 1.
+# alpha is uncertain, so the dimension is 1.
 ComposedDistributions.flat_dimension(tree)
 ```
 
@@ -454,18 +496,29 @@ end
 
 function _flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{T},
         ctx::_CodecCtx) where {T}
-    if T <: Sequential || T <: Parallel
-        _composer_flatten_reads!(exprs, d_access, :components, nt_access, T, ctx)
-    elseif T <: Choose
-        _composer_flatten_reads!(exprs, d_access, :alternatives, nt_access, T, ctx)
-    elseif T <: Resolve
+    if T <: Resolve
         _resolve_flatten_reads!(exprs, d_access, nt_access, T, ctx)
-    elseif T <: Compete
-        _composer_flatten_reads!(exprs, d_access, :delays, nt_access, T, ctx)
     elseif T <: Union{Convolved, Difference}
         _composite_flatten_reads!(exprs, d_access, nt_access, T, ctx)
+    elseif T <: AbstractComposedDistribution
+        _generic_node_flatten_reads!(exprs, d_access, nt_access, T, ctx)
     else
         _leaf_flatten_reads!(exprs, d_access, nt_access, T, ctx)
+    end
+    return nothing
+end
+
+# The read-direction counterpart of `_generic_node_unflatten_expr`: same
+# type-parameter layout read, same `node_children` runtime access, appending
+# NamedTuple-read expressions instead of building NamedTuple-construction
+# ones.
+function _generic_node_flatten_reads!(exprs::Vector, d_access, nt_access,
+        ::Type{T}, ctx::_CodecCtx) where {T}
+    names, ctypes = _generic_node_layout(T)
+    for i in eachindex(names)
+        _flatten_reads!(exprs,
+            :(ComposedDistributions.node_children($d_access)[$i]),
+            :($nt_access.$(names[i])), ctypes[i], ctx)
     end
     return nothing
 end
@@ -474,21 +527,9 @@ function _composite_flatten_reads!(
         exprs::Vector, d_access, nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
     ctypes = _composite_child_types(T)
     for i in eachindex(ctypes)
-        child_access = :(ComposedDistributions._node_children($d_access)[$i])
+        child_access = :(ComposedDistributions.node_children($d_access)[$i])
         _flatten_reads!(exprs, child_access,
             :($nt_access.$(Symbol(:component_, i))), ctypes[i], ctx)
-    end
-    return nothing
-end
-
-function _composer_flatten_reads!(exprs::Vector, d_access, field::Symbol,
-        nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
-    names = T.parameters[1]::Tuple
-    C = T.parameters[2]
-    ctypes = C.parameters
-    for i in eachindex(names)
-        _flatten_reads!(exprs, :($d_access.$field[$i]),
-            :($nt_access.$(names[i])), ctypes[i], ctx)
     end
     return nothing
 end
@@ -504,7 +545,7 @@ function _resolve_flatten_reads!(
         _flatten_reads!(exprs, :($d_access.delays[$i]),
             :($nt_access.$(names[i])), dtypes[i], ctx)
     end
-    if S <: Distributions.Dirichlet
+    if S <: Union{Distributions.Dirichlet, NoPrior}
         K = length(names)
         bp_access = :($nt_access.branch_probs)
         for k in 1:(K - 1)
@@ -583,10 +624,11 @@ end
 Flatten a nested parameter `NamedTuple` to the estimated flat vector.
 
 `flatten(d, nt)` reads `nt` (keyed like [`params`](@ref)`(d)`, the shape
-[`update`](@ref) consumes) at each estimated [`params_table`](@ref) row (an
-[`uncertain`](@ref) spec's parameter) and returns those values as a `Vector`,
-in table order restricted to the spec'd rows. A fixed parameter is not read. It
-is the inverse of [`unflatten`](@ref): `flatten(d, unflatten(d, x)) == x`.
+[`update`](@ref) consumes) at each estimated [`composed_to_table`](@ref)
+`:param` row (an [`uncertain`](@ref) spec's parameter) and returns those
+values as a `Vector`, in table order restricted to the spec'd rows. A fixed
+parameter is not read. It is the inverse of [`unflatten`](@ref): `flatten(d,
+unflatten(d, x)) == x`.
 
 Shares the same compile-time layout walk `unflatten` uses (a thin generated
 view over it), so the two cannot drift apart.
@@ -600,9 +642,9 @@ view over it), so the two cannot drift apart.
 using ComposedDistributions, Distributions
 
 tree = compose((
-    onset_admit = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2)),
+    onset_admit = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# The estimated vector is 1-long (onset_admit.shape); round-trip it.
+# The estimated vector is 1-long (onset_admit.alpha); round-trip it.
 # Public but not exported; reach the codec by the qualified name.
 nt = ComposedDistributions.unflatten(tree, [2.0])
 ComposedDistributions.flatten(tree, nt)
@@ -648,7 +690,7 @@ is [`unflatten`](@ref)'s, and `update`'s inferrability is inherited from it.
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)),
+    alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
 ComposedDistributions.reconstruct(tree, [3.0])
 ```

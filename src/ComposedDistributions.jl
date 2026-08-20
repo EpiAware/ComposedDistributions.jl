@@ -7,12 +7,14 @@ independent branches ([`Parallel`](@ref)), fixed-probability or racing one_of
 outcomes ([`Resolve`](@ref) / [`Compete`](@ref)) and data-selected disjunctions
 ([`Choose`](@ref)); the [`compose`](@ref) front-end lowers a NamedTuple, a
 Tables.jl table, or a nested matrix to the same stack. Read the structure with
-[`params_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), build priors
-with [`build_priors`](@ref), and edit the tree with [`update`](@ref) /
-[`prune`](@ref) / [`splice`](@ref). Attach parameter uncertainty with
-[`uncertain`](@ref) (parameters that are themselves distributions, nestable):
-`rand` draws the marginal, and [`update`](@ref) collapses an uncertain leaf to
-its concrete template.
+[`composed_to_table`](@ref) / [`event_names`](@ref) / [`event`](@ref), and edit
+the tree with [`update`](@ref) / [`prune`](@ref) / [`splice`](@ref). Attach
+parameter uncertainty with [`uncertain`](@ref) (parameters that are themselves
+distributions, or the [`no_prior`](@ref) marker for a parameter that is free
+with no prior chosen yet, nestable): `rand` draws the marginal, and
+[`update`](@ref) collapses an uncertain leaf to its concrete template. Prior
+selection itself belongs to DistributionsInference.jl, not this package (see
+[`no_prior`](@ref)).
 
 Hard-deps `ConvolvedDistributions` (a chain collapses to a convolved total via
 [`observed_distribution`](@ref)) and extends its `convolve_series`/`difference`
@@ -25,9 +27,9 @@ censoring: this is the generic composition layer.
 ```@example
 using ComposedDistributions, Distributions
 
-# A two-step delay chain, then its parameter table.
+# A two-step delay chain, then its structural table.
 tree = compose((onset_admit = [Gamma(2.0, 1.0), LogNormal(0.5, 0.4)],))
-params_table(tree)
+composed_to_table(tree)
 ```
 """
 module ComposedDistributions
@@ -41,8 +43,9 @@ import Base: minimum, maximum
 
 # Types, constructors, and helpers used without method extension.
 using Distributions: Distributions, UnivariateDistribution, Distribution,
-                     Continuous, Multivariate, Univariate, VariateForm,
-                     ValueSupport, MixtureModel, Truncated, truncated, censored
+                     Continuous, Discrete, Multivariate, Univariate,
+                     VariateForm, ValueSupport, MixtureModel, Truncated,
+                     truncated, censored
 
 using LogExpFunctions: log1mexp
 
@@ -102,6 +105,12 @@ export Shared, shared, tie
 # `update` (the rest of the surface silently reports the template's values).
 export Uncertain, uncertain, has_uncertain, @uncertain
 
+# The "free, no prior yet" spec marker: `no_prior()` marks a parameter
+# estimated without choosing a prior for it (prior choice is
+# DistributionsInference.jl's job, not this package's). Bare `uncertain(tree)`
+# applies it to every currently-fixed free parameter.
+export NoPrior, no_prior
+
 # Event-skeleton topology: `@events` declares an event tree's structure (named
 # holes joined by → / | / & operators) with no distributions attached;
 # `update(skeleton; name = dist, ...)` fills the holes and builds the concrete
@@ -126,16 +135,15 @@ export Pool, pool
 export Varying, varying, Context, AbstractContext, instantiate, with_covariates,
        has_varying, required_covariates, required_parameters, missing_covariates
 
-# Introspection: the flat prior table and name introspection. `event_names` is
-# the flat per-event name tuple; `event_tree` the nested tree of event names;
-# `event` fetches a child or descends a path. `param_priors` is the tree-level
-# front-door over `build_priors`; `inspect` is the opt-in detailed tree print.
-# `update` is `public`, not exported (see `public.jl`): several ecosystem
-# packages have their own `update`-shaped verb, and exporting it risks the
-# same ambiguous-binding clash #233 hit with `as_turing` when two packages
-# both export a same-named generic (#221).
-export params_table, event_names, event_tree, event, build_priors,
-       default_prior, param_priors, inspect, reserved_record_fields
+# Introspection: the flat parameter table and name introspection.
+# `event_names` is the flat per-event name tuple; `event_tree` the nested tree
+# of event names; `event` fetches a child or descends a path. `inspect` is the
+# opt-in detailed tree print. `update` is `public`, not exported (see
+# `public.jl`): several ecosystem packages have their own `update`-shaped
+# verb, and exporting it risks the same ambiguous-binding clash #233 hit with
+# `as_turing` when two packages both export a same-named generic (#221).
+export composed_to_table, event_names, event_tree, event, inspect,
+       reserved_record_fields
 
 # Record transforms: `event_times` maps a drawn record of per-step increments
 # to absolute positions from the origin; `event_increments` is the inverse.
@@ -153,6 +161,10 @@ export elapsed_between
 
 # --- includes --------------------------------------------------------------
 
+# The `NoPrior`/`no_prior()` spec marker: first, before every composer type,
+# so `Resolve.jl`'s `branch_prob_prior` and every later file can dispatch on
+# it directly.
+include("composers/no_prior.jl")
 include("composers/Sequential.jl")
 include("composers/Parallel.jl")
 include("composers/Resolve.jl")
@@ -160,6 +172,10 @@ include("composers/Resolve.jl")
 # Resolve since it builds on `AbstractOneOf` / the `_n_branches` / `_is_no_event`
 # helpers.
 include("composers/Compete.jl")
+# Numeric inverse cdf for the one_of family (`Resolve` / `Compete`), by
+# bracketed bisection on their marginal `cdf`. After Compete.jl so both
+# concrete nodes and their `cdf` / `minimum` / `maximum` methods exist.
+include("composers/one_of_quantile.jl")
 include("composers/Choose.jl")
 # Shared nesting machinery, defined once all composer types exist.
 include("composers/nesting.jl")
@@ -167,7 +183,7 @@ include("composers/equality.jl")
 include("composers/compose.jl")
 include("composers/introspection.jl")
 # Structural edits (`update` node replace / `prune` / `splice`): after
-# introspection so it reuses `_rebuild`, `component_names`, `_split_edge` and
+# introspection so it reuses `node_rebuild`, `component_names`, `_split_edge` and
 # the `update` value method.
 include("composers/structural_edits.jl")
 # Event-skeleton topology + the `@events` macro. After introspection (the fill
@@ -180,8 +196,8 @@ include("composers/events_macro.jl")
 # `free_leaf`/`rewrap_leaf`, and after the structural edits (reuses `_edit_at`).
 include("composers/Shared.jl")
 # Uncertain (distribution-valued parameters): after introspection (extends
-# `free_leaf` / `rewrap_leaf` / `_uncertain_specs`, reuses `_update_leaf` /
-# `_rebuild`) and Shared (forwards `_shared_tag` / `_uncertain_specs` through
+# `free_leaf` / `rewrap_leaf` / `uncertain_specs`, reuses `_update_leaf` /
+# `node_rebuild`) and Shared (forwards `shared_tag` / `uncertain_specs` through
 # the tag wrapper).
 include("composers/Uncertain.jl")
 # The `@uncertain` syntax front-end over the positional `uncertain` family
@@ -189,13 +205,13 @@ include("composers/Uncertain.jl")
 include("composers/uncertain_macro.jl")
 # Partial pooling (a parameter pooled, across a group of leaves, through one
 # estimated population). After Uncertain (a `Pool` rides an uncertain leaf's
-# specs) and introspection (it reuses `_node_children`/`_split_edge`/`_join_path`
+# specs) and introspection (it reuses `node_children`/`_split_edge`/`_join_path`
 # /`_update_leaf` and the `_walk_rows!` / `_update` leaf hooks).
 include("composers/Pool.jl")
 # Context-indexed leaves + the `instantiate` resolution seam. After every
 # composer type exists (it rebuilds Sequential/Parallel/Choose/Resolve/Compete/
 # Shared against a context) and after introspection (it extends free_leaf/
-# rewrap_leaf/_shared_tag for the Varying leaf).
+# rewrap_leaf/shared_tag for the Varying leaf).
 include("composers/varying.jl")
 # `Censored` (Distributions.jl's `censored(...)` wrapper) leaf-protocol parity
 # with `Truncated`, plus the tree-level truncated/censored guard. After
@@ -213,10 +229,16 @@ include("composers/tree_events.jl")
 # Collapse a chain to its observed convolved total. After the composers.
 include("composers/observed.jl")
 # ConvolvedDistributions interop (vector convolution, difference, composite
-# leaves): after observed.jl (the collapse), introspection.jl (the params_table
-# / update walks it extends to see through a composite leaf) and Uncertain.jl
+# leaves): after observed.jl (the collapse), introspection.jl (the
+# composed_to_table / update walks it extends to see through a composite leaf)
+# and Uncertain.jl
 # (it extends `has_uncertain` for a composite carrying an uncertain component).
 include("composers/convolved_interop.jl")
+# compose(table): the round-trip reader for a `composed_to_table` table. Last
+# of the composer files it walks — every node, leaf-wrapper and composite type
+# it rebuilds, and the `update(d, table)` writer it finishes with, must exist
+# first.
+include("composers/table_compose.jl")
 # Distribution-level elapsed-distance accessors over a named chain: after
 # observed.jl (`_observed_leaves`), introspection.jl (`event_names`) and the
 # `convolved` re-export, whose public verbs it reads.

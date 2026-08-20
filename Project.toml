@@ -16,15 +16,12 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [weakdeps]
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
-Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
-OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"
 
 [extensions]
 ComposedDistributionsMooncakeExt = "Mooncake"
-ComposedDistributionsOptimizationExt = ["Optimization", "OptimizationOptimJL"]
 
 [compat]
-ConvolvedDistributions = "0.4, 1"
+ConvolvedDistributions = "0.4.1, 1"
 Distributions = "0.25"
 DocStringExtensions = "0.9"
 # Floored at 0.1.2: the release that hosts the shared `xlogy`/`xlog1py`
@@ -36,8 +33,6 @@ DocStringExtensions = "0.9"
 EpiAwareADTools = "0.1.2, 0.2"
 LogExpFunctions = "0.3, 1"
 Mooncake = "0.5"
-Optimization = "4, 5"
-OptimizationOptimJL = "0.4.3"
 Random = "1"
 Statistics = "1"
 Tables = "1"

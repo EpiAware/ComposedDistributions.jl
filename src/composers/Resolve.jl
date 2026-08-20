@@ -109,7 +109,8 @@ Being univariate, a `Resolve` nests as a child of [`Sequential`](@ref) or
 selection and censoring are not part of this type.
 
 The branch probabilities are ordinarily fixed structure. To estimate them,
-attach a simplex-valued `Distributions.Dirichlet` prior with
+attach a simplex-valued `Distributions.Dirichlet` prior (or the
+[`no_prior`](@ref)`()` marker, free with no prior chosen yet) with
 [`update`](@ref)`(node, (branch_probs = Dirichlet(α),))`: the `Dirichlet` is
 what you write, but the codec estimates the node through the `Dirichlet`'s K-1
 stick-breaking coordinates (`:stick_1 … :stick_{K-1}`, each a `Beta`, so every
@@ -122,12 +123,14 @@ probabilities are recovered from any draw (via [`update`](@ref) /
   (read with [`component_names`](@ref)).
 - `delays`: tuple of the one_of outcome delay distributions.
 - `branch_probs`: tuple of the branch probabilities, summing to one.
-- `branch_prob_prior`: the attached `Dirichlet` prior when the branch
-  probabilities are uncertain, else `nothing` (fixed structure).
+- `branch_prob_prior`: the attached `Dirichlet` prior (or [`no_prior`](@ref)
+  marker) when the branch probabilities are uncertain, else `nothing` (fixed
+  structure).
 
 # See also
 - [`as_mixture`](@ref): the `MixtureModel` lowering
-- [`update`](@ref): attach a `Dirichlet` to estimate the branch probabilities
+- [`update`](@ref): attach a `Dirichlet`/`no_prior()` to estimate the branch
+  probabilities
 - [`Sequential`](@ref): a chain of additive steps
 - [`Parallel`](@ref): independent branches
 "
@@ -137,9 +140,10 @@ struct Resolve{names, D <: Tuple, P <: Tuple, S} <: AbstractOneOf
     "Tuple of the branch probabilities, summing to one."
     branch_probs::P
     "The attached simplex-valued prior over the branch probabilities (a
-    `Distributions.Dirichlet`), or `nothing` when the probabilities are fixed
-    structure. When present the branch probabilities are estimated through the
-    stick-breaking codec: the user writes the `Dirichlet`, K-1 stick
+    `Distributions.Dirichlet`, or the `no_prior()` marker), or `nothing` when
+    the probabilities are fixed structure. When present the branch
+    probabilities are estimated through the stick-breaking codec: the user
+    writes the `Dirichlet` (or marks it `no_prior()`), K-1 stick
     coordinates are what the sampler estimates, and the probabilities are
     recovered from any draw (see [`update`](@ref))."
     branch_prob_prior::S
@@ -185,23 +189,71 @@ function Resolve(names::C, delays::D, branch_probs::P,
     return Resolve{names}(delays, branch_probs, branch_prob_prior)
 end
 
-component_names(::Resolve{names}) where {names} = names
+# The attached `branch_prob_prior` (an uncertain node's `Dirichlet`) is fixed
+# structure at the node itself, not a per-outcome free parameter (its K-1
+# stick coordinates ride the node's own `:param` rows separately). A fixed
+# node (no attached prior) reports no attributes.
+#
+# An UNCERTAIN node also reports its probabilities here, because its `:param`
+# rows are the K-1 stick coordinates rather than the simplex: recovering the
+# probabilities from those is a stick-breaking round trip that agrees only to
+# floating-point rounding (a `(0.7, 0.3)` node comes back `(0.7,
+# 0.30000000000000004)`), so the node's own point rides an `:attribute` row
+# instead. Exactly the reason a pooled parameter's `:attribute` row carries its
+# `template` value (`Pool.jl`): wherever the `:param` rows are a reparameterised
+# latent, the node's own value is fixed structure alongside them. A FIXED node
+# needs none — its `:param` rows ARE its probabilities, one per outcome.
+function node_attributes(c::Resolve)
+    return c.branch_prob_prior === nothing ? (;) :
+           (; branch_prob_prior = c.branch_prob_prior,
+        branch_probs = c.branch_probs)
+end
+
+# The reverse. Names come first, and the branch probabilities are node-level
+# rather than children, so they reach `attrs` by one of two routes depending on
+# whether the node is uncertain -- and the `branch_prob_prior` entry is what
+# says which:
+#
+#   - FIXED (no prior): the probabilities are `:param` rows, one per outcome,
+#     under the node's `<edge>.branch_probs` edge, and arrive as that block.
+#   - UNCERTAIN: the `:param` rows there are stick coordinates, so the node's
+#     own probabilities ride its `:attribute` row instead (see
+#     `node_attributes` above) and win the merge.
+#
+# `update(d, table)` writes the prior back over this afterwards; the
+# probabilities it leaves alone (merge mode keeps the node's own), which is
+# why they have to be right here rather than approximately right.
+function from_table(::Type{<:Resolve}, names::Tuple, children::Tuple,
+        attrs::NamedTuple)
+    prior = get(attrs, :branch_prob_prior, nothing)
+    haskey(attrs, :branch_probs) || throw(ArgumentError(
+        "compose(table): a Resolve node has neither `branch_probs` rows nor " *
+        "a `branch_probs` attribute; composed_to_table writes one or the " *
+        "other for every Resolve"))
+    block = attrs.branch_probs
+    probs = prior === nothing ? Tuple(block[n] for n in names) : Tuple(block)
+    return Resolve(names, children, probs, prior)
+end
 
 # A `Resolve` with no attached prior is fixed structure; this three-argument
 # form keeps every existing construction path (the `Pair...` constructor,
-# `_rebuild`, `prune`, equality round-trips) building a fixed node unchanged.
+# `node_rebuild`, `prune`, equality round-trips) building a fixed node unchanged.
 function Resolve(names::Tuple, delays::Tuple, branch_probs::Tuple)
     return Resolve(names, delays, branch_probs, nothing)
 end
 
 # A fixed node has no branch-probability prior. An attached prior must be a
 # `Distributions.Dirichlet` over the `k` outcomes (one weight per outcome); it
-# is decomposed into K-1 stick-breaking `Beta`s by the codec.
+# is decomposed into K-1 stick-breaking `Beta`s by the codec. `NoPrior`
+# (`no_prior.jl`) marks the simplex estimated with no prior chosen yet — the
+# marker carries no outcome count of its own, so it skips the length check a
+# `Dirichlet` needs.
 _validate_branch_prob_prior(::Nothing, ::Int) = nothing
+_validate_branch_prob_prior(::NoPrior, ::Int) = nothing
 function _validate_branch_prob_prior(prior, k::Int)
     prior isa Distributions.Dirichlet || throw(ArgumentError(
         "the branch-probability prior must be a `Dirichlet` over the $k " *
-        "outcomes; got a $(typeof(prior))"))
+        "outcomes, or no_prior() (free, no prior yet); got a $(typeof(prior))"))
     length(prior) == k || throw(ArgumentError(
         "the branch-probability `Dirichlet` prior must have one weight per " *
         "outcome (length $k); got length $(length(prior))"))
@@ -221,7 +273,8 @@ end
 # backend) and needs only K-1 free dimensions (the simplex dimension).
 
 # The stick-coordinate parameter name for coordinate `k` (`:stick_k`), the label
-# a fitted chain and `params_table` carry for the estimated branch-prob simplex.
+# a fitted chain and `composed_to_table` carry for the estimated branch-prob
+# simplex.
 _stick_name(k::Int) = Symbol(:stick_, k)
 
 # The K-1 stick-coordinate names for a `k`-outcome node.
@@ -507,22 +560,26 @@ function _fill_residual_outcome(outcomes::Tuple)
 end
 
 # A `(delay, branch_prob)` mixture payload vs a bare-delay hazard payload. A
-# one_of outcome delay may be a plain univariate leaf or a composer subtree
+# one_of outcome delay may be a plain leaf or a composer subtree
 # (`Sequential` / `Parallel` / `Choose` / nested `Resolve`, the non-terminal
-# branch of #466 Feature 3); `_is_one_of_branch` (defined in `nesting.jl`, once
-# those types exist) is the runtime admit-check, so the predicates stay value-based
-# rather than referencing the later-loaded composer types in their signatures. A
-# `NoEvent` marker is admitted only in the mixture (it carries the no-event mass
-# `q`); a bare `NoEvent` in a hazard node has no hazard and is rejected by the
-# `Compete` constructor.
-_is_prob_payload(p::Tuple{Any, <:Real}) = _is_one_of_branch(p[1])
+# branch of #466 Feature 3); `is_composable` (defined in `nesting.jl`, once
+# those types exist) is the runtime admit-check, so the predicates stay
+# value-based rather than referencing the later-loaded composer types in their
+# signatures. It doubles as the payload-shape discriminator here, so a
+# duck-typed leaf reads as the delay it is rather than falling through to a
+# misleading "the given mix is unclear" error, which is what a whitelist that
+# did not know the leaf produced.
+# A `NoEvent` marker is admitted only in the mixture (it carries
+# the no-event mass `q`); a bare `NoEvent` in a hazard node has no hazard and is
+# rejected by the `Compete` constructor.
+_is_prob_payload(p::Tuple{Any, <:Real}) = is_composable(p[1])
 _is_prob_payload(::Any) = false
-_is_bare_payload(x) = _is_one_of_branch(x)
+_is_bare_payload(x) = is_composable(x)
 
 function _one_of_delay(payload::Tuple{Any, <:Real})
-    _is_one_of_branch(payload[1]) || throw(ArgumentError(
+    is_composable(payload[1]) || throw(ArgumentError(
         "each one_of outcome payload must be a `(delay, branch_prob)` tuple " *
-        "whose delay is a univariate distribution or a composer subtree; got " *
+        "whose delay is a distribution-like leaf or a composer subtree; got " *
         "$(typeof(payload[1]))"))
     return payload[1]
 end
@@ -836,6 +893,12 @@ is the pair's second element). A no-event win yields a `missing` time.
 To recover the marginal time-to-resolution alone (the mixture over outcomes,
 discarding which fired) sample [`as_mixture`](@ref)`(c)` instead.
 
+A [`Resolve`](@ref) whose `branch_prob_prior` still carries an unresolved
+[`no_prior`](@ref)`()` marker has nothing to draw the branch probabilities
+from, so `rand` refuses eagerly, naming the node, rather than silently
+drawing from the node's current fixed `branch_probs` (matching
+[`Uncertain`](@ref)'s leaf-level guard).
+
 # Examples
 ```@example
 using ComposedDistributions, Distributions, Random
@@ -855,11 +918,30 @@ function Base.rand(c::AbstractOneOf; outcome::Bool = false)
     return rand(default_rng(), c; outcome)
 end
 
+# `branch_probs` refuses to draw when its attached prior is still `no_prior()`
+# (estimated, no prior chosen yet), naming the node, exactly like `Uncertain`'s
+# leaf-level guard (`Uncertain.jl`) refuses an unresolved parameter spec — the
+# same class of silence the guard removes there (#366). A fixed node
+# (`branch_prob_prior === nothing`) or one carrying a resolved `Dirichlet`
+# still draws from `branch_probs` as before; only the unresolved marker
+# refuses.
+function _check_branch_probs_resolved(c::Resolve)
+    c.branch_prob_prior isa NoPrior || return nothing
+    throw(ArgumentError(
+        "cannot draw from $(c): branch_probs is marked no_prior() (free, " *
+        "no prior chosen yet); attach a prior with uncertain(tree; " *
+        "branch_probs = prior, ...) or update(tree, table) before " *
+        "drawing, or collapse first with update(tree, params)"))
+end
+
 # The scalar marginal draw of a terminal Resolve (its branch-prob-weighted
 # mixture time-to-resolution, discarding which outcome fired). Used by the plain
 # flat value path (`child_rand!`), where a Resolve child is one value slot, and
 # wherever the marginal time alone is wanted.
-_one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
+function _one_of_marginal_rand(rng::AbstractRNG, c::Resolve)
+    _check_branch_probs_resolved(c)
+    return rand(rng, as_mixture(c))
+end
 
 # Internal: sample a one_of outcome and its time, returning `(name, time)`. This
 # is the compact pair view backing `rand(c; outcome = true)`; it retains which
@@ -879,6 +961,7 @@ _one_of_marginal_rand(rng::AbstractRNG, c::Resolve) = rand(rng, as_mixture(c))
 function _rand_outcome end
 
 function _rand_outcome(rng::AbstractRNG, c::Resolve)
+    _check_branch_probs_resolved(c)
     i = _sample_branch(rng, c.branch_probs)
     names = component_names(c)
     # A no-event win yields `missing` (no event time recorded); a real outcome

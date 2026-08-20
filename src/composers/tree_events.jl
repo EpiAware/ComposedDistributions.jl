@@ -50,7 +50,7 @@ The internal worker behind the public [`event_names`](@ref) (flat) accessor:
 the tuple of event names matching the scored event vector
 `[E_0, E_1, ..., E_k]`, the root origin event followed by one target event per
 edge in depth-first order. Built by appending into a `Symbol[]` and freezing
-to a tuple, mirroring the `params_table` pre-order walk; edge names are read
+to a tuple, mirroring the `composed_to_table` pre-order walk; edge names are read
 from the parent composer's `names` field (a leaf edge does not store its own
 name), so each child is visited paired with its edge name.
 
@@ -88,7 +88,7 @@ end
 
 # The origin event name implied by an edge: the first half of a split edge name,
 # recursing into a nested child's first edge. `nothing` when no name splits.
-function _edge_origin_pair(edge_name::Symbol, child::UnivariateDistribution)
+function _edge_origin_pair(edge_name::Symbol, child)
     split = _split_edge_name(edge_name)
     return split === nothing ? nothing : split[1]
 end
@@ -132,7 +132,7 @@ end
 # (the second half of its split name, else positional); a nested composer
 # recurses and returns its terminal (its last leaf for a chain, the shared origin
 # for a parallel, mirroring `_terminal_offset`).
-function _walk_edge!(names, edge_name::Symbol, child::UnivariateDistribution,
+function _walk_edge!(names, edge_name::Symbol, child,
         origin::Symbol, counter)
     split = _split_edge_name(edge_name)
     target = split === nothing ? _next_event_name(counter) : split[2]
@@ -155,7 +155,7 @@ end
 # sharing that slot exactly like a nested-composer origin: the outcome's resolution
 # is the subtree origin, so the subtree's `_walk_targets!` hangs off it rather than
 # introducing a fresh origin slot. The edge/parameter names are unaffected (params
-# still belong to the Resolve outcomes, see `params_table`). A Resolve is a
+# still belong to the Resolve outcomes, see `composed_to_table`). A Resolve is a
 # terminal node for a following chain step (the chain does not continue through a
 # single outcome), so its terminal name is the shared origin it hangs off.
 function _walk_edge!(names, edge_name::Symbol, child::AbstractOneOf,
@@ -175,7 +175,7 @@ end
 # anchor shared into the subtree (no extra slot), so the subtree's own target
 # events fill the outcome's slice.
 function _walk_one_of_outcome!(names, oname::Symbol,
-        delay::UnivariateDistribution, origin::Symbol, counter)
+        delay, origin::Symbol, counter)
     push!(names, oname)
     return nothing
 end
@@ -281,7 +281,7 @@ reserved_record_fields()
 
 # See also
 - [`event_names`](@ref): the event namespace a row is otherwise matched against.
-- [`params_table`](@ref): the parameter namespace (dotted node paths).
+- [`composed_to_table`](@ref): the parameter namespace (dotted node paths).
 "
 reserved_record_fields() = _RESERVED_ROW_FIELDS
 

@@ -1,8 +1,8 @@
-# Prior introspection helpers (`params`, `params_table`, `event_names`,
+# Prior introspection helpers (`params`, `composed_to_table`, `event_names`,
 # `event`); see their docstrings below. Implementation note: the `show` and
-# `params`/`params_table` traversals are hand-rolled, type-stable recursion
-# over the component tuples, not generic tree iterators (not type-stable for
-# the heterogeneous composer tree).
+# `params`/`composed_to_table` traversals are hand-rolled, type-stable
+# recursion over the component tuples, not generic tree iterators (not
+# type-stable for the heterogeneous composer tree).
 
 # --- node headers ----------------------------------------------------------
 
@@ -26,6 +26,15 @@ function _named_children(d::Union{Sequential, Parallel})
     names = component_names(d)
     return ntuple(i -> (names[i], d.components[i], ""), length(d.components))
 end
+# Any other composer node: read children and names off the contract, so a
+# downstream node renders as a tree in `show`/`inspect` rather than falling
+# back to a raw struct dump. The built-ins below are more specific.
+function _named_children(d::AbstractComposedDistribution)
+    names = component_names(d)
+    children = node_children(d)
+    return ntuple(i -> (names[i], children[i], ""), length(names))
+end
+
 function _named_children(c::Resolve)
     names = component_names(c)
     return ntuple(length(names)) do i
@@ -128,7 +137,7 @@ inspect(tree)
 
 # See also
 - [`event_tree`](@ref): the nested tree of event names
-- [`params_table`](@ref): the flat parameter inventory
+- [`composed_to_table`](@ref): the flat structural inventory
 "
 function inspect(io::IO, d)
     if _is_composer_dist(d)
@@ -166,10 +175,10 @@ function _inspect_children(io::IO, node, prefix::String)
 end
 
 # A leaf's detail lines, indented under `prefix`, one line at a time (so a
-# multi-line detail stays aligned). The lines come from the `_leaf_detail_lines`
+# multi-line detail stays aligned). The lines come from the `leaf_detail_lines`
 # hook so a leaf-wrapper layer can supply richer per-leaf detail.
 function _inspect_leaf(io::IO, leaf, prefix::String)
-    for line in _leaf_detail_lines(leaf)
+    for line in leaf_detail_lines(leaf)
         println(io, prefix, line)
     end
     return nothing
@@ -203,7 +212,6 @@ ComposedDistributions.leaf_detail_lines(Gamma(2.0, 1.0))
 - [`inspect`](@ref): the tree-printing entry point this feeds.
 "
 leaf_detail_lines(leaf) = split(sprint(show, MIME"text/plain"(), leaf), '\n')
-const _leaf_detail_lines = leaf_detail_lines
 
 # --- nested name-keyed params (hand-rolled, type-stable) --------------------
 
@@ -215,10 +223,10 @@ Returns a `NamedTuple` keyed by the node names, each value the `params` of that
 child (recursing into nested composers; a leaf delegates to its standard/
 extended `Distributions.params`). A `Resolve` node contributes a name-keyed
 NamedTuple of its outcomes plus a `branch_probs` entry. This nested form is for
-prior introspection via [`params_table`](@ref); a composed distribution
+prior introspection via [`composed_to_table`](@ref); a composed distribution
 reconstructs through [`compose`](@ref), not through `Distribution(params...)`.
 
-See also: [`params_table`](@ref), [`event_names`](@ref), [`event`](@ref)
+See also: [`composed_to_table`](@ref), [`event_names`](@ref), [`event`](@ref)
 "
 function _composed_params(d::Union{Sequential, Parallel})
     names = component_names(d)
@@ -231,6 +239,17 @@ _child_params(c::Resolve) = _one_of_params(c)
 _child_params(c::Compete) = _hazard_one_of_params(c)
 _child_params(c::Choose) = _select_params(c)
 _child_params(c) = params(c)
+
+# Any OTHER composer node's nested params: name-keyed, recursing into each
+# child through `_child_params` (which falls through to plain `params` for a
+# leaf child, and back into this method for a further-nested custom node).
+# Mirrors `_composed_params` above, generalised off `node_children`/
+# `component_names` rather than the `.components` field.
+function params(d::AbstractComposedDistribution)
+    names = component_names(d)
+    vals = map(_child_params, node_children(d))
+    return NamedTuple{names}(vals)
+end
 
 # A racing-hazard node's nested params: each outcome name -> its delay's params.
 # There is no `branch_probs` entry (the winning probability is derived).
@@ -250,11 +269,12 @@ end
 
 # The nested-params entry for the branch probabilities: the raw probability
 # tuple for a fixed node, or the K-1 stick coordinates (keyed `:stick_k`) when
-# the node carries an attached `Dirichlet`, so `flatten`/`unflatten` round-trip
-# the estimated stick subset.
+# the node carries an attached `Dirichlet` or `no_prior()` marker, so
+# `flatten`/`unflatten` round-trip the estimated stick subset.
 _branch_prob_params(c::Resolve) = _branch_prob_params(c, c.branch_prob_prior)
 _branch_prob_params(c::Resolve, ::Nothing) = c.branch_probs
-function _branch_prob_params(c::Resolve, ::Distributions.Dirichlet)
+function _branch_prob_params(c::Resolve,
+        ::Union{Distributions.Dirichlet, NoPrior})
     v = _simplex_to_stick(collect(c.branch_probs))
     names = _stick_param_names(length(component_names(c)))
     return NamedTuple{names}(Tuple(v))
@@ -269,7 +289,7 @@ end
 # positional tuple. Per-branch params are namespaced per alternative
 # (`index.…`/`sourced.…`); a tag shared across alternatives via `shared(:tag,...)`
 # still appears once per occurrence here and is inventoried/sampled once by
-# `params_table`/the prior model.
+# `composed_to_table`/the prior model.
 function _select_params(d::Choose)
     vals = map(_child_params, d.alternatives)
     return NamedTuple{component_names(d)}(vals)
@@ -281,13 +301,14 @@ end
 # `double_interval_censored(Gamma(...))`, i.e. an
 # `IntervalCensored{Truncated{PrimaryCensored{Gamma}}}`). The censoring bounds
 # (primary event, truncation, interval) are fixed structure, not free
-# parameters; only the inner delay's parameters (the `Gamma` shape/scale) are
+# parameters; only the inner delay's parameters (the `Gamma` alpha/theta) are
 # free. `_free_leaf` peels the fixed censoring off to the inner free delay, and
 # `_rewrap_leaf` rebuilds the same censoring around a new inner delay. The
-# introspection (`params_table`, names) and reconstruction layers go through
-# these, so a censored leaf is transparent: its rows show only the inner free
-# params and it round-trips by re-censoring the rebuilt delay. A plain leaf is
-# the identity for both. The public `Distributions.params` is unchanged.
+# introspection (`composed_to_table`, names) and reconstruction layers go
+# through these, so a censored leaf is transparent: its rows show only the
+# inner free params and it round-trips by re-censoring the rebuilt delay. A
+# plain leaf is the identity for both. The public `Distributions.params` is
+# unchanged.
 
 @doc raw"
 
@@ -312,10 +333,78 @@ free_leaf(truncated(Gamma(2.0, 1.0); upper = 10.0))
 
 # See also
 - [`rewrap_leaf`](@ref): the inverse rebuild.
+- [`inner_dist`](@ref): the single-layer peel hook this recurses through.
 "
-free_leaf(leaf) = leaf
-free_leaf(d::Truncated) = free_leaf(d.untruncated)
 
+@doc raw"
+
+The next inner distribution layer of a (possibly wrapped) leaf.
+
+The single peel hook the read-through leaf-wrapper hooks recurse through:
+a wrapper type (censoring in CensoredDistributions, the modifiers in
+ModifiedDistributions, or ComposedDistributions' own `Truncated`/`Shared`/
+`Uncertain`/`Varying`) defines ONE method here returning its inner
+distribution, and every read-through hook (`free_leaf`, `uncertain_specs`,
+`extra_leaf_params`, `shared_tag`) that simply forwards through the wrapper
+gets that forwarding for free. A plain leaf's inner is itself — the base
+identity is the terminal that stops the peel.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+inner_dist(Gamma(2.0, 1.0)) === Gamma(2.0, 1.0)
+inner_dist(truncated(Gamma(2.0, 1.0); upper = 10.0))
+```
+
+# See also
+- [`free_leaf`](@ref): reach the innermost free delay via this hook.
+- [`rewrap_leaf`](@ref): the inverse rebuild.
+"
+inner_dist(leaf) = leaf
+inner_dist(d::Truncated) = d.untruncated
+
+@doc raw"
+
+Innermost free delay of a (possibly wrapped) leaf.
+
+The base identity contract: a plain leaf is its own free leaf, and a wrapper
+peels one [`inner_dist`](@ref) layer at a time to the inner free delay. A
+wrapper type (censoring in CensoredDistributions, the modifiers in
+ModifiedDistributions) defines [`inner_dist`](@ref) on its own type and the
+peel follows automatically. Pair with [`rewrap_leaf`](@ref), which rebuilds
+the same wrapper around a new inner delay.
+
+# Arguments
+- `leaf`: the (possibly wrapped) leaf distribution to peel.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+free_leaf(truncated(Gamma(2.0, 1.0); upper = 10.0))
+```
+
+# See also
+- [`rewrap_leaf`](@ref): the inverse rebuild.
+- [`inner_dist`](@ref): the single-layer peel hook this recurses through.
+"
+@inline function free_leaf(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? leaf : free_leaf(inner)
+end
+
+# A bare leaf IS its own inner distribution, so rebuilding it is just the new
+# delay. A wrapper is not: it peels to something else through `inner_dist`, and
+# returning `inner` here would discard the fixed structure it carries (a
+# censoring window, a scale, a tie) with no error, leaving every later
+# `logpdf`/`rand` quietly wrong. That is a silent wrong answer on the fit path,
+# since `reconstruct` rebuilds through `update`, so the mismatch is refused
+# rather than absorbed. Every wrapper shipped here defines its own method and
+# never reaches this branch.
 @doc raw"
 
 Rebuild the same wrapper around a new inner delay `inner`.
@@ -339,7 +428,19 @@ rewrap_leaf(truncated(Gamma(2.0, 1.0); upper = 10.0), Gamma(3.0, 1.5))
 # See also
 - [`free_leaf`](@ref): peel to the inner free delay.
 "
-rewrap_leaf(leaf, inner) = inner
+function rewrap_leaf(leaf, inner)
+    inner_dist(leaf) === leaf && return inner
+    return _throw_missing_rewrap(leaf)
+end
+
+@noinline function _throw_missing_rewrap(leaf)
+    T = nameof(typeof(leaf))
+    throw(ArgumentError(
+        "$(T) defines `inner_dist` but not `rewrap_leaf`, so rebuilding it " *
+        "would silently drop the wrapper layer it carries. Define " *
+        "`ComposedDistributions.rewrap_leaf(d::$(T), inner)` returning a " *
+        "$(T) rebuilt around `inner`, keeping the layer's own fixed fields."))
+end
 function rewrap_leaf(d::Truncated, inner)
     return truncated(rewrap_leaf(d.untruncated, inner); lower = d.lower,
         upper = d.upper)
@@ -352,25 +453,15 @@ parameter values, in [`leaf_param_names`](@ref) order (excluding any trailing
 [`extra_leaf_params`](@ref), which `_update_leaf` splits off and re-attaches
 around the rebuild).
 
-Reconstruction is how an updated parameter vector becomes a distribution again:
-`update`, the `unflatten` then `update` posterior read-back, `uncertain`'s
-pinning path, a tied leaf's signature, and a pooled population's template all
-rebuild a leaf this way. The base identity returns the inner delay's type
-constructor, which is right for a Distributions.jl family whose `params` are
-its constructor arguments.
+The base identity returns the inner delay's type constructor, which is right
+for a Distributions.jl family whose `params` are its constructor arguments.
 
 A leaf type whose free parameters are not its native constructor arguments
-overrides this. A moment-parameterised wrapper is the motivating case: it
-reports moments (a mean and a standard deviation) as its parameters, and it
-carries its family in a type parameter, so the bare UnionAll cannot be called
-positionally. Such a type returns a callable that supplies whatever the value
-tuple alone does not carry.
-
-An override must return an **egal-stable** callable: two structurally identical
-leaves must return `===` constructors, since `_tie_signature` groups tied leaves
-by this value. A callable closing over a type parameter is egal-stable; one
-closing over a runtime *value* is not, and would make `tie` wrongly reject two
-compatible leaves. Prefer a callable struct over an anonymous closure.
+needs a different rebuild. [`rebuild_leaf`](@ref) is the extension point for
+that — an ordinary method taking the leaf and the value tuple, with no
+constructor-identity contract to keep — and should be overridden first. Only
+override `leaf_ctor` itself when the constructor value is also needed on its
+own, e.g. as half of a tied group's identity (see [`leaf_signature`](@ref)).
 
 # Arguments
 - `leaf`: the leaf whose free delay is rebuilt.
@@ -384,6 +475,9 @@ ctor(3.0, 1.5)
 ```
 
 # See also
+- [`rebuild_leaf`](@ref): the value-tuple rebuild `_update_leaf` actually
+  calls; override this first for a non-native leaf.
+- [`leaf_signature`](@ref): the tie-identity pairing this constructor feeds.
 - [`free_leaf`](@ref): peel to the inner free delay.
 - [`rewrap_leaf`](@ref): re-apply the fixed structure around a rebuilt delay.
 "
@@ -394,7 +488,7 @@ function leaf_ctor(leaf)
     inner === leaf && return Base.typename(typeof(leaf)).wrapper
     # A wrapper (`Truncated`, `Uncertain`, `Shared`, a censored or modified
     # leaf): recurse rather than read the peeled type directly, so an inner
-    # leaf's override is honoured through the wrapper. `_leaf_param_names` peels
+    # leaf's override is honoured through the wrapper. `leaf_param_names` peels
     # and then dispatches `param_names` for the same reason; the two must agree
     # or a wrapped leaf would report one set of names and rebuild from another.
     return leaf_ctor(inner)
@@ -404,7 +498,57 @@ end
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
 # makes it the same function object, so dropping the underscore is
 # source-compatible.
-const _leaf_ctor = leaf_ctor
+
+@doc raw"
+
+Rebuild a leaf's free delay from a positional tuple of parameter values, in
+[`leaf_param_names`](@ref) order (excluding any trailing
+[`extra_leaf_params`](@ref), which `_update_leaf` splits off and re-attaches
+around the rebuild).
+
+This is the reconstruction hook `_update_leaf` actually calls: `update`, the
+`unflatten` then `update` posterior read-back, `uncertain`'s pinning path, and
+a tied leaf's rebuild all go through it. The default peels one
+[`free_leaf`](@ref) layer at a time and recurses, so an override on the inner
+leaf is reached through any wrapper (`Truncated`, `Uncertain`, `Shared`, a
+censored or modified leaf), exactly like [`leaf_ctor`](@ref)'s own peeling.
+Once the leaf is its own free delay, the default composes `leaf_ctor` with the
+value tuple, `leaf_ctor(leaf)(vals...)`, so a native-family leaf needs no
+method here.
+
+A leaf type whose free parameters are not its native constructor arguments —
+a moment-parameterised wrapper reporting a mean and a standard deviation
+rather than a shape and a scale, or a type carrying its family in a type
+parameter the bare constructor cannot infer positionally — overrides this
+directly instead of `leaf_ctor`. Unlike `leaf_ctor`, `rebuild_leaf` carries no
+egal-stability contract (see [`leaf_signature`](@ref) for that one): an
+ordinary method is enough, no callable struct required. Because the default
+peels down to the free delay before dispatching, such an override is honoured
+whether the leaf is used bare or under `truncated`, `uncertain`, `shared`, or
+any other wrapper.
+
+# Arguments
+- `leaf`: the leaf whose free delay is rebuilt.
+- `vals`: the leaf's native parameter values, positional, in
+  [`leaf_param_names`](@ref) order.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.rebuild_leaf(Gamma(2.0, 1.0), (3.0, 1.5))
+```
+
+# See also
+- [`leaf_ctor`](@ref): the constructor this default rebuild composes.
+- [`leaf_signature`](@ref): the tie-identity pairing, kept separate from
+  reconstruction.
+"
+function rebuild_leaf(leaf, vals::Tuple)
+    inner = free_leaf(leaf)
+    inner === leaf && return leaf_ctor(leaf)(vals...)
+    return rebuild_leaf(inner, vals)
+end
 
 @doc raw"
 
@@ -419,9 +563,8 @@ its own specs (see Uncertain.jl), and a leaf-wrapper type (censoring in
 CensoredDistributions, the modifiers in ModifiedDistributions) adds its own
 method dispatching on its own type and forwarding to its inner delay's specs,
 so an uncertain prior attached under a wrapper still reaches
-[`params_table`](@ref)'s `prior` column and [`build_priors`](@ref). Without a
-forwarding method the attached prior is silently dropped and the parameter is
-treated as fixed.
+[`composed_to_table`](@ref)'s `prior` column. Without a forwarding method the
+attached prior is silently dropped and the parameter is treated as fixed.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution to inspect.
@@ -439,14 +582,15 @@ ComposedDistributions.uncertain_specs(Gamma(2.0, 1.0)) === nothing
   rendering.
 - [`has_uncertain`](@ref): the boolean check built on this protocol.
 "
-uncertain_specs(leaf) = nothing
-uncertain_specs(d::Truncated) = uncertain_specs(d.untruncated)
+@inline function uncertain_specs(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? nothing : uncertain_specs(inner)
+end
 
 # The underscored alias retained for the package's existing internal callers
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
 # makes it the same function object, so dropping the underscore is
 # source-compatible.
-const _uncertain_specs = uncertain_specs
 
 @doc raw"
 The extra, modifier-owned parameters of a leaf, keyed by name.
@@ -459,8 +603,8 @@ untruncated inner delay. A modifier layer that owns a free parameter which is
 not one of the inner delay's native parameters plugs in by defining this on its
 own wrapper type. The thinning factor of `thin(d, p)` (ModifiedDistributions'
 `ThinOp`) is the first instance: it reports `(thin = (value = p, support =
-(0.0, 1.0)),)`, at which point [`params_table`](@ref) surfaces a `:thin` row and
-[`update`](@ref) round-trips it.
+(0.0, 1.0)),)`, at which point [`composed_to_table`](@ref) surfaces a `:thin`
+row and [`update`](@ref) round-trips it.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution to inspect.
@@ -476,8 +620,10 @@ ComposedDistributions.extra_leaf_params(Gamma(2.0, 1.0))
 - [`set_extra_leaf_params`](@ref): the setter dual that rebuilds the leaf.
 - [`leaf_param_names`](@ref): appends the extra names after the native ones.
 "
-extra_leaf_params(leaf) = (;)
-extra_leaf_params(d::Truncated) = extra_leaf_params(d.untruncated)
+@inline function extra_leaf_params(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? (;) : extra_leaf_params(inner)
+end
 
 @doc raw"
 Set a leaf's extra, modifier-owned parameters by name and rebuild the leaf.
@@ -524,20 +670,89 @@ end
 
 # --- parameter-name introspection for leaves -------------------------------
 
+# Greek-letter fieldnames (`α`, `θ`, ...) transliterated to their English
+# spelling, generation-time-only (called from inside `_derived_param_names`'s
+# `@generated` body, never at runtime). Julia's parser already normalises
+# identifiers to NFC, so no `Unicode` dependency is needed here; every
+# fieldname of every constructible exported univariate family in
+# Distributions.jl is either plain ASCII or one of these single characters.
+# Anything not in the map passes through unchanged -- a non-ASCII `Symbol` is a
+# legal `NamedTuple` key, so pass-through is safe, just less friendly.
+const _GREEK_TO_LATIN = Dict{Char, String}(
+    'α' => "alpha", 'β' => "beta", 'γ' => "gamma", 'δ' => "delta",
+    'ε' => "epsilon", 'ζ' => "zeta", 'η' => "eta", 'θ' => "theta",
+    'ι' => "iota", 'κ' => "kappa", 'λ' => "lambda", 'μ' => "mu",
+    'ν' => "nu", 'ξ' => "xi", 'ο' => "omicron", 'π' => "pi",
+    'ρ' => "rho", 'σ' => "sigma", 'ς' => "sigma", 'τ' => "tau",
+    'υ' => "upsilon", 'φ' => "phi", 'χ' => "chi", 'ψ' => "psi",
+    'ω' => "omega",
+    'Α' => "Alpha", 'Β' => "Beta", 'Γ' => "Gamma", 'Δ' => "Delta",
+    'Ε' => "Epsilon", 'Ζ' => "Zeta", 'Η' => "Eta", 'Θ' => "Theta",
+    'Ι' => "Iota", 'Κ' => "Kappa", 'Λ' => "Lambda", 'Μ' => "Mu",
+    'Ν' => "Nu", 'Ξ' => "Xi", 'Ο' => "Omicron", 'Π' => "Pi",
+    'Ρ' => "Rho", 'Σ' => "Sigma", 'Τ' => "Tau", 'Υ' => "Upsilon",
+    'Φ' => "Phi", 'Χ' => "Chi", 'Ψ' => "Psi", 'Ω' => "Omega")
+
+# Transliterate one fieldname, generation-time-only. Plain ASCII names pass
+# straight through with no allocation.
+function _transliterate_fieldname(s::Symbol)
+    str = String(s)
+    isascii(str) && return s
+    buf = IOBuffer()
+    for c in str
+        write(buf, get(_GREEK_TO_LATIN, c, string(c)))
+    end
+    return Symbol(String(take!(buf)))
+end
+
+# The type-domain derivation. `D` is the leaf type, `P` the type of
+# `params(leaf)` (a `Tuple` type); both are `Const` at every call site, so the
+# body below -- Base type reflection only, nothing user-extensible -- runs
+# once per `(D, P)` pair at specialization time and the generated method body
+# is a literal tuple of `Symbol`s. `fieldcount(P)` (not `length(params(d))`)
+# is what keeps the arity in the type domain.
+#
+# Falls back to positional `:param_1, :param_2, ...` whenever the leaf's own
+# fields don't line up 1:1 with its `params` in order: too few fields, a
+# fieldtype mismatch at some slot, or (after transliteration) a name collision.
+# That fallback is intentionally silent -- see `param_names`'s docstring for
+# how a leaf whose fields do not line up overrides this.
+@generated function _derived_param_names(::Type{D}, ::Type{P}) where {D, P}
+    n = fieldcount(P)
+    positional = ntuple(i -> Symbol(:param_, i), n)
+    n == 0 && return :(())
+    fns = fieldnames(D)
+    length(fns) < n && return :($positional)
+    for i in 1:n
+        fieldtype(D, i) === fieldtype(P, i) || return :($positional)
+    end
+    names = ntuple(i -> _transliterate_fieldname(fns[i]), n)
+    length(unique(names)) == n || return :($positional)
+    return :($names)
+end
+
 @doc raw"
 
 The scalar parameter names of a leaf distribution, matched positionally to
 `params(leaf)`.
 
 Distributions.jl exposes parameter values through `params` but not their names,
-so the common families are mapped explicitly here; anything unmapped falls back
-to `:param_1, :param_2, ...`.
+so the names are derived from the leaf's own type: the first `N` fieldnames of
+`typeof(leaf)`, transliterated (Greek letters to their English spelling), where
+`N` is the arity of `params(leaf)`. This works with no method of its own for
+any type whose fields line up 1:1 with `params`, in order -- the common case for
+a Distributions.jl-conforming family. A leaf whose fields don't line up (either
+because the arity is short, or because a field's declared type disagrees with
+the matching `params` slot, or because two transliterated names collide) falls
+back to `:param_1, :param_2, ...`. A wrapper (`Truncated`, `Uncertain`,
+`Shared`, a censoring/modifier layer) reports its inner leaf's names, read
+through [`inner_dist`](@ref).
 
-A leaf type whose free parameters are not the native family's overrides this, in
-step with [`leaf_ctor`](@ref): the two together fix the coordinates that
-`params_table`, `uncertain`, `build_priors` and the flat codec work in. A
-moment-parameterised wrapper naming a mean and a standard deviation, rather than
-a shape and a scale, is the motivating case.
+A leaf type whose free parameters are not aligned with its own fields overrides
+this explicitly, in step with [`leaf_ctor`](@ref): the two together fix the
+coordinates that `composed_to_table`, `uncertain` and the flat codec work in. A
+moment-parameterised wrapper naming a mean and a standard deviation, rather
+than a shape and a scale, is the motivating case.
 
 # Arguments
 - the leaf distribution whose parameter names are read.
@@ -551,14 +766,13 @@ ComposedDistributions.param_names(Gamma(2.0, 1.0))
 
 # See also
 - [`leaf_ctor`](@ref): the matching rebuild.
+- [`inner_dist`](@ref): the peel a wrapper's own names follow.
 "
-param_names(::Distributions.Normal) = (:mu, :sigma)
-param_names(::Distributions.LogNormal) = (:mu, :sigma)
-param_names(::Distributions.Gamma) = (:shape, :scale)
-param_names(::Distributions.Weibull) = (:shape, :scale)
-param_names(::Distributions.Exponential) = (:scale,)
-param_names(::Distributions.Uniform) = (:lower, :upper)
-param_names(::Any) = ()
+function param_names(d)
+    inner = inner_dist(d)
+    inner === d || return param_names(inner)
+    return _derived_param_names(typeof(d), typeof(params(d)))
+end
 
 # The underscored alias retained for the package's existing internal callers
 # and the leaf-wrapper method definitions (censoring / modifiers); `const`
@@ -570,12 +784,13 @@ const _param_names = param_names
 The estimable parameter names of a (possibly wrapped) leaf.
 
 The inner free delay's `param_names`, padding with positional fallbacks
-(`:param_1`, ...) so every value has a label even when the family is unmapped,
-then the names of any [`extra_leaf_params`](@ref) appended in order. A censored
-or modified leaf delegates to its free delay (`free_leaf`), so the fixed wrapper
-structure never appears, while a thinning modifier's `:thin` factor rides the
-trailing extra-parameter slot. These names are the coordinates
-[`params_table`](@ref), [`uncertain`](@ref) and [`build_priors`](@ref) key on.
+(`:param_1`, ...) so every value has a label even when the leaf's fields don't
+line up 1:1 with its `params`, then the names of any
+[`extra_leaf_params`](@ref) appended in order. A censored or modified leaf
+delegates to its free delay (`free_leaf`), so the fixed wrapper structure
+never appears, while a thinning modifier's `:thin` factor rides the trailing
+extra-parameter slot. These names are the coordinates
+[`composed_to_table`](@ref) and [`uncertain`](@ref) key on.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution whose parameter names are
@@ -603,7 +818,81 @@ function leaf_param_names(leaf)
     # append after the delay params, in `extra_leaf_params` order.
     return (names..., keys(extra_leaf_params(leaf))...)
 end
-const _leaf_param_names = leaf_param_names
+
+@doc raw"
+
+The `(constructor, parameter-names)` signature [`tie`](@ref) groups leaves by:
+tied leaves become one free parameter, so they must share a rebuild and a
+parameter structure. The default pairs [`leaf_ctor`](@ref) with
+[`leaf_param_names`](@ref), peeling one [`free_leaf`](@ref) layer at a time so
+the constructor half is read from the inner leaf's own signature (honouring an
+override there) while the parameter-names half stays the outer leaf's
+[`leaf_param_names`](@ref) — a wrapper's own name set, including any
+[`extra_leaf_params`](@ref) it adds, which a naive full peel would drop.
+
+An override must return an **egal-stable** value: two structurally identical
+leaves must return `==`-equal signatures, since a tie compares them. In
+particular a constructor closing over a runtime *value* is not egal-stable —
+two structurally identical leaves would build two different, unequal,
+closures — and would make `tie` wrongly reject two compatible leaves. A
+callable closing over a type parameter is egal-stable; prefer a callable
+struct over an anonymous closure when a signature needs to carry one. A leaf
+that overrides [`rebuild_leaf`](@ref) instead of `leaf_ctor` usually overrides
+this too, pairing the leaf's family (a type or a callable struct) with its
+parameter names.
+
+# Arguments
+- `leaf`: the leaf whose tie-identity signature is read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.leaf_signature(Gamma(2.0, 1.0))
+```
+
+# See also
+- [`leaf_ctor`](@ref), [`rebuild_leaf`](@ref): the reconstruction hooks a
+  non-native leaf's signature is built from, or replaces.
+- [`tie`](@ref): the leaf-grouping verb keyed on this signature.
+"
+function leaf_signature(leaf)
+    inner = free_leaf(leaf)
+    fam = inner === leaf ? leaf_ctor(leaf) : first(leaf_signature(inner))
+    return (fam, leaf_param_names(leaf))
+end
+
+# A diagnostic, never a name selector: `_derived_param_names` decides labels
+# from the type alone (unconditionally, so names never depend on values), and
+# this catches the one thing the type-level rule cannot see -- a
+# contract-conforming type whose field ORDER differs from its `params` order
+# with matching field *types* (so the type-level structural check passes but
+# the field at slot `i` does not actually hold `params(free)[i]`). Restricted
+# to `Real`-valued slots so a vector-parameter leaf cannot trip it spuriously.
+# Called where the values are already in hand (`Uncertain`'s inner
+# constructor) and by `TestUtils`'s conformance check; never from
+# `param_names`/`leaf_param_names`/`_update_leaf`/`_walk_rows!`, which must
+# stay on the gradient path with no runtime branch to shield from Mooncake. A
+# plain `throw` (never `@warn`, never `try`/`catch`) keeps it AD-safe even if
+# it is ever reached from a differentiated path.
+function _check_leaf_param_alignment(free)
+    fs = fieldnames(typeof(free))
+    tvals = params(free)
+    n = length(tvals)
+    n == 0 && return nothing
+    length(fs) < n && return nothing
+    for i in 1:n
+        v = tvals[i]
+        v isa Real || continue
+        getfield(free, fs[i]) === v && continue
+        throw(ArgumentError(
+            "$(typeof(free)) has parameters $(tvals) whose order does not " *
+            "match its field order $(fs[1:n]); define " *
+            "`ComposedDistributions.param_names` (and `leaf_ctor` in step " *
+            "with it) for $(typeof(free))"))
+    end
+    return nothing
+end
 
 # The values matching `leaf_param_names(leaf)` positionally: the free delay's
 # native `params`, then each `extra_leaf_params` value, in the same order
@@ -704,69 +993,279 @@ end
     return (v, rest...)
 end
 
-# --- params_table (hand-rolled pre-order walk) -----------------------------
+# --- node emission (#227 slice 1) -------------------------------------------
+#
+# The single pre-order walk (`_walk_rows!` below) emits a `:node` row for
+# every composer node and every leaf (wrapper) layer, alongside the existing
+# `:param` rows. `node_attributes` is the one hook a downstream node or
+# leaf-wrapper type defines to control those rows. The other two ingredients
+# are derived rather than asked for: a row's structural label is the type
+# itself (`_node_kind`), and a leaf's wrapper layers fold out of the
+# `inner_dist` peel (`_leaf_layers`) a wrapper already defines to take part in
+# the leaf protocol at all.
 
-# A thin wrapper over the flat column table so `params_table(d)` prints as an
-# actual table (matching its name) rather than as a bare `NamedTuple` of vectors,
-# while staying a first-class Tables.jl source. It forwards the whole Tables.jl
-# column interface to the wrapped `NamedTuple`, so `Tables.istable`,
-# `Tables.columns`, `Tables.getcolumn` and `DataFrame(tbl)` all work unchanged,
-# and `getproperty` forwards `tbl.edge`/`tbl.param`/... to the columns. Only the
+# The structural label of a composer node or leaf (wrapper) layer: the `node`
+# column of `composed_to_table`. The type's own `UnionAll` wrapper, read
+# straight off the instance, so a `Gamma` leaf reports `Gamma` and a
+# `Sequential` node `Sequential`. Correct by construction for every type that
+# can appear in a tree, which is why it is an accessor and not a hook a
+# downstream type has to supply.
+#
+# The type OBJECT, not its name `Symbol`: a name can only be turned back into a
+# type through a registry, and this package has none by design (a leaf costs
+# zero methods, a node a handful). Holding the type instead makes a table row
+# reconstructable by ORDINARY DISPATCH -- `T <: AbstractComposedDistribution`
+# separates a composer node from a leaf layer, and the type is exactly what a
+# rebuild dispatches on. It is also the same granularity `leaf_ctor` already
+# rebuilds through (`Base.typename(...).wrapper`, so `Gamma` rather than
+# `Gamma{Float64}`): the concrete parameters are either re-derived from the
+# values (`Gamma{Float64}`'s element type) or already carried by their own
+# rows (a `Sequential`'s names come from its children's edges, a `Shared`'s tag
+# and a `Pool`'s group/centring from their `:attribute` rows), so pinning them
+# here would only record them twice and let a value edit invalidate them.
+# Prints as the bare name, so the rendered table is unchanged; `nameof` recovers
+# the old `Symbol`.
+_node_kind(x) = Base.typename(typeof(x)).wrapper
+
+# A (possibly wrapped) leaf's wrapper layers, outermost to innermost, folded
+# out of the single-layer `inner_dist` peel: `truncated(shared(:inc, Gamma(...)))`
+# gives its `Truncated`, `Shared` and `Gamma` layers in that order, each then
+# emitting its own `:node` row (and any `node_attributes`) at the leaf's one
+# edge. The fold terminates at a plain leaf, whose inner is itself, so a
+# wrapper with no `inner_dist` method appears as one opaque node row.
+function _leaf_layers(x)
+    inner = inner_dist(x)
+    return inner === x ? (x,) : (x, _leaf_layers(inner)...)
+end
+
+@doc raw"
+
+A node or leaf (wrapper) layer's own fixed-structure attributes, for the
+`:attribute` rows of [`composed_to_table`](@ref).
+
+Returns a `NamedTuple` of name-value pairs that are fixed structure, not free
+parameters (a `Truncated`'s bounds, a `Choose`'s `selector`, a `Shared`'s
+tag): each entry becomes one `:attribute` row at the node's edge. The default
+is the empty `NamedTuple` `(;)` (no attributes), which is right for a leaf
+family whose parameters are already fully covered by the `:param` rows. A
+node or leaf-wrapper type with fixed, non-parameter structure overrides this
+on its own type.
+
+This is the only node-emission method a downstream type supplies. A row's
+structural label is the type itself, and a wrapped leaf's layers are peeled
+through [`inner_dist`](@ref), so neither needs a method of its own.
+
+# Arguments
+- `x`: the composer node or (possibly wrapped) leaf layer.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.node_attributes(Gamma(2.0, 1.0))
+ComposedDistributions.node_attributes(truncated(Gamma(2.0, 1.0); upper = 10.0))
+```
+
+# See also
+- [`composed_to_table`](@ref): the table this feeds.
+- [`inner_dist`](@ref): the peel a wrapper layer's own rows follow.
+"
+node_attributes(x) = (;)
+
+# `Truncated`'s bounds are fixed structure, not free parameters (its inner
+# delay's own parameters ride the `:param` rows as always).
+node_attributes(d::Truncated) = (; lower = d.lower, upper = d.upper)
+
+function from_table(::Type{<:Truncated}, inner, attrs::NamedTuple)
+    return truncated(inner; lower = attrs.lower, upper = attrs.upper)
+end
+
+# --- row sinks: a single walk feeding two projections -----------------------
+#
+# `_walk_rows!` threads one sink object rather than five positional column
+# vectors, so the same pre-order walk feeds either the five-column
+# parameter-only sink (`_ParamSink`, the walk internal callers run directly
+# for a zero-extra-work parameter inventory) or the full seven-column
+# node/attribute/param table ([`composed_to_table`](@ref)) with no extra
+# traversal. The `_ParamSink` node/attribute push methods are no-ops
+# (`@inline`), so a `_ParamSink` walk costs nothing extra on its AD-adjacent
+# call sites (e.g. `centred_pool_rows`, called once per gradient evaluation
+# for a centred-pooled tree) — this is materialise-once-per-sink, never
+# materialise-then-filter.
+
+struct _ParamSink
+    edge::Vector{Symbol}
+    param::Vector{Symbol}
+    value::Vector{Any}
+    support::Vector{Any}
+    prior::Vector{Any}
+end
+_ParamSink() = _ParamSink(Symbol[], Symbol[], Any[], Any[], Any[])
+
+# The `node` column holds type objects (`_node_kind`), which have no common
+# concrete supertype -- a leaf family's `UnionAll` and `Sequential` are both
+# `Type`s but of unrelated `DataType`/`UnionAll` kinds -- so the column is
+# `Vector{Any}`, like `value`/`support`/`prior` already are. This walk is not a
+# gradient hot path (`_ParamSink`, the AD-adjacent projection, emits no node
+# rows at all), so the widening costs nothing that matters.
+struct _FullSink
+    edge::Vector{Symbol}
+    param::Vector{Symbol}
+    node::Vector{Any}
+    role::Vector{Symbol}
+    value::Vector{Any}
+    support::Vector{Any}
+    prior::Vector{Any}
+end
+function _FullSink()
+    return _FullSink(
+        Symbol[], Symbol[], Any[], Symbol[], Any[], Any[], Any[])
+end
+
+# One `:param` row: a scalar free parameter. `node` is the leaf family's type
+# (or `Pool`/`Resolve`) the parameter belongs to; ignored by `_ParamSink`.
+function _push_param!(s::_ParamSink, edge::Symbol, param::Symbol,
+        ::Type, value, support, prior)
+    push!(s.edge, edge)
+    push!(s.param, param)
+    push!(s.value, value)
+    push!(s.support, support)
+    push!(s.prior, prior)
+    return nothing
+end
+function _push_param!(s::_FullSink, edge::Symbol, param::Symbol, node::Type,
+        value, support, prior)
+    push!(s.edge, edge)
+    push!(s.param, param)
+    push!(s.node, node)
+    push!(s.role, :param)
+    push!(s.value, value)
+    push!(s.support, support)
+    push!(s.prior, prior)
+    return nothing
+end
+
+# One `:node` row, naming a composer node or a leaf (wrapper) layer; no
+# value/support/prior. A no-op on the parameter-only sink.
+@inline _push_node!(::_ParamSink, ::Symbol, ::Type) = nothing
+function _push_node!(s::_FullSink, edge::Symbol, node::Type)
+    push!(s.edge, edge)
+    push!(s.param, Symbol(""))
+    push!(s.node, node)
+    push!(s.role, :node)
+    push!(s.value, nothing)
+    push!(s.support, nothing)
+    push!(s.prior, nothing)
+    return nothing
+end
+
+# One `:attribute` row: a node/layer's own fixed-structure attribute (not a
+# free parameter). A no-op on the parameter-only sink.
+@inline function _push_attr!(::_ParamSink, ::Symbol, ::Type, ::Symbol,
+        value)
+    nothing
+end
+function _push_attr!(s::_FullSink, edge::Symbol, node::Type, param::Symbol,
+        value)
+    push!(s.edge, edge)
+    push!(s.param, param)
+    push!(s.node, node)
+    push!(s.role, :attribute)
+    push!(s.value, value)
+    push!(s.support, nothing)
+    push!(s.prior, nothing)
+    return nothing
+end
+
+# Push one `:attribute` row per entry of a `node_attributes(x)` NamedTuple, in
+# field order.
+function _push_attr_rows!(sink, edge::Symbol, node::Type, attrs::NamedTuple)
+    for k in keys(attrs)
+        _push_attr!(sink, edge, node, k, attrs[k])
+    end
+    return nothing
+end
+
+# A leaf's `:node`/`:attribute` rows, one pair per `_leaf_layers(leaf)` layer.
+# A no-op on `_ParamSink`: `_leaf_layers` peels a leaf-wrapper stack (e.g.
+# `Truncated`) that only the full table shows, so a parameter-only walk's hot
+# path must not build or iterate it at all, not just discard the rows it
+# would produce.
+@inline _emit_layers!(::_ParamSink, ::Symbol, leaf) = nothing
+function _emit_layers!(sink::_FullSink, edge_path::Symbol, leaf)
+    for layer in _leaf_layers(leaf)
+        kind = _node_kind(layer)
+        _push_node!(sink, edge_path, kind)
+        _push_attr_rows!(sink, edge_path, kind, node_attributes(layer))
+    end
+    return nothing
+end
+
+# --- composed_to_table (hand-rolled pre-order walk) -------------------------
+
+# A thin wrapper over the flat column table so `composed_to_table(d)` prints as
+# an actual table rather than as a bare `NamedTuple` of vectors, while staying a
+# first-class Tables.jl source. It forwards the whole Tables.jl column interface
+# to the wrapped `NamedTuple`, so `Tables.istable`, `Tables.columns`,
+# `Tables.getcolumn` and `DataFrame(tbl)` all work unchanged, and `getproperty`
+# forwards `tbl.edge`/`tbl.param`/... to the columns. Only the
 # `show(::MIME"text/plain")` is customised, to render a padded ASCII table.
 
 @doc "
 
-A Tables.jl column table of a composed distribution's free parameters.
+A Tables.jl column table of a composed distribution's structure.
 
-The value [`params_table`](@ref) returns: a Tables.jl source (a column table)
-that prints as a padded `edge | param | value | support | prior` table. It is a thin
-wrapper over a `NamedTuple` of equal-length column vectors, forwarding the whole
-Tables.jl column interface and column access (`tbl.edge`, `tbl.param`, ...), so
-`Tables.istable`, `Tables.columns`, `Tables.getcolumn`, `DataFrame(tbl)` and
-[`build_priors`](@ref) all consume it unchanged; only its display is customised.
+The value [`composed_to_table`](@ref) returns: a Tables.jl source (a column
+table) that prints as a padded `edge | param | node | role | value | support |
+prior` table. It is a thin wrapper over a `NamedTuple` of equal-length column
+vectors, forwarding the whole Tables.jl column interface and column access
+(`tbl.edge`, `tbl.param`, ...), so `Tables.istable`, `Tables.columns`,
+`Tables.getcolumn` and `DataFrame(tbl)` all consume it unchanged; only its
+display is customised.
 
-See also: [`params_table`](@ref), [`build_priors`](@ref).
+See also: [`composed_to_table`](@ref), [`update`](@ref)`(tree, table)`.
 "
-struct ParamsTable{C <: NamedTuple}
+struct ComposedTable{C <: NamedTuple}
     columns::C
 end
 
 # Tables.jl source interface: a column table, delegating to the wrapped columns.
-Tables.istable(::Type{<:ParamsTable}) = true
-Tables.columnaccess(::Type{<:ParamsTable}) = true
-Tables.columns(t::ParamsTable) = getfield(t, :columns)
-Tables.columnnames(t::ParamsTable) = keys(getfield(t, :columns))
-Tables.getcolumn(t::ParamsTable, i::Int) = getfield(t, :columns)[i]
-Tables.getcolumn(t::ParamsTable, nm::Symbol) = getfield(t, :columns)[nm]
-Tables.schema(t::ParamsTable) = Tables.schema(getfield(t, :columns))
-Tables.rowaccess(::Type{<:ParamsTable}) = true
-Tables.rows(t::ParamsTable) = Tables.rows(getfield(t, :columns))
+Tables.istable(::Type{<:ComposedTable}) = true
+Tables.columnaccess(::Type{<:ComposedTable}) = true
+Tables.columns(t::ComposedTable) = getfield(t, :columns)
+Tables.columnnames(t::ComposedTable) = keys(getfield(t, :columns))
+Tables.getcolumn(t::ComposedTable, i::Int) = getfield(t, :columns)[i]
+Tables.getcolumn(t::ComposedTable, nm::Symbol) = getfield(t, :columns)[nm]
+Tables.schema(t::ComposedTable) = Tables.schema(getfield(t, :columns))
+Tables.rowaccess(::Type{<:ComposedTable}) = true
+Tables.rows(t::ComposedTable) = Tables.rows(getfield(t, :columns))
 
 # Forward column access (`tbl.edge`, `tbl.param`, ...) to the wrapped columns so
 # the table reads like the NamedTuple it wraps.
-Base.getproperty(t::ParamsTable, nm::Symbol) = getfield(t, :columns)[nm]
-Base.propertynames(t::ParamsTable) = keys(getfield(t, :columns))
+Base.getproperty(t::ComposedTable, nm::Symbol) = getfield(t, :columns)[nm]
+Base.propertynames(t::ComposedTable) = keys(getfield(t, :columns))
 
 # The number of rows (every column is equal length).
-function _nrows(t::ParamsTable)
+function _nrows(t::ComposedTable)
     cols = getfield(t, :columns)
     return isempty(cols) ? 0 : length(first(cols))
 end
 
 # A compact one-liner for inline / array display.
-function Base.show(io::IO, t::ParamsTable)
-    print(io, "ParamsTable($(_nrows(t)) rows)")
+function Base.show(io::IO, t::ComposedTable)
+    print(io, "ComposedTable($(_nrows(t)) rows)")
     return nothing
 end
 
-# A padded ASCII table for `text/plain` display, so `params_table(d)` renders as
-# an actual table. Columns are `edge | param | value | support | prior`; each cell is the
-# `string` of the value, columns padded to their widest cell (header included).
-function Base.show(io::IO, ::MIME"text/plain", t::ParamsTable)
+# A padded ASCII table for `text/plain` display, so `composed_to_table(d)`
+# renders as an actual table. Columns are `edge | param | node | role | value |
+# support | prior`; each cell is the `string` of the value, columns padded to
+# their widest cell (header included).
+function Base.show(io::IO, ::MIME"text/plain", t::ComposedTable)
     cols = getfield(t, :columns)
     names = collect(keys(cols))
     n = _nrows(t)
-    println(io, "params_table ($n rows)")
+    println(io, "composed table ($n rows)")
     isempty(names) && return nothing
     # Stringify every cell (an absent entry, e.g. a row with no attached
     # prior, renders blank), then size each column to its widest entry.
@@ -791,73 +1290,152 @@ _cell_string(x) = x === nothing ? "" : string(x)
 
 @doc "
 
-Flatten a composed distribution's parameters into a prior-definition table.
+Flatten a composed distribution's full structure into one node/attribute/
+parameter table.
 
-`params_table(d)` returns a Tables.jl column table (a [`ParamsTable`](@ref)
-wrapping a `NamedTuple` of equal-length column vectors, so
-`Tables.istable(params_table(d))` is `true` and it prints as a padded table);
-wrap it in `DataFrame` for a DataFrame. It has one row per scalar free parameter
-of the composed distribution `d`, with columns:
+`composed_to_table(d)` returns a Tables.jl column table (a [`ComposedTable`](@ref)
+wrapping a `NamedTuple` of equal-length column vectors) with one row per
+composer node, per leaf (wrapper) layer, per fixed-structure attribute, and
+per scalar free parameter. Columns:
 
-- `edge`: the dotted path of names to the parameter's edge/leaf (e.g.
-  `:onset_admit`, or `:resolution.branch_probs` inside a `Resolve`).
-- `param`: the parameter name (e.g. `:mu`, `:sigma`; positional `:param_i` where
-  the family is unmapped).
-- `value`: the current parameter value.
-- `support`: the `(minimum, maximum)` variate support of that edge's
-  distribution, the domain a prior over the edge must respect (from `minimum`/
-  `maximum`/`support`).
-- `prior`: the attached prior of an [`uncertain`](@ref) parameter (its spec
-  distribution), or `nothing` for a fixed parameter. [`build_priors`](@ref)
-  uses a non-`nothing` entry ahead of its per-row default.
+- `edge`: the dotted path of names to the row's node/leaf (e.g. `:onset_admit`),
+  or the tag/group for a [`shared`](@ref)/pooled parameter row (see below).
+- `param`: the parameter or attribute name; the empty `Symbol` on a `:node`
+  row.
+- `node`: the TYPE of the owning composer node or leaf layer (e.g.
+  `Sequential`, `Gamma`, `Truncated`) — the type object, not its name, so a
+  row can be rebuilt by ordinary dispatch with no name-to-type registry. It
+  prints as the bare name, and `nameof` gives that name as a `Symbol`.
+- `role`: one of `:node`, `:attribute`, `:param`.
+- `value`: the current value (a `:param`/`:attribute` row), or `nothing` (a
+  `:node` row).
+- `support`: the parameter's domain (a `:param` row), else `nothing`.
+- `prior`: the attached spec of an [`uncertain`](@ref) parameter (a `:param`
+  row) — a distribution, a [`pool`](@ref)`(...)` group, or the
+  [`no_prior`](@ref)`()` marker (free, no prior yet) — or `nothing` for a
+  fixed parameter.
 
-Define priors against the rows of this table instead of hand-matching parameter
-names. Built from [`params`](@ref) (nested, name-keyed values) plus the edge
-distributions' support.
+The parameter-only view (the `role == :param` rows, minus the `node`/`role`
+columns) is a filter over this table, not a separate function: `filter(row ->
+row.role == :param, Tables.rows(composed_to_table(d)))`. `composed_to_table`
+recovers structure a parameter-only view alone cannot: whether two branches
+with the same names are the same node kind, whether a leaf carries a wrapper
+(`Truncated`, `Censored`, ...), and a wrapper's own fixed attributes (a
+`Truncated`'s bounds, a `Choose`'s `selector`). Read parameter structure off
+the rows of this table instead of hand-matching names, and write priors back
+onto it (edit `prior`, then [`update`](@ref)`(tree, table)`) instead of
+hand-matching the tree. Built from [`params`](@ref) (nested, name-keyed
+values) plus the edge distributions' support.
 
-For a [`Choose`](@ref) node the alternatives' independent per-branch params are
-namespaced per alternative (`index.…` / `sourced.…`), one row-group per
-alternative. A parameter tied across alternatives via [`shared`](@ref)`(:tag,
-...)` is inventoried once under its `tag` edge and sampled once, so a value tied
-across the index and sourced branches appears as a single row-group.
+A node row's `edge` is always the row's real dotted tree path. A `:param` row's
+`edge` is the real path too, *except* for a [`shared`](@ref)`(:tag, ...)` leaf
+(keyed by its tag) or a pooled parameter's hyperparameter rows (keyed by its
+[`pool`](@ref) group). A shared leaf's params are inventoried once, at the
+first occurrence; every later occurrence still gets its own `:node` and
+`:attribute` rows at its real path, so the `tag` attribute row is there to
+point at the one set of param rows. So a node row and a `:param` row at the
+same object can
+legitimately disagree on `edge` — do not join the two by `edge` alone; join a
+leaf's node rows to its param rows by path prefix instead. A `Resolve`'s own
+`branch_probs` param rows are emitted after its children's rows (not
+immediately after its own node/attribute rows), so a node's rows are not
+generally contiguous in the table.
+
+The composed distribution `d` itself is a Tables.jl source forwarding to this
+table (`Tables.columns(d) == Tables.columns(composed_to_table(d))`), so
+`DataFrame(tree)` yields the full table; filter its `role` column to `:param`
+for the parameter-only projection.
+
+Only an in-memory (DataFrame) round trip is supported: the `node` column holds
+types, and a `Varying` leaf's `map` attribute, a `Convolved`/`Difference`
+composite's `method` solver and a pooled parameter's [`pool`](@ref) spec are
+live objects — none are values a text format (CSV) can carry.
+
+# Arguments
+- `d`: the composed distribution to flatten.
 
 # Examples
 ```@example
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = LogNormal(1.5, 0.4),
-    admit_death = Gamma(2.0, 1.0)))
-tbl = params_table(tree)
-tbl.edge  # a column; wrap the table in `DataFrame(tbl)` for a DataFrame
+    admit_death = truncated(Gamma(2.0, 1.0); upper = 10.0)))
+tbl = composed_to_table(tree)
+tbl.node  # Parallel, LogNormal, Truncated, Gamma, ...
 ```
 
 # See also
-- [`params`](@ref): the nested name-keyed values
-- [`event_names`](@ref), [`event`](@ref): name introspection
+- [`node_attributes`](@ref): the one hook a downstream node or leaf-wrapper
+  type defines to control its own rows here.
+- [`inner_dist`](@ref): the peel a wrapped leaf's per-layer rows follow.
 "
-function params_table(
-        d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    edges = Symbol[]
-    params_col = Symbol[]
-    values = Any[]
-    supports = Any[]
-    priors = Any[]
-    seen = Set{Symbol}()
-    _walk_rows!(edges, params_col, values, supports, priors, seen, d, ())
-    return ParamsTable((edge = edges, param = params_col,
-        value = values, support = supports, prior = priors))
+function composed_to_table(d::AbstractComposedDistribution)
+    s = _FullSink()
+    _walk_rows!(s, Set{Symbol}(), d, ())
+    return ComposedTable((edge = s.edge, param = s.param, node = s.node,
+        role = s.role, value = s.value, support = s.support, prior = s.prior))
 end
 
+# Internal convenience: the historical `params_table(d)` shape, run from the
+# `_ParamSink` walk directly (the same zero-extra-work path `centred_pool_rows`
+# / `required_parameters` use) rather than by filtering `composed_to_table` —
+# an independent computation from the `_FullSink` walk `composed_to_table`
+# runs, so the package's own test suite can assert the two stay in lockstep
+# (the "golden projection parity" testitem). Kept for the test suite so it
+# does not restate the walk at every call site; not part of the public API —
+# a user filters `composed_to_table` directly: `filter(row -> row.role ==
+# :param, Tables.rows(composed_to_table(d)))`.
+function _param_rows(d::AbstractComposedDistribution)
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), d, ())
+    return ComposedTable((edge = s.edge, param = s.param,
+        value = s.value, support = s.support, prior = s.prior))
+end
+
+# --- a composed distribution as a Tables.jl source (#227 slice 1) -----------
+#
+# A composed tree forwards the whole Tables.jl column interface to its FULL
+# table ([`composed_to_table`](@ref), not the parameter-only projection), so
+# `DataFrame(tree)` yields the full node/attribute/param table; filter its
+# `role` column to `:param` for the parameter-only one. Deliberately no
+# `Base.getproperty`/`Base.propertynames` override here (unlike
+# [`ComposedTable`](@ref)): a composed distribution's own fields (`.components`,
+# `.delays`, ...) must keep working, so only the explicit Tables.jl generic
+# functions are forwarded.
+Tables.istable(::Type{<:AbstractComposedDistribution}) = true
+Tables.columnaccess(::Type{<:AbstractComposedDistribution}) = true
+Tables.rowaccess(::Type{<:AbstractComposedDistribution}) = true
+Tables.columns(d::AbstractComposedDistribution) = Tables.columns(composed_to_table(d))
+function Tables.columnnames(d::AbstractComposedDistribution)
+    return Tables.columnnames(composed_to_table(d))
+end
+function Tables.getcolumn(d::AbstractComposedDistribution, i::Int)
+    return Tables.getcolumn(composed_to_table(d), i)
+end
+function Tables.getcolumn(d::AbstractComposedDistribution, nm::Symbol)
+    return Tables.getcolumn(composed_to_table(d), nm)
+end
+Tables.schema(d::AbstractComposedDistribution) = Tables.schema(composed_to_table(d))
+Tables.rows(d::AbstractComposedDistribution) = Tables.rows(composed_to_table(d))
+
 # Pre-order walk over the composer tree. `path` is the tuple of names from the
-# root to the current node. A composer recurses into its named children; a
-# `Resolve` additionally emits its branch-probability rows; a leaf emits one
-# row per scalar parameter. Hand-rolled recursion to stay type-stable.
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        d::Union{Sequential, Parallel}, path)
+# root to the current node (the empty tuple at the root, so `_join_path(())`
+# `== Symbol("")`; no child name can be empty, so this cannot collide, unlike
+# `:root` which would collide with a depth-1 child actually called `root`). A
+# composer node emits its own `:node` row, then one `:attribute` row per
+# `node_attributes` entry, then recurses into its named children, then any of
+# its OWN param rows (a `Resolve`'s `branch_probs`, emitted last — see below).
+# A leaf emits one `:node`/`:attribute` row per `_leaf_layers` layer, then one
+# `:param` row per scalar free parameter. Hand-rolled recursion to stay
+# type-stable.
+function _walk_rows!(sink, seen, d::Union{Sequential, Parallel}, path)
+    edge = _join_path(path)
+    kind = _node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
     names = component_names(d)
     for (name, child) in zip(names, d.components)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, child,
-            (path..., name))
+        _walk_rows!(sink, seen, child, (path..., name))
     end
     return nothing
 end
@@ -865,89 +1443,132 @@ end
 # A `Choose`'s alternatives each contribute their own rows; a tag shared across
 # alternatives is deduped via `seen`, so a parameter tied across the index and
 # sourced branches is inventoried once.
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        d::Choose, path)
+function _walk_rows!(sink, seen, d::Choose, path)
+    edge = _join_path(path)
+    kind = _node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
     for (name, alt) in zip(component_names(d), d.alternatives)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, alt,
-            (path..., name))
+        _walk_rows!(sink, seen, alt, (path..., name))
     end
     return nothing
 end
 
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        c::Resolve, path)
+# A `Resolve`'s own `branch_probs` rows are emitted AFTER its children's rows
+# (parity with the codec's type-level walk beats a tidy "node, then its own
+# rows" ordering — see `_walk_rows!`'s header comment). A `NoEvent` branch
+# gets its own `:node` row (so it is visible in `composed_to_table`) and then
+# is skipped, unchanged from the params-only behaviour (no param rows).
+function _walk_rows!(sink, seen, c::Resolve, path)
+    edge = _join_path(path)
+    kind = _node_kind(c)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
-        _is_no_event(delay) && continue
-        _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
-            (path..., name))
+        child_path = (path..., name)
+        if _is_no_event(delay)
+            _push_node!(sink, _join_path(child_path), _node_kind(delay))
+            continue
+        end
+        _walk_rows!(sink, seen, delay, child_path)
     end
-    edge = _join_path((path..., :branch_probs))
-    _branch_prob_rows!(edges, params_col, values, supports, priors, c, edge,
-        c.branch_prob_prior)
+    bp_edge = _join_path((path..., :branch_probs))
+    _branch_prob_rows!(sink, c, bp_edge, c.branch_prob_prior)
     return nothing
 end
 
 # The branch-probability rows. A fixed node lists one informational row per
 # outcome probability (no attached prior, so it is not estimated). An uncertain
-# node (an attached `Dirichlet`) lists its K-1 stick coordinates instead: each a
-# scalar estimated parameter `:stick_k` in (0, 1) carrying its stick-breaking
-# `Beta` prior, so the codec flattens the simplex through the existing per-row
-# scoring with no special-casing.
-function _branch_prob_rows!(edges, params_col, values, supports, priors,
-        c::Resolve, edge, ::Nothing)
+# node (an attached `Dirichlet`, or the `no_prior()` marker) lists its K-1
+# stick coordinates instead: each a scalar estimated parameter `:stick_k` in
+# (0, 1) carrying its stick-breaking `Beta` prior (or `no_prior()`, unresolved),
+# so the codec flattens the simplex through the existing per-row scoring with
+# no special-casing.
+function _branch_prob_rows!(sink, c::Resolve, edge, ::Nothing)
     sup = (zero(eltype(c.branch_probs)), one(eltype(c.branch_probs)))
     cnames = component_names(c)
     for (k, p) in enumerate(c.branch_probs)
-        push!(edges, edge)
-        push!(params_col, Symbol(cnames[k]))
-        push!(values, p)
-        push!(supports, sup)
-        push!(priors, nothing)
+        _push_param!(sink, edge, Symbol(cnames[k]), Resolve, p, sup, nothing)
     end
     return nothing
 end
 
-function _branch_prob_rows!(edges, params_col, values, supports, priors,
-        c::Resolve, edge, prior::Distributions.Dirichlet)
+function _branch_prob_rows!(sink, c::Resolve, edge, prior::Distributions.Dirichlet)
     v = _simplex_to_stick(collect(c.branch_probs))
     betas = _dirichlet_stick_betas(prior)
     names = _stick_param_names(length(component_names(c)))
     for k in eachindex(names)
-        push!(edges, edge)
-        push!(params_col, names[k])
-        push!(values, v[k])
-        push!(supports, (0.0, 1.0))
-        push!(priors, betas[k])
+        _push_param!(sink, edge, names[k], Resolve, v[k], (0.0, 1.0), betas[k])
+    end
+    return nothing
+end
+
+# The marker case: same stick-coordinate rows, but with no `Dirichlet` to
+# factor into per-stick `Beta`s, so every row's `prior` is the marker itself
+# (free, no prior chosen yet).
+function _branch_prob_rows!(sink, c::Resolve, edge, ::NoPrior)
+    v = _simplex_to_stick(collect(c.branch_probs))
+    names = _stick_param_names(length(component_names(c)))
+    for k in eachindex(names)
+        _push_param!(sink, edge, names[k], Resolve, v[k], (0.0, 1.0), NoPrior())
     end
     return nothing
 end
 
 # A racing-hazard node emits only its outcome delays' parameter rows; there is
 # no branch-probability block (the winning probability is derived, not free).
-function _walk_rows!(edges, params_col, values, supports, priors, seen,
-        c::Compete, path)
+function _walk_rows!(sink, seen, c::Compete, path)
+    edge = _join_path(path)
+    kind = _node_kind(c)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(c))
     for (name, delay) in zip(component_names(c), c.delays)
-        _walk_rows!(edges, params_col, values, supports, priors, seen, delay,
-            (path..., name))
+        _walk_rows!(sink, seen, delay, (path..., name))
     end
     return nothing
 end
 
-# Leaf distribution: one row per scalar free parameter. A censored leaf shows
-# only its inner free delay's params and that delay's support (the censoring
-# bounds are fixed structure, see `free_leaf`). A shared-tagged leaf
-# (`_shared_tag`) is inventoried once under its tag as the edge: the first
-# occurrence emits the rows, later occurrences with the same tag are skipped so
-# the tied parameter is listed once. An uncertain leaf's attached spec rides
-# each row's `prior` entry (`nothing` for a fully fixed parameter), so
-# `build_priors` picks the attached prior up without an explicit override.
-function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
-        path)
-    tag = _shared_tag(leaf)
+# Any OTHER composer node (a downstream type implementing the node-extension
+# contract: [`node_children`](@ref) / [`node_rebuild`](@ref) /
+# [`component_names`](@ref)) walks generically through those three accessors,
+# exactly mirroring the `Sequential`/`Parallel` method above. Dispatch on the
+# shared `AbstractComposedDistribution` supertype rather than the closed Union
+# above means a node subtyping it with no matching method here falls through
+# to THIS method, not silently to the untyped leaf method below — a node
+# missing `node_children`/`component_names` gets a `MethodError` naming the
+# missing method, not a silent zero-row table (#374).
+function _walk_rows!(sink, seen, d::AbstractComposedDistribution, path)
+    edge = _join_path(path)
+    kind = _node_kind(d)
+    _push_node!(sink, edge, kind)
+    _push_attr_rows!(sink, edge, kind, node_attributes(d))
+    for (name, child) in zip(component_names(d), node_children(d))
+        _walk_rows!(sink, seen, child, (path..., name))
+    end
+    return nothing
+end
+
+# Leaf distribution: one `:node`/`:attribute` row per `_leaf_layers` layer,
+# then one `:param` row per scalar free parameter. A censored leaf shows only
+# its inner free delay's params and that delay's support (the censoring
+# bounds are fixed structure, see `free_leaf`); its wrapper layer still gets
+# its own node/attribute rows via `_leaf_layers`. A shared-tagged leaf
+# (`shared_tag`) is inventoried once under its tag as the PARAM edge: the
+# first occurrence emits the param rows, later occurrences with the same tag
+# are skipped so the tied parameter is listed once. The leaf's node/attribute
+# rows are emitted BEFORE that dedup check and always use the leaf's real
+# path (never the tag), so every shared occurrence gets its own node rows —
+# a node row and a param row for the same leaf can legitimately disagree on
+# `edge`. An uncertain leaf's attached spec rides each row's `prior` entry
+# (`nothing` for a fully fixed parameter).
+function _walk_rows!(sink, seen, leaf, path)
+    edge_path = _join_path(path)
+    _emit_layers!(sink, edge_path, leaf)
+    tag = shared_tag(leaf)
     tag !== nothing && tag in seen && return nothing
     inner = free_leaf(leaf)
-    pnames = _leaf_param_names(leaf)
-    specs = _uncertain_specs(leaf)
+    pnames = leaf_param_names(leaf)
+    specs = uncertain_specs(leaf)
     sup = (minimum(inner), maximum(inner))
     # The native delay params take the inner leaf's own support; each
     # modifier-owned extra parameter (e.g. a thinned leaf's `:thin` factor)
@@ -955,33 +1576,35 @@ function _walk_rows!(edges, params_col, values, supports, priors, seen, leaf,
     # attached this is exactly the plain per-param walk.
     extras = extra_leaf_params(leaf)
     native = params(inner)
+    all(v -> v isa Real, native) || throw(ArgumentError(
+        "$(nameof(typeof(inner))) has vector-valued (non-scalar) " *
+        "parameters $(native); vector-parameter leaves are not " *
+        "representable as the scalar :param rows of composed_to_table " *
+        "(e.g. Categorical's probability vector); read or update this " *
+        "leaf's parameters directly rather than through the table"))
     vals = (native..., map(e -> e.value, extras)...)
     sups = (ntuple(_ -> sup, length(native))...,
         map(e -> e.support, extras)...)
-    edge = tag === nothing ? _join_path(path) : tag
+    edge = tag === nothing ? edge_path : tag
     tag === nothing || push!(seen, tag)
+    leaf_kind = _node_kind(inner)
     for (pname, v, s) in zip(pnames, vals, sups)
         spec = specs === nothing ? nothing : get(specs, pname, nothing)
         # A pooled parameter lowers to the group's shared population
         # hyperparameters (once) plus this member's own latent, all scalar rows.
         if spec isa Pool
-            _pool_rows!(edges, params_col, values, supports, priors, seen,
-                spec, edge, pname, v, s)
+            _pool_rows!(sink, seen, spec, edge, pname, v, s)
             continue
         end
-        push!(edges, edge)
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, s)
-        push!(priors, spec)
+        _push_param!(sink, edge, pname, leaf_kind, v, s, spec)
     end
     return nothing
 end
 
 # Join a name path to a single dotted `Symbol` (e.g. `(:a, :b)` -> `:a.b`); a
 # single-element path keeps its bare name. This is the dotted ("." separator)
-# parameter-path namespace (params_table edges / priors), distinct from the
-# underscored ("_" separator) event/value namespace (`_join_value_path`,
+# parameter-path namespace (composed_to_table edges / priors), distinct from
+# the underscored ("_" separator) event/value namespace (`_join_value_path`,
 # `_split_edge_name`).
 _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 
@@ -992,17 +1615,16 @@ _join_path(path::Tuple) = Symbol(join(string.(path), "."))
 # `_reconstruct_leaf` but is Turing-free; argument checks are kept on (this is
 # building a concrete distribution, not a gradient hot path).
 function _update_leaf(leaf, vals::Tuple)
-    ctor = leaf_ctor(leaf)
     # The trailing values are the modifier-owned extra parameters (the trailing
     # rows the walker emits, one per `extra_leaf_params` entry): rebuild the
     # inner delay from the leading native params, then re-attach the updated
     # extras by name. Inert (no split) when the leaf has no extras.
     extras = extra_leaf_params(leaf)
     k = length(extras)
-    k == 0 && return rewrap_leaf(leaf, ctor(vals...))
+    k == 0 && return rewrap_leaf(leaf, rebuild_leaf(leaf, vals))
     native = vals[1:(end - k)]
     extra_vals = vals[(end - k + 1):end]
-    rebuilt = rewrap_leaf(leaf, ctor(native...))
+    rebuilt = rewrap_leaf(leaf, rebuild_leaf(leaf, native))
     return set_extra_leaf_params(rebuilt,
         NamedTuple{keys(extras)}(extra_vals))
 end
@@ -1027,7 +1649,7 @@ For topology edits that change the tree shape, use [`prune`](@ref) or
 `update(d, params)` returns a new distribution of the same structure as `d` with
 its parameters set from `params`, a nested NamedTuple mirroring the tree: a
 [`Sequential`](@ref)/[`Parallel`](@ref) is keyed by its edge names, a leaf by
-its parameter names (as in [`params_table`](@ref)'s `param` column), and a
+its parameter names (as in [`composed_to_table`](@ref)'s `param` column), and a
 [`Resolve`](@ref) by its outcome names plus an optional `branch_probs` entry. A
 censored leaf is transparent: supply only the inner delay's parameters and the
 censoring is carried through.
@@ -1041,26 +1663,29 @@ spelling of \"distribution in the slot = estimate, value = fix\"):
 - a **distribution** makes the parameter [`uncertain`](@ref) with that spec.
   Passing distributions switches to a partial update: only the named parameters
   change (an absent parameter keeps its current spec or fixed value), so
-  `update(tree, (onset = (shape = LogNormal(log(2), 0.2),),))` makes just
-  `onset`'s `shape` uncertain. Promote a whole tree to uncertainty over its
-  free parameters with default priors via `update(tree, `
-  [`param_priors`](@ref)`(tree))` — the explicit estimate-everything path;
+  `update(tree, (onset = (alpha = LogNormal(log(2), 0.2),),))` makes just
+  `onset`'s `alpha` uncertain;
+- an **[`no_prior`](@ref)`()` marker** makes the parameter uncertain with no
+  prior chosen yet. `uncertain(tree)` (bare) is the whole-tree escape hatch
+  built on this: it marks every currently-fixed free parameter this way,
+  including a [`Resolve`](@ref)'s branch-probability simplex;
 - a **[`pool`](@ref) spec** makes the parameter partially pooled across the
   leaves that name the same group (also a partial update), e.g.
-  `update(tree, (onset = (shape = pool(:district),),))`.
+  `update(tree, (onset = (alpha = pool(:district),),))`.
 
 A [`Resolve`](@ref) node's `branch_probs` are a node-level parameter, not a
-leaf: attach a simplex-valued `Distributions.Dirichlet` at the `branch_probs`
-slot to make them uncertain,
-`update(node, (branch_probs = Dirichlet(ones(K)),))`. The `Dirichlet` is the
-prior you write; the codec estimates the node through the `Dirichlet`'s K-1
-stick-breaking coordinates (labelled `:stick_1 … :stick_{K-1}` in
-[`params_table`](@ref) and a fitted chain), each a `Beta` in (0, 1), so every
-draw lands on the probability simplex and the gradient is well-defined. The
-probabilities are recovered from any draw: a strict `update` from the stick
-coordinates (as read back from a chain) collapses the node to concrete
-probabilities summing to one (read them with `Distributions.probs`). Promote
-attaches a flat `Dirichlet(ones(K))` per `Resolve`.
+leaf: attach a simplex-valued `Distributions.Dirichlet` (or the
+[`no_prior`](@ref)`()` marker) at the `branch_probs` slot to make them
+uncertain, `update(node, (branch_probs = Dirichlet(ones(K)),))`. The
+`Dirichlet` is the prior you write; the codec estimates the node through the
+`Dirichlet`'s K-1 stick-breaking coordinates (labelled `:stick_1 …
+:stick_{K-1}` in [`composed_to_table`](@ref) and a fitted chain), each a
+`Beta` in (0, 1), so every draw lands on the probability simplex and the
+gradient is well-defined. The probabilities are recovered from any draw: a
+strict `update` from the stick coordinates (as read back from a chain)
+collapses the node to concrete probabilities summing to one (read them with
+`Distributions.probs`). `uncertain(tree)` (bare) marks the simplex
+`no_prior()` per `Resolve`, no prior chosen.
 
 Read a fitted chain back onto a template with
 `DistributionsInference.point_estimate` (or `readback_draws` for every draw)
@@ -1080,11 +1705,11 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 # Concrete values pin the parameters.
-tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+tree2 = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)))
 event(tree2, :onset_admit)
 # A distribution makes just that parameter uncertain (a partial update).
-est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+est = update(tree, (onset_admit = (alpha = LogNormal(log(2.0), 0.2),),))
 has_uncertain(est)
 ```
 
@@ -1094,7 +1719,7 @@ has_uncertain(est)
 same outer structure as `d` with the node addressed by each `path` replaced by
 `new_node`. A `path` is a `Symbol` (a top-level child), a dotted `Symbol`
 (`:admit_path.admit_resolution.death`, as in [`event`](@ref) /
-[`params_table`](@ref)), or a tuple of edge names from the root (e.g.
+[`composed_to_table`](@ref)), or a tuple of edge names from the root (e.g.
 `(:admit_path, :admit_resolution, :death)`); the same address [`event`](@ref)
 reads is the one this writes. `new_node` may be a leaf distribution or a nested
 composer. This shares the recursive reconstruction with the value-update form
@@ -1119,7 +1744,7 @@ event(tree2, :admit_death)
 
 `update(d, x)` is a shorthand for `update(d, unflatten(d, x))`: rebuild the
 distribution with parameters read from the flat estimated vector `x`. Each
-estimated parameter (an [`uncertain`](@ref) spec in [`params_table`](@ref))
+estimated parameter (an [`uncertain`](@ref) spec in [`composed_to_table`](@ref))
 takes its value from the vector, each fixed parameter its template value. This
 collapses the tree at the draw and is commonly used to rebuild a distribution
 from a sampler output after reading it into the flat coordinate system.
@@ -1134,9 +1759,9 @@ from a sampler output after reading it into the flat coordinate system.
 using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-    shape = LogNormal(log(2.0), 0.2)),
+    alpha = LogNormal(log(2.0), 0.2)),
     admit_death = LogNormal(0.5, 0.4)))
-# The one estimated parameter is onset_admit.shape; the vector is length 1.
+# The one estimated parameter is onset_admit.alpha; the vector is length 1.
 # This is equivalent to
 # update(tree, ComposedDistributions.unflatten(tree, [3.0])).
 result = update(tree, [3.0])
@@ -1145,9 +1770,9 @@ event(result, :onset_admit)
 
 # `update(d, table)` — bulk-set from a Tables.jl table
 
-`update(d, table)` reads a [`params_table`](@ref)-shaped Tables.jl table (any
-`Tables.istable` source with `edge`/`param` columns) and folds every row into
-the tree in one call: a row's `prior` (when present and not `nothing`)
+`update(d, table)` reads a [`composed_to_table`](@ref)-shaped Tables.jl table
+(any `Tables.istable` source with `edge`/`param` columns) and folds every row
+into the tree in one call: a row's `prior` (when present and not `nothing`)
 promotes that parameter to [`uncertain`](@ref), otherwise its `value` sets it
 — the spreadsheet-style bulk-edit route, an input format for `update` rather
 than a separate verb.
@@ -1163,14 +1788,15 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
-update(tree, params_table(tree))   # a no-op round-trip here
+update(tree, composed_to_table(tree))   # a no-op round-trip here
 ```
 
 # See also
 - [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point built on
   the same merge-mode pipeline as this docstring's distribution-valued forms
-- [`params_table`](@ref): the flat inventory whose `param` names key the leaves
-- [`param_priors`](@ref): default priors for the promote path
+- [`composed_to_table`](@ref): the flat inventory whose `param` names key the
+  leaves; filter to `role == :param` for the parameter-only rows
+- [`no_prior`](@ref): the marker `uncertain(tree)` (bare) applies
 - [`flatten`](@ref), [`unflatten`](@ref): the flat <-> nested codec
 - [`prune`](@ref), [`splice`](@ref): topology edits that change the shape
 "
@@ -1214,17 +1840,17 @@ end
 
 Bulk-`update` a composed distribution from a Tables.jl table.
 
-`update(d, table)` reads a [`params_table`](@ref)-shaped Tables.jl table (any
-`Tables.istable` source with `edge`/`param` columns, e.g. `params_table(d)`
-itself, a `DataFrame`, or a hand-built `Vector{<:NamedTuple}`) and folds it
-into the same nested-`NamedTuple` [`update`](@ref) pipeline used everywhere
-else: a row's `prior` entry (when the table carries one and it is not
-`nothing`) promotes that parameter to [`uncertain`](@ref); otherwise its
-`value` entry sets it, so a plain four-column table (no `prior` column) is a
-purely concrete bulk write — the spreadsheet-style workflow `params_table`
-was built to round-trip. This is `update`'s table input format, not a
-separate verb: the result is identical to building the nested `NamedTuple` by
-hand and calling `update(d, nt)`.
+`update(d, table)` reads a [`composed_to_table`](@ref)-shaped Tables.jl table
+(any `Tables.istable` source with `edge`/`param` columns, e.g.
+`composed_to_table(d)` itself, a `DataFrame`, or a hand-built
+`Vector{<:NamedTuple}`) and folds it into the same nested-`NamedTuple`
+[`update`](@ref) pipeline used everywhere else: a row's `prior` entry (when
+the table carries one and it is not `nothing`) promotes that parameter to
+[`uncertain`](@ref); otherwise its `value` entry sets it, so a plain
+four-column table (no `prior` column) is a purely concrete bulk write — the
+spreadsheet-style workflow this table shape is built to round-trip. This is
+`update`'s table input format, not a separate verb: the result is identical
+to building the nested `NamedTuple` by hand and calling `update(d, nt)`.
 
 A `Vector{<:NamedTuple}` is `Tables.istable` (a Tables.jl row table) under
 both this package's `edge`/`param` convention and
@@ -1237,10 +1863,27 @@ here). This logic requires `edge` and `param` columns and errors naming the
 columns it found otherwise, so a `DistributionsInference`-shaped row vector
 is refused loudly rather than silently misread.
 
+A [`composed_to_table`](@ref)-shaped table (a `role` column present, e.g. a
+`DataFrame(tree)` — a composed distribution is itself a Tables.jl source over
+its full table) is filtered to its `role == :param` rows first, so passing
+the whole tree straight to `update` still only writes parameters, never a
+`:node`/`:attribute` row. The two exceptions are the parameters that live at
+node level rather than at a leaf: a pooled parameter and an uncertain
+[`Resolve`](@ref)'s branch-probability simplex are both written from their
+`:attribute` row (which carries the [`pool`](@ref) spec and the `Dirichlet`
+respectively), because their `:param` rows are a projection — a `z` latent,
+a `CentredPoolPrior` marker, stick coordinates — that is not what `update`
+takes. Edit those two through the `:attribute` row's value. A composed
+distribution as the second argument itself (`update(a, b)`) is rejected with
+a clear error rather than silently reaching this table path — pass
+`composed_to_table(b)` explicitly to copy `b`'s rows.
+
+`update(d, composed_to_table(d))` is an identity on every tree shape.
+
 # Arguments
 - `d`: the composed distribution to edit.
 - `table`: a Tables.jl table with `edge`/`param` columns and a `value` and/or
-  `prior` column (as in [`params_table`](@ref)).
+  `prior` column (as in [`composed_to_table`](@ref)).
 
 # Examples
 ```@example
@@ -1248,7 +1891,7 @@ using ComposedDistributions, Distributions
 
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
-tbl = params_table(tree)
+tbl = composed_to_table(tree)
 # A bulk concrete write: every `value` re-applied (a no-op read/write
 # round-trip here, but the same call works after editing `tbl.value` in
 # place or in a DataFrame).
@@ -1256,7 +1899,7 @@ update(tree, tbl)
 ```
 
 # See also
-- [`params_table`](@ref): the table shape this reads.
+- [`composed_to_table`](@ref): the table shape this reads.
 - [`update`](@ref)`(d, params::NamedTuple)`: the underlying pipeline.
 - [`uncertain`](@ref)`(tree, ...)`: the promotion-only entry point.
 "
@@ -1264,24 +1907,41 @@ function update(d::AbstractComposedDistribution, table)
     return update(d, _table_to_nested_updates(table))
 end
 
-# Whether an `update` NamedTuple carries any distribution-valued parameter,
-# which switches `update` to *merge* mode: a distribution introduces an uncertain
+# A composed distribution is now a Tables.jl source in its own right (see
+# above), so `update(a, b)` with `b` a tree would otherwise silently reach the
+# table arm above and bulk-write `b`'s rows into `a` (both `edge` and `param`
+# are present on any composed distribution). Reject it with a clear error
+# naming the fix instead: `composed_to_table` makes the intent to copy rows
+# explicit.
+function update(::AbstractComposedDistribution, other::AbstractComposedDistribution)
+    throw(ArgumentError(
+        "update(d, table): the second argument is a $(nameof(typeof(other))) " *
+        "(a composed distribution), not a table. Composed distributions are " *
+        "now Tables.jl sources, so pass composed_to_table(other) explicitly " *
+        "if you meant to copy its rows."))
+end
+
+# Whether an `update` NamedTuple carries any spec-valued parameter, which
+# switches `update` to *merge* mode: a spec (a distribution, `pool(...)`, or
+# `no_prior()` — see `_is_spec_value`, `Uncertain.jl`) introduces an uncertain
 # spec, a `Real` pins (collapsing any spec), and an absent parameter keeps the
 # leaf's current spec or fixed value (so a partial NamedTuple targets only the
-# named parameters). Without a distribution anywhere the update is a plain
-# concrete replacement (*strict* mode, exact cover), the original behaviour.
-# Any distribution counts: a `UnivariateDistribution` spec makes a leaf
-# parameter uncertain, and a multivariate simplex prior (a `Dirichlet` at a
+# named parameters). Without a spec anywhere the update is a plain concrete
+# replacement (*strict* mode, exact cover), the original behaviour. Any spec
+# counts: a `UnivariateDistribution`/`no_prior()` makes a leaf parameter
+# uncertain, and a multivariate simplex prior (a `Dirichlet`/`no_prior()` at a
 # `Resolve`'s `branch_probs`) makes the branch probabilities uncertain, so a
-# lone `Dirichlet` update also switches to merge mode.
+# lone `branch_probs` update also switches to merge mode. `Pool`/`NoPrior`
+# extend this generic (their own files, `Pool.jl`/`no_prior.jl`) rather than
+# widening the `Union` here, since neither is a `Distribution`.
 _has_distribution_value(x::Distribution) = true
 _has_distribution_value(x::NamedTuple) = any(_has_distribution_value, values(x))
 _has_distribution_value(::Any) = false
 
 # `_update` is the recursive worker. The whole top-level `params` is threaded down
 # as the `shared` source: a shared-tagged leaf is keyed at the top level by its
-# tag (matching `params_table`'s tag edge), so every occurrence reads the one
-# entry; per-node keys are validated against the per-occurrence params with the
+# tag (matching `composed_to_table`'s tag edge), so every occurrence reads the
+# one entry; per-node keys are validated against the per-occurrence params with the
 # shared tags excluded. `merge` carries the mode (see `_has_distribution_value`);
 # the composer recursion is mode-agnostic (it already tolerates absent children),
 # only the leaf method and the `Resolve` branch-probability block branch on it.
@@ -1300,7 +1960,7 @@ function _update(d::Union{Sequential, Parallel}, params::NamedTuple, shared,
     parts = map(d.components, names) do child, name
         _update(child, _child_params(params, name), shared, merge)
     end
-    return _rebuild(d, parts)
+    return node_rebuild(d, parts)
 end
 
 # A `Choose` updates each alternative; a tag shared across alternatives reads one
@@ -1312,7 +1972,7 @@ function _update(d::Choose, params::NamedTuple, shared, merge::Bool)
         _update(d.alternatives[i], _child_params(params, names[i]), shared,
             merge)
     end
-    return _rebuild(d, alts)
+    return node_rebuild(d, alts)
 end
 
 function _update(c::Resolve, params::NamedTuple, shared, merge::Bool)
@@ -1328,12 +1988,14 @@ end
 # Rebuild the `Resolve` with updated delays, resolving the branch probabilities
 # and their attached prior from the update NamedTuple:
 #
-# - *merge* mode with a `branch_probs = Dirichlet(...)` entry attaches that prior,
-#   making the simplex uncertain (the probabilities stay as the point). Without
-#   a `branch_probs` entry the node's probabilities and prior are kept.
-# - *strict* mode on a node that carries a prior reconstructs the probabilities
-#   from the stick coordinates supplied (a draw from the sampler) and collapses
-#   the node to concrete structure (drops the prior), mirroring a leaf collapse.
+# - *merge* mode with a `branch_probs = Dirichlet(...)` or
+#   `branch_probs = no_prior()` entry attaches that spec, making the simplex
+#   uncertain (the probabilities stay as the point). Without a `branch_probs`
+#   entry the node's probabilities and prior are kept.
+# - *strict* mode on a node that carries a prior/marker reconstructs the
+#   probabilities from the stick coordinates supplied (a draw from the
+#   sampler) and collapses the node to concrete structure (drops the
+#   prior/marker), mirroring a leaf collapse.
 # - *strict* mode on a fixed node replaces the probabilities from concrete
 #   per-outcome values, as before.
 function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
@@ -1343,13 +2005,14 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         haskey(params, :branch_probs) || return Resolve(names, delays,
             c.branch_probs, c.branch_prob_prior)
         bp = params.branch_probs
-        # A `Dirichlet` attaches a prior, making the simplex uncertain.
-        bp isa Distributions.Dirichlet &&
+        # A `Dirichlet`/`no_prior()` attaches a spec, making the simplex
+        # uncertain.
+        bp isa Union{Distributions.Dirichlet, NoPrior} &&
             return Resolve(names, delays, c.branch_probs, bp)
         # A concrete `NamedTuple` pins the probabilities, exactly as a `Real`
         # value pins a leaf parameter in merge mode: set them from the supplied
         # values (collapsing any prior), reusing the strict-mode handling. This
-        # is what makes `update(tree, params_table(tree))` round-trip a
+        # is what makes `update(tree, composed_to_table(tree))` round-trip a
         # fixed-probability `Resolve` when an uncertain leaf elsewhere in the
         # tree has flipped the whole update into merge mode — the fixed node's
         # `branch_probs` come back as a per-outcome `NamedTuple` unrelated to
@@ -1357,8 +2020,8 @@ function _update_branch_probs(c::Resolve, delays, params::NamedTuple,
         bp isa NamedTuple && return _update_branch_probs_strict(c, delays, bp)
         throw(ArgumentError(
             "update(Resolve, ...): a `branch_probs` update in merge mode must " *
-            "be a `Dirichlet` over the outcomes (making the simplex " *
-            "uncertain) or a per-outcome `NamedTuple` (pinning fixed " *
+            "be a `Dirichlet` over the outcomes or `no_prior()` (making the " *
+            "simplex uncertain) or a per-outcome `NamedTuple` (pinning fixed " *
             "probabilities); got a $(typeof(bp))"))
     end
     haskey(params, :branch_probs) || return Resolve(names, delays,
@@ -1416,25 +2079,41 @@ function _update(c::Compete, params::NamedTuple, shared, merge::Bool)
     delays = ntuple(length(names)) do i
         _update(c.delays[i], _child_params(params, names[i]), shared, merge)
     end
-    return _rebuild(c, delays)
+    return node_rebuild(c, delays)
+end
+
+# Any OTHER composer node updates its children generically through
+# `component_names`/`node_children`/`node_rebuild`, exactly mirroring the
+# `Sequential`/`Parallel` method above. See the matching `_walk_rows!` method
+# for why dispatching on the shared supertype (rather than a closed Union)
+# matters: a node missing a required method gets a `MethodError` here, not a
+# silently-wrong update.
+function _update(d::AbstractComposedDistribution, params::NamedTuple, shared,
+        merge::Bool)
+    names = component_names(d)
+    _check_child_keys(params, names, nameof(typeof(d)), shared)
+    parts = map(node_children(d), names) do child, name
+        _update(child, _child_params(params, name), shared, merge)
+    end
+    return node_rebuild(d, parts)
 end
 
 # A no-event marker carries no parameters, so `update` leaves it unchanged.
 _update(d::NoEvent, ::NamedTuple, shared, ::Bool) = d
 
-# Leaf: in strict mode take the new concrete values in `_leaf_param_names` order
+# Leaf: in strict mode take the new concrete values in `leaf_param_names` order
 # and rebuild (collapsing any uncertain leaf); in merge mode introduce/extend
 # uncertainty via `_merge_leaf`. A shared-tagged leaf reads its entry from the
 # top-level `shared` under its tag; in merge mode an absent tag entry is a no-op
 # (an empty merge keeps the leaf), so a partial merge leaves untouched leaves be.
 function _update(leaf, params::NamedTuple, shared, merge::Bool)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     if merge
         updates = tag === nothing ? params : get(shared, tag, NamedTuple())
         return _merge_leaf(leaf, updates)
     end
     leaf_params = tag === nothing ? params : _shared_entry(shared, tag, leaf)
-    pnames = _leaf_param_names(leaf)
+    pnames = leaf_param_names(leaf)
     # A pooled leaf reconstructs each pooled parameter from the group's shared
     # hyperparameters (read from the top-level group entry, threaded like a
     # shared tag) and the member's own latent, rather than taking scalar values.
@@ -1447,8 +2126,9 @@ function _update(leaf, params::NamedTuple, shared, merge::Bool)
 end
 
 # Validate a merge NamedTuple: every key must be a parameter of the leaf, and
-# every value a `Real` (fix) or a `UnivariateDistribution` (make uncertain). A
-# missing key is fine (that parameter is left untouched).
+# every value a `Real` (fix) or a spec (`_is_spec_value`, `Uncertain.jl`: a
+# `UnivariateDistribution`, a `pool(...)` group, or `no_prior()`). A missing
+# key is fine (that parameter is left untouched).
 function _check_merge_keys(updates::NamedTuple, expected::Tuple, what)
     for k in keys(updates)
         k in expected || throw(ArgumentError(
@@ -1456,10 +2136,12 @@ function _check_merge_keys(updates::NamedTuple, expected::Tuple, what)
             "expected $(collect(expected))"))
     end
     for (k, v) in pairs(updates)
-        v isa Union{Real, UnivariateDistribution, Pool} || throw(ArgumentError(
-            "update($what, ...): the value for $(repr(k)) must be a Real " *
-            "(a fixed value), a UnivariateDistribution (an uncertain spec), " *
-            "or a `pool(...)` spec (partial pooling); got $(typeof(v))"))
+        v isa Real || _is_spec_value(v) ||
+            throw(ArgumentError(
+                "update($what, ...): the value for $(repr(k)) must be a " *
+                "Real (a fixed value), a UnivariateDistribution (an " *
+                "uncertain spec), a `pool(...)` spec (partial pooling), " *
+                "or `no_prior()` (free, no prior yet); got $(typeof(v))"))
     end
     return nothing
 end
@@ -1515,30 +2197,108 @@ function _check_update_keys(params, ::Tuple, what; optional::Tuple = ())
         "update($what, ...) expects a NamedTuple; got $(typeof(params))"))
 end
 
-# `_rebuild` for the composers (mirrors the extension's helper, kept core-side so
-# `update` is Turing-free). Rebuilds a node of the same type and metadata around
-# a new children tuple (steps/branches, one_of outcome delays, Choose
+@doc """
+
+Rebuild a composer node around a new children tuple.
+
+`node_rebuild(node, children)` returns a node of the same type and own fixed
+structure (a `Choose`'s `selector`, a `Resolve`'s branch probabilities) as
+`node`, with its children replaced by `children` (in the same order as
+[`component_names`](@ref)`(node)`). Part of the public node-extension
+contract, alongside [`node_children`](@ref); see
+[Writing a new composer node](@ref new-composer-node). Required from every
+composer node: only the node's own constructor knows how to put a new set of
+children back together (a leaf recurses no further, so it needs no method).
+
+# Arguments
+- `node`: the composer node to rebuild.
+- `children`: a `Tuple` of replacement children, one per
+  [`component_names`](@ref)`(node)`.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+node = compose((onset = Gamma(2.0, 1.0), report = Gamma(1.5, 1.0)))
+ComposedDistributions.node_rebuild(node, (LogNormal(0.5, 0.4), Gamma(1.5, 1.0)))
+```
+
+# See also
+- [`node_children`](@ref): the matching read accessor.
+""" function node_rebuild end
+
+# The composers (mirrors the extension's helper, kept core-side so `update`
+# is Turing-free). Rebuilds a node of the same type and metadata around a new
+# children tuple (steps/branches, one_of outcome delays, Choose
 # alternatives); shared by the `update` / `prune` / `splice` structural edits.
-function _rebuild(d::Sequential, components::Tuple)
+function node_rebuild(d::Sequential, components::Tuple)
     Sequential(components, component_names(d))
 end
-function _rebuild(d::Parallel, components::Tuple)
+function node_rebuild(d::Parallel, components::Tuple)
     Parallel(components, component_names(d))
 end
-function _rebuild(c::Resolve, delays::Tuple)
+function node_rebuild(c::Resolve, delays::Tuple)
     Resolve(component_names(c), delays, c.branch_probs,
         c.branch_prob_prior)
 end
-_rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
-_rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
+node_rebuild(c::Compete, delays::Tuple) = Compete(component_names(c), delays)
+node_rebuild(d::Choose, alts::Tuple) = Choose(component_names(d), alts, d.selector)
 
-# A composer node's children tuple, uniform across the node kinds (the field
-# holding them differs per type). Pairs with `_rebuild` for generic node walks.
-_node_children(d::Union{Sequential, Parallel}) = d.components
-_node_children(c::AbstractOneOf) = c.delays
-_node_children(d::Choose) = d.alternatives
+@doc """
 
-# --- build_priors: params_table + flat priors -> nested NamedTuple ----------
+The children of a composer node, positionally matching its names.
+
+`node_children(node)` returns the `Tuple` of `node`'s children (steps,
+branches, outcome delays or alternatives), in the same order as
+[`component_names`](@ref)`(node)`. Part of the public node-extension
+contract, alongside [`node_rebuild`](@ref); see
+[Writing a new composer node](@ref new-composer-node). Required from every
+composer node: only the node's own type knows which field holds them (a leaf
+has no children, so it needs no method — every leaf's flat width is its own
+free-parameter count, read from [`params`](@ref) instead). The built-ins each
+hold their children in a differently-named field (`.components`, `.delays`,
+`.alternatives`), which is exactly what this accessor is for: one uniform
+name over that variation.
+
+Defining it also gets [`has_varying`](@ref) and [`has_uncertain`](@ref) for
+free: both walk a node generically as `any(f, node_children(node))`,
+dispatching on the public `AbstractComposedDistribution` root rather than a
+closed list of the built-in types, so a third-party node needs no
+registration to answer either predicate.
+
+# Arguments
+- `node`: the composer node whose children are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+node = compose((onset = Gamma(2.0, 1.0), report = Gamma(1.5, 1.0)))
+ComposedDistributions.node_children(node)
+```
+
+# See also
+- [`node_rebuild`](@ref): the matching rebuild verb.
+- [`component_names`](@ref): the matching names.
+- [`has_varying`](@ref), [`has_uncertain`](@ref): the two generic walks built
+  on this accessor.
+""" function node_children end
+
+node_children(d::Union{Sequential, Parallel}) = d.components
+node_children(c::AbstractOneOf) = c.delays
+node_children(d::Choose) = d.alternatives
+
+# A transitional alias for this accessor's original (leading-underscore)
+# internal name, kept — like `_centred_pool_rows` in `public.jl` — so a
+# downstream package reaching in by the old qualified name keeps working.
+# `node_children` is the public name.
+
+# --- nested-tree assembly: flat table rows -> nested NamedTuple ------------
+#
+# Shared by `_table_to_nested_updates` (`update(d, table)`) and `_estimate_all`
+# (bare `uncertain(tree)`, below): both walk a `composed_to_table`-shaped set
+# of rows and assemble the identical nested-`NamedTuple` shape `update`/
+# `uncertain` consume, differing only in which value each row contributes.
 
 # Split a dotted edge `Symbol` (`:a.b`) back into its name path (`(:a, :b)`).
 # The dotted ("." separator) parameter-path namespace (inverse of `_join_path`),
@@ -1568,22 +2328,88 @@ function _freeze_tree(d::Dict{Symbol})
     return NamedTuple{ks}(map(k -> _freeze_tree(d[k]), ks))
 end
 
+# A table `edge` as a name path: the empty `Symbol` (the root) is the empty
+# tuple, everything else splits on the dots. `_split_edge` alone would give the
+# root a spurious one-element `(Symbol(""),)` path.
+_edge_path(edge::Symbol) = edge === Symbol("") ? () : _split_edge(edge)
+
+# The node-level half of `update(d, table)` (see the header comment on
+# `_table_to_nested_updates`): insert each pooled parameter's `pool(...)` spec
+# and each uncertain `Resolve`'s simplex prior into `tree` from its own
+# `:attribute` row, and return the set of edges whose `:param` rows the caller
+# must therefore skip (an uncertain `Resolve`'s `<edge>.branch_probs` stick
+# block; a pooled parameter's rows are skipped by their `node` column instead,
+# which catches the group's hyperparameter rows too). A table with no
+# `role`/`node` column carries no `:attribute` rows at all and gets an empty
+# set, leaving a hand-built four/five-column table's handling unchanged.
+function _node_level_updates!(tree, edges, params_col, role_col, node_col,
+        values_col)
+    skip = Set{Symbol}()
+    (role_col === nothing || node_col === nothing || values_col === nothing) &&
+        return skip
+    for i in eachindex(edges)
+        Symbol(role_col[i]) === :attribute || continue
+        path = _edge_path(edges[i])
+        if node_col[i] === Pool
+            # `spec` is the `pool(...)` object itself: the group, the
+            # parameterisation and the whole population in one value, which is
+            # exactly what `update` takes at a leaf parameter.
+            _nest_insert!(tree, path, params_col[i], values_col[i].spec)
+        elseif node_col[i] === Resolve && params_col[i] === :branch_prob_prior
+            _nest_insert!(tree, path, :branch_probs, values_col[i])
+            push!(skip, _join_path((path..., :branch_probs)))
+        end
+    end
+    return skip
+end
+
 # --- update(d, table): a Tables.jl table folded to a nested update NamedTuple
 
-# `update(d, table)`'s reader: a `params_table`-shaped Tables.jl table ->
-# the nested NamedTuple `update`/`_update` consume. Reuses the exact
-# `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `build_priors` uses,
-# so the table -> tree shape is identical; only the per-row value picked
-# differs (a row's own `prior`/`value`, no override/default machinery — this
-# is a plain bulk write, not prior assembly). Requires `Tables.istable` and
-# `edge`/`param` columns, erroring by column name on either miss so a
+# `update(d, table)`'s reader: a `composed_to_table`-shaped Tables.jl table ->
+# the nested NamedTuple `update`/`_update` consume, via the same
+# `_split_edge`/`_nest_insert!`/`_freeze_tree` assembly `_estimate_all` uses
+# below — only the per-row value picked differs (a row's own `prior`/`value`,
+# a plain bulk write, not the estimate-everything marker). Requires
+# `Tables.istable` and `edge`/`param` columns, erroring by column name on
+# either miss so a
 # differently-shaped row table (e.g. DistributionsInference's dotted-`name`
 # `parameter_rows` convention, DI#20) is refused loudly rather than silently
 # misread — both shapes are `Tables.istable`, so this check is the only thing
-# that tells them apart.
+# that tells them apart. A `role` column (a `composed_to_table`-shaped table,
+# or a `DataFrame(tree)` of one) is filtered to its `:param` rows first, so a
+# `:node`/`:attribute` row (whose `value`/`prior` are both absent) never
+# reaches the "neither a usable prior nor value" error below; `Symbol(role)`
+# so a String `"param"` (a CSV/DataFrame round trip) still matches. A table
+# with no `role` column (a plain four/five-column hand-built shape) is
+# unfiltered, exactly as before.
+#
+# Two kinds of parameter are NODE-LEVEL rather than leaf-level, and for those
+# the `:param` rows are a projection `update` cannot consume directly. Both are
+# read from their `:attribute` row instead and their `:param` rows skipped
+# (`_node_level_updates!`):
+#
+#   - a POOLED parameter. `update` takes the `pool(...)` spec itself, but the
+#     `:param` rows are the group's population hyperparameters, the member's
+#     `Normal(0, 1)` `z` latent (non-centred) or a `CentredPoolPrior` marker
+#     (centred) — none of which is a spec. Feeding them through set a latent as
+#     if it were the leaf's own parameter, and BOTH parameterisations threw
+#     (`update(Uncertain, ...): the value for :alpha must be a Real ...`
+#     non-centred; `MethodError: no method matching Gamma(::CentredPoolPrior,
+#     ...)` centred).
+#   - an uncertain `Resolve`'s BRANCH PROBABILITIES. `update` takes the node's
+#     simplex prior (a `Dirichlet` or the `no_prior()` marker), but the
+#     `:param` rows are its K-1 stick coordinates carrying per-stick `Beta`s.
+#     Feeding those through reached the stick-to-simplex reconstruction with
+#     distributions where coordinates belong (`MethodError: no method matching
+#     one(::Type{Beta{Float64}})`). A FIXED `Resolve` carries no such attribute
+#     row and keeps its per-outcome value rows, unchanged.
+#
+# So `update(d, composed_to_table(d))` is an identity on every tree shape,
+# which is the contract this table is built to keep. Both need the `node`
+# column, so a `role`-less hand-built table is unaffected.
 function _table_to_nested_updates(table)
     Tables.istable(table) || throw(ArgumentError(
-        "update(d, table) needs a Tables.jl table (params_table-shaped: " *
+        "update(d, table) needs a Tables.jl table (composed_to_table-shaped: " *
         "edge/param columns, plus value and/or prior); got $(typeof(table)). " *
         "Pass a NamedTuple for a single targeted edit, or an " *
         "AbstractVector{<:Real} for a flat parameter vector."))
@@ -1591,15 +2417,27 @@ function _table_to_nested_updates(table)
     colnames = Tables.columnnames(cols)
     (:edge in colnames && :param in colnames) || throw(ArgumentError(
         "update(d, table) needs `edge` and `param` columns (as produced by " *
-        "params_table); got columns $(collect(colnames))"))
+        "composed_to_table); got columns $(collect(colnames))"))
     edges = Tables.getcolumn(cols, :edge)
     params_col = Tables.getcolumn(cols, :param)
+    has_role = :role in colnames
+    role_col = has_role ? Tables.getcolumn(cols, :role) : nothing
     has_value = :value in colnames
     has_prior = :prior in colnames
     values_col = has_value ? Tables.getcolumn(cols, :value) : nothing
     prior_col = has_prior ? Tables.getcolumn(cols, :prior) : nothing
+    node_col = :node in colnames ? Tables.getcolumn(cols, :node) : nothing
     tree = Dict{Symbol, Any}()
+    skip_edges = _node_level_updates!(
+        tree, edges, params_col, role_col, node_col, values_col)
     for i in eachindex(edges)
+        has_role && Symbol(role_col[i]) !== :param && continue
+        # A pooled parameter's own rows (the group's hyperparameters, the
+        # member's `z` latent or its `CentredPoolPrior`-marked value) and an
+        # uncertain `Resolve`'s stick coordinates: both already handled at
+        # node level above, from their `:attribute` row.
+        node_col === nothing || node_col[i] !== Pool || continue
+        edges[i] in skip_edges && continue
         entry = if has_prior && prior_col[i] !== nothing
             prior_col[i]
         elseif has_value
@@ -1615,300 +2453,81 @@ function _table_to_nested_updates(table)
     return _freeze_tree(tree)
 end
 
-# --- parameter-derived default priors (brms-style family defaults) ----------
+# --- uncertain(tree): the estimate-everything front door -------------------
 #
-# The default prior is classified from the parameter's own natural domain, not
-# the leaf's variate support: a location-family delay (`Normal`, `Affine(Normal)`)
-# has unbounded variate support, but its scale parameter still lives on the
-# positive half-line, so a `minimum(dist)`/`maximum(dist)` rule would wrongly
-# give it an unconstrained prior with mass on negative scale.
+# ComposedDistributions does not choose priors (that is
+# DistributionsInference.jl's job; see the package docstring), so bare
+# `uncertain(tree)` (Uncertain.jl) needs a way to mark every currently-fixed
+# free parameter estimated with no prior guessed. `_estimate_all` builds that
+# nested NamedTuple, mirroring the former default-prior assembly's shape
+# (walk `params_table`, `_nest_insert!` each unset row) but inserting the
+# `NoPrior` marker unconditionally rather than picking a distribution.
 
-# Location parameters live on the whole line (a `Normal`/`LogNormal` `mu`, a
-# `Uniform` bound), so they get an unconstrained default.
-function _is_location_param(p::Symbol)
-    p === :mu || p === :location || p === :loc || p === :lower || p === :upper
-end
-
-# Scale/shape/rate-type parameters are positive by construction (the `sigma` of a
-# `Normal`/`LogNormal`, the `shape`/`scale` of a `Gamma`/`Weibull`, the `scale`
-# of an `Exponential`, and the common positive parameter names of related
-# families), so they get a positive-truncated default regardless of the leaf's
-# variate support.
-function _is_positive_param(p::Symbol)
-    p === :sigma || p === :scale || p === :rate || p === :shape ||
-        p === :alpha || p === :beta || p === :theta || p === :nu ||
-        p === :k || p === :df || p === :mean || p === :sd
-end
-
-@doc "
-
-Pick a default prior for a parameter row, brms-style.
-
-`default_prior(row)` is the per-row default [`build_priors`](@ref) uses for rows
-the user does not override. `row` is a `(; edge, param, value, support)`
-NamedTuple (a [`params_table`](@ref) row); the prior family follows the
-parameter's own natural domain (classified by name), not the leaf's variate
-support:
-
-- a probability parameter, support `[0, 1]` (a `branch_probs` row) ->
-  `Uniform(0, 1)`.
-- a scale/shape/rate-type parameter (`:sigma`, `:scale`, `:shape`, `:rate`, ...)
-  -> `truncated(Normal(value, scale); lower = 0)`, positive by construction even
-  for a location-family delay (a `Normal`/`Affine(Normal)` `sigma`).
-- a location parameter (`:mu`, `:location`, a `Uniform` bound) ->
-  `Normal(value, scale)`, unconstrained since the location lives on the whole
-  line even for a positive-support delay.
-- otherwise, an unmapped name falls back to the variate support: a non-negative
-  support -> `truncated(Normal(value, scale); lower = 0)`, else
-  `Normal(value, scale)`.
-
-The spread `scale` defaults to `max(abs(value), 1)`, a weakly-informative width
-that scales with the parameter's magnitude.
-
-# Arguments
-- `row`: a [`params_table`](@ref) row `(; edge, param, value, support)`.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-# A positive scale parameter -> a positive-truncated default.
-default_prior((; edge = :onset_admit, param = :scale,
-    value = 1.0, support = (0.0, Inf)))
-```
-
-!!! note \"DistributionsInference's `with_priors`\"
-    `DistributionsInference.with_priors` applies the
-    same support-derived heuristic generically, over any fit-protocol
-    object's `parameter_rows` (a flat, dotted-`name` row schema), not just a
-    `ComposedDistributions` tree. It is a separate implementation, not a
-    thin wrapper over this one: `DistributionsInference` depends on
-    `ComposedDistributions`, not the reverse, so this package's own
-    `default_prior`/[`build_priors`](@ref) cannot delegate to it without
-    inverting that dependency. The two stay independent, parallel
-    implementations of the same heuristic for their respective row shapes.
-
-# See also
-- [`build_priors`](@ref): assembles the nested prior NamedTuple, using this as
-  the per-row default and accepting overrides.
-"
-function default_prior(row)
-    lo, hi = row.support
-    scale = max(abs(float(row.value)), one(float(row.value)))
-    if lo == 0 && hi == 1
-        return Distributions.Uniform(0, 1)
-    elseif _is_positive_param(row.param)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
-    elseif _is_location_param(row.param)
-        return Distributions.Normal(row.value, scale)
-    elseif lo >= 0 && isinf(hi)
-        return Distributions.truncated(
-            Distributions.Normal(row.value, scale); lower = 0)
-    else
-        return Distributions.Normal(row.value, scale)
-    end
-end
-
-@doc "
-
-Assemble the nested prior `NamedTuple` from a [`params_table`](@ref) inventory.
-
-`build_priors(table; priors, default)` turns the flat parameter table into the
-nested `NamedTuple` that a downstream `composed_parameters_model` (and
-[`update`](@ref)) expect, so users define priors against the flat table rows
-rather than by hand-matching the tree.
-
-For each row the prior is chosen in order:
-1. a user `priors` override for that `(edge, param)`, if present, else
-2. the row's attached `prior` (an [`uncertain`](@ref) parameter's spec rides
-   the table's `prior` column), if present, else
-3. `default(row)`, the per-row default (support-derived [`default_prior`](@ref)
-   unless a different `default` function is given).
-
-By default every row gets a sensible support-derived prior, so
-`build_priors(params_table(tree))` alone yields a complete prior NamedTuple. A
-user overrides only the parameters they care about (brms-style partial override)
-through `priors`.
-
-`row` is a `NamedTuple` `(; edge, param, value, support)` (the table's columns
-for that row), so a custom `default` can pick a prior from the parameter's
-`support`.
-
-# Arguments
-- `table`: a [`params_table`](@ref) inventory (any Tables.jl column table with
-  `edge`, `param`, `value`, `support` columns).
-
-# Keyword Arguments
-- `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
-  (e.g. a `Dict`) or a nested `NamedTuple` keyed like the tree
-  (`(onset_admit = (shape = prior,),)`); only the listed parameters are
-  overridden (default: empty).
-- `default`: a function `row -> prior` for rows not overridden (default:
-  [`default_prior`](@ref), deriving the prior family from the parameter's
-  support).
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-tbl = params_table(tree)
-# Support-derived defaults everywhere, overriding only one parameter.
-nested = build_priors(tbl;
-    priors = (onset_admit = (shape = truncated(Normal(2, 0.5); lower = 0),),))
-nested.onset_admit.shape
-```
-
-# See also
-- [`params_table`](@ref): the flat inventory keyed against.
-- [`default_prior`](@ref): the support-derived per-row default.
-- `composed_parameters_model` (downstream), [`update`](@ref): consume the result.
-"
-function build_priors(table; priors = Dict{Tuple{Symbol, Symbol}, Any}(),
-        default = default_prior)
-    edges = Tables.getcolumn(table, :edge)
-    params_col = Tables.getcolumn(table, :param)
-    values = Tables.getcolumn(table, :value)
-    supports = Tables.getcolumn(table, :support)
-    # The attached-prior column (an uncertain parameter's spec); tolerate its
-    # absence so a hand-built four-column table keeps working.
-    cols = Tables.columns(table)
-    attached = :prior in Tables.columnnames(cols) ?
-               Tables.getcolumn(cols, :prior) : nothing
+# One `no_prior()` marker per currently-fixed row (`prior === nothing`); an
+# already-estimated row (a real prior, `pool(...)`, or an existing `no_prior()`
+# marker) is left untouched, so the result promotes only what is left to
+# promote. Reads `_param_rows` (the internal parameter-only projection), not
+# the public `composed_to_table`, because the latter also carries `:node`/
+# `:attribute` rows whose `prior` column is always `nothing` — walking those
+# too would misfire this loop on non-parameter rows.
+function _estimate_all(d::AbstractComposedDistribution)
+    tbl = _param_rows(d)
+    edges = Tables.getcolumn(tbl, :edge)
+    params_col = Tables.getcolumn(tbl, :param)
+    priors = Tables.getcolumn(tbl, :prior)
     tree = Dict{Symbol, Any}()
     for i in eachindex(edges)
-        edge = edges[i]
-        param = params_col[i]
-        ovr = _prior_override(priors, edge, param)
-        prior = if ovr !== nothing
-            ovr
-        elseif attached !== nothing && attached[i] !== nothing
-            attached[i]
-        elseif default !== nothing
-            row = (; edge = edge, param = param,
-                value = values[i], support = supports[i])
-            default(row)
-        else
-            throw(ArgumentError(
-                "no prior for ($edge, $param) and no default supplied"))
-        end
-        _nest_insert!(tree, _split_edge(edge), param, prior)
+        priors[i] === nothing || continue
+        _nest_insert!(tree, _split_edge(edges[i]), params_col[i], NoPrior())
     end
-    return _freeze_tree(tree)
+    nt = _freeze_tree(tree)
+    return _attach_branch_prob_estimates(nt, d)
 end
 
-# A user override for `(edge, param)`, or `nothing` if none. Accepts a mapping
-# keyed by the `(edge, param)` pair (a `Dict`) or a nested `NamedTuple` keyed
-# like the tree (descend the edge path, then the param). Missing keys return
-# `nothing` so the row falls through to the default.
-function _prior_override(priors::NamedTuple, edge::Symbol, param::Symbol)
-    node = priors
-    for name in _split_edge(edge)
-        node isa NamedTuple && haskey(node, name) || return nothing
-        node = node[name]
-    end
-    node isa NamedTuple && haskey(node, param) || return nothing
-    return node[param]
-end
-
-function _prior_override(priors, edge::Symbol, param::Symbol)
-    key = (edge, param)
-    return haskey(priors, key) ? priors[key] : nothing
-end
-
-@doc "
-
-Build the nested prior `NamedTuple` straight from a composed distribution.
-
-`param_priors(tree; priors, default)` is a thin convenience over
-[`build_priors`](@ref)`(`[`params_table`](@ref)`(tree))`: it reads the
-parameter inventory of the composed distribution `tree` and assembles the
-nested prior `NamedTuple` in one call, forwarding the same keyword surface.
-It adds no prior logic of its own.
-
-The result is spec-shaped (a nested NamedTuple of distributions keyed like the
-tree), so it feeds [`update`](@ref) directly: `update(tree, param_priors(tree))`
-promotes every free parameter to [`uncertain`](@ref) with its default prior —
-the explicit estimate-everything path under uncertain-first (a bare tree
-estimates nothing). Pass `priors` to swap in your own spec for named
-parameters.
-
-# Arguments
-- `tree`: a composed distribution from [`compose`](@ref).
-
-# Keyword Arguments
-- `priors`: per-parameter overrides, either a `(edge, param) => prior` mapping
-  or a nested `NamedTuple` keyed like the tree; only the listed parameters are
-  overridden (default: empty).
-- `default`: a function `row -> prior` for rows not overridden (default:
-  [`default_prior`](@ref)).
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-tree = compose((onset_admit = Gamma(2.0, 1.0),
-    admit_death = LogNormal(0.5, 0.4)))
-priors = param_priors(tree)
-priors.onset_admit.shape
-```
-
-# See also
-- [`build_priors`](@ref): the underlying table-based assembly.
-- [`params_table`](@ref): the parameter inventory read internally.
-"
-function param_priors(tree; kwargs...)
-    priors = build_priors(params_table(tree); kwargs...)
-    return _attach_branch_prob_priors(priors, tree)
-end
-
-# The nested prior NamedTuple carries no node identity, so the flat `Dirichlet`
-# default for an uncertain branch-probability simplex is injected by walking the
-# tree alongside the built priors: at each `Resolve` the `branch_probs` entry is
-# set to the node's own attached `Dirichlet` if it has one, else a flat
-# `Dirichlet(ones(K))`, so `update(tree, param_priors(tree))` promotes the
-# simplex to uncertain with a sensible default (the branch probabilities are
-# recovered from any draw). `Compete` (winning probability derived) and `Choose`
-# (data-selected) have no node-level probability parameter, so nothing is
-# injected for them.
-function _attach_branch_prob_priors(nt::NamedTuple, d)
+# A `Resolve`'s `branch_probs` is a node-level parameter, not a leaf row: the
+# generic per-row walk above marks its per-outcome informational rows
+# individually (one `no_prior()` per outcome, mirroring how a fixed node's
+# rows are laid out — see `_branch_prob_rows!`), which is the wrong SHAPE for
+# `update`'s merge mode (it expects one marker/prior at the whole
+# `branch_probs` slot, not a NamedTuple keyed by outcome). This pass walks the
+# tree alongside the assembled NamedTuple and replaces that sub-object with
+# the single `no_prior()` marker at each `Resolve` with no attached spec,
+# leaving an already-uncertain node's spec (and hence no `branch_probs` key in
+# `nt` at all, since none of its stick rows are unset) untouched. `Compete`
+# (winning probability derived) and `Choose` (data-selected) have no
+# node-level probability parameter, so nothing is touched for them.
+function _attach_branch_prob_estimates(nt::NamedTuple, d)
     ks = keys(nt)
     vals = map(ks) do k
         if k === :branch_probs && d isa Resolve
-            _promote_branch_prior(d)
+            d.branch_prob_prior === nothing ? NoPrior() : nt[k]
         else
-            child = _prior_child_node(d, k)
-            child === nothing ? nt[k] : _attach_branch_prob_priors(nt[k], child)
+            child = _composer_child_node(d, k)
+            child === nothing ? nt[k] :
+            _attach_branch_prob_estimates(nt[k], child)
         end
     end
     return NamedTuple{ks}(vals)
 end
-_attach_branch_prob_priors(x, d) = x
+_attach_branch_prob_estimates(x, d) = x
 
-function _promote_branch_prior(c::Resolve)
-    return c.branch_prob_prior === nothing ?
-           Distributions.Dirichlet(ones(length(component_names(c)))) :
-           c.branch_prob_prior
-end
-
-# The child tree node under name `k` for the prior walk, or `nothing` when `k`
-# is a leaf parameter name (not a child node), so the walk stops descending.
-function _prior_child_node(d::Union{Sequential, Parallel}, k::Symbol)
+# The child tree node under name `k`, or `nothing` when `k` is a leaf
+# parameter name (not a child node), so the estimate-everything walk above
+# stops descending.
+function _composer_child_node(d::Union{Sequential, Parallel}, k::Symbol)
     names = component_names(d)
     i = findfirst(==(k), names)
     return i === nothing ? nothing : d.components[i]
 end
-function _prior_child_node(c::AbstractOneOf, k::Symbol)
+function _composer_child_node(c::AbstractOneOf, k::Symbol)
     i = findfirst(==(k), component_names(c))
     return i === nothing ? nothing : c.delays[i]
 end
-function _prior_child_node(d::Choose, k::Symbol)
+function _composer_child_node(d::Choose, k::Symbol)
     i = findfirst(==(k), component_names(d))
     return i === nothing ? nothing : d.alternatives[i]
 end
-_prior_child_node(::Any, ::Symbol) = nothing
+_composer_child_node(::Any, ::Symbol) = nothing
 
 # --- name introspection ----------------------------------------------------
 
@@ -1937,7 +2556,7 @@ event_names(tree)
 # See also
 - [`event_tree`](@ref): the *nested* tree of event names
 - [`event`](@ref): fetch a child or subtree by name path
-- [`params_table`](@ref): the parameter table
+- [`composed_to_table`](@ref): the flat structural table
 "
 function event_names(d::Union{Sequential, Parallel, AbstractOneOf})
     return _flat_event_names(d)
@@ -2041,7 +2660,7 @@ Fetch a composed distribution's child (event/edge), or descend a name path.
 single `Symbol` fetches a direct child (a branch of a [`Parallel`](@ref), a step
 of a [`Sequential`](@ref), an outcome delay of a [`Resolve`](@ref), or an
 alternative of a [`Choose`](@ref)); multiple `Symbol`s, or a single dotted-path
-`Symbol` (`:admit_path.admit_death`, as in [`params_table`](@ref)'s `edge`
+`Symbol` (`:admit_path.admit_death`, as in [`composed_to_table`](@ref)'s `edge`
 column), descend the tree one name per step. Throws an `ArgumentError` naming
 the valid children if a name along the path is not a child at that level
 (mirroring [`update`](@ref)/[`prune`](@ref)/[`splice`](@ref)).

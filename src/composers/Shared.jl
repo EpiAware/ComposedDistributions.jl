@@ -9,7 +9,7 @@ A name-tagged leaf tied across the branches of a composed distribution.
 
 `Shared` wraps a leaf distribution with a `tag` (a `Symbol`) marking it as a
 shared parameter group. Two `Shared` leaves carrying the same tag are treated as
-the same free parameter by the prior/params interface: [`params_table`](@ref)
+the same free parameter by the prior/params interface: [`composed_to_table`](@ref)
 lists the group's parameters once (deduped by tag), a downstream
 `composed_parameters_model` samples the group once and places the sampled
 values in every occurrence, and [`update`](@ref) updates all occurrences from one
@@ -24,10 +24,9 @@ inventoried, sampled and reconstructed.
 
 # See also
 - [`shared`](@ref): constructor over a name and a distribution.
-- [`params_table`](@ref), [`update`](@ref): dedup occurrences by tag.
+- [`composed_to_table`](@ref), [`update`](@ref): dedup occurrences by tag.
 "
-struct Shared{tag, D <: UnivariateDistribution} <:
-       UnivariateDistribution{ValueSupport}
+struct Shared{tag, D} <: UnivariateDistribution{ValueSupport}
     "The wrapped leaf distribution."
     dist::D
 end
@@ -35,10 +34,10 @@ end
 # The tag lives in the `tag` type parameter (like `NamedTuple{names}`); these
 # instantiate it directly from the runtime `Symbol` `shared`/`tie` pass, with no
 # call-site change from the field-based constructor.
-function Shared{tag}(dist::D) where {tag, D <: UnivariateDistribution}
+function Shared{tag}(dist::D) where {tag, D}
     return Shared{tag, D}(dist)
 end
-Shared(tag::Symbol, dist::UnivariateDistribution) = Shared{tag}(dist)
+Shared(tag::Symbol, dist) = Shared{tag}(dist)
 
 @doc "
 
@@ -76,7 +75,7 @@ event_names(d)
 - [`Shared`](@ref): the tagged-leaf type.
 - [`tie`](@ref): the tree-level, path-based spelling of the same tie.
 "
-shared(name::Symbol, dist::UnivariateDistribution) = Shared(name, dist)
+shared(name::Symbol, dist) = Shared(name, dist)
 
 @doc raw"
 The shared tag of a (possibly wrapped) leaf, or `nothing` when untagged.
@@ -86,8 +85,8 @@ of parameters. The tag survives wrapper leaves (a `Truncated`, and the
 censoring / modifier wrappers whose own methods live in their owning package or
 extension), so a `shared(:inc, ...)` leaf and a bare
 `shared(:inc, Gamma(...))` both report `:inc`. An untagged leaf reports
-`nothing`. [`params_table`](@ref) uses the tag as a leaf's edge and inventories
-a tied parameter once.
+`nothing`. [`composed_to_table`](@ref) uses the tag as a leaf's edge and
+inventories a tied parameter once.
 
 # Arguments
 - `leaf`: the (possibly wrapped) leaf distribution whose tag is read.
@@ -103,28 +102,40 @@ ComposedDistributions.shared_tag(shared(:inc, Gamma(2.0, 1.0)))
 - [`shared`](@ref): constructs a tagged leaf.
 - [`tie`](@ref): the tree-level, path-based spelling of the same tie.
 "
-shared_tag(leaf) = nothing
 shared_tag(::Shared{tag}) where {tag} = tag
-shared_tag(d::Truncated) = shared_tag(d.untruncated)
+@inline function shared_tag(leaf)
+    inner = inner_dist(leaf)
+    return inner === leaf ? nothing : shared_tag(inner)
+end
 # The underscored alias retained for internal callers and the leaf-wrapper
 # method definitions; `const` makes it the same function object.
-const _shared_tag = shared_tag
 
 # `Shared` is transparent: every distribution method delegates to the wrapped
 # leaf, so the hot path (logpdf/rand/cdf/quantile/...) is unchanged and AD flows
 # straight through. Only the introspection/reconstruction layers read the tag.
 # (`get_dist(::Shared)` lives in the ModifiedDistributions extension, which owns
 # the `get_dist` unwrap protocol.)
-free_leaf(d::Shared) = free_leaf(d.dist)
+inner_dist(d::Shared) = d.dist
 function rewrap_leaf(d::Shared{tag}, inner) where {tag}
     return Shared{tag}(rewrap_leaf(d.dist, inner))
+end
+
+# The tag is fixed structure (an `:attribute` row), and `Shared` is a wrapper
+# layer of its own in `composed_to_table` (peeling to the wrapped `dist`'s
+# layers through `inner_dist` above), mirroring `Truncated`/`Censored`.
+node_attributes(d::Shared{tag}) where {tag} = (; tag = tag)
+
+# The reverse: the tag lives in the type parameter, so it is read back off the
+# layer's own `:attribute` row rather than passed to a constructor argument.
+function from_table(::Type{<:Shared}, inner, attrs::NamedTuple)
+    return Shared{attrs.tag}(inner)
 end
 
 # Any modifier-owned extra parameters of the wrapped leaf survive the tag (a
 # `shared(:tag, thin(...))`); the setter re-applies the tag around the rebuilt
 # inner. The empty-`NamedTuple` method disambiguates the forward from the
 # generic identity in introspection.jl.
-extra_leaf_params(d::Shared) = extra_leaf_params(d.dist)
+# (`extra_leaf_params` forwards through the new `inner_dist(::Shared)` hook.)
 set_extra_leaf_params(d::Shared, ::NamedTuple{()}) = d
 function set_extra_leaf_params(d::Shared{tag}, vals::NamedTuple) where {tag}
     return Shared{tag}(set_extra_leaf_params(d.dist, vals))
@@ -191,7 +202,7 @@ function _collect_shared!(acc, seen, c::AbstractOneOf)
     return nothing
 end
 function _collect_shared!(acc, seen, leaf)
-    tag = _shared_tag(leaf)
+    tag = shared_tag(leaf)
     (tag === nothing || tag in seen) && return nothing
     push!(seen, tag)
     push!(acc, tag => leaf)
@@ -204,7 +215,7 @@ end
 # same tie done at the tree level: given a composed `d` and the paths of two or
 # more leaves, it walks to each named leaf and wraps it in `Shared(name, leaf)`,
 # producing the exact artefact a hand-written `shared(name, dist)` would. Every
-# tag consumer (`params_table`, `build_priors`, `update`,
+# tag consumer (`composed_to_table`, `update`,
 # `composed_parameters_model`, the compute-reuse) reads the tag, not how it was
 # placed, so a `tie`d tree and a hand-`shared`d tree are identical. The walk
 # reuses `_edit_at` (the `update` path machinery); paths take the
@@ -218,17 +229,16 @@ _tie_path(p::Tuple) = p
 _tie_path(p::Symbol) = _split_edge(p)
 
 # True for the composer (non-leaf) nodes a path can run through; a path that
-# resolves to one of these is pointing at a subtree, not a tieable leaf.
-_is_composer_node(::Union{Sequential, Parallel, AbstractOneOf, Choose}) = true
+# resolves to one of these is pointing at a subtree, not a tieable leaf. A
+# structural check against the public abstract root, not a closed list, so a
+# downstream composer node is recognised with no registration.
+_is_composer_node(::AbstractComposedDistribution) = true
 _is_composer_node(::Any) = false
 
-# The (family, param-names) signature a tie groups by: tied leaves become one
-# free parameter, so they must share an inner free-delay family and parameter
-# structure. Uses the same `free_leaf`/`_leaf_param_names` the params interface
-# inventories with, so "compatible" means "the params table would treat them
-# alike".
+# The tie-identity signature a tie groups by; delegates to the public
+# `leaf_signature` hook (the egal-stability contract lives on its docstring).
 function _tie_signature(leaf)
-    return (leaf_ctor(leaf), _leaf_param_names(leaf))
+    return leaf_signature(leaf)
 end
 
 @doc "
@@ -240,13 +250,13 @@ by `paths` and wraps it in a [`Shared`](@ref) group tagged `name`, returning the
 rebuilt composed distribution. This is the tree-level, path-based spelling of
 [`shared`](@ref): `tie(d, p1, p2; name = :inc)` produces the exact same artefact
 as building `d` with `shared(:inc, leaf)` at each of those leaves, so every tag
-consumer ([`params_table`](@ref), [`build_priors`](@ref), [`update`](@ref), a
+consumer ([`composed_to_table`](@ref), [`update`](@ref), a
 downstream `composed_parameters_model`) inventories, samples and updates the
 tied leaves as a single free parameter.
 
 Each `path` takes the same forms [`event`](@ref) and [`update`](@ref) accept: a
 bare `Symbol` direct child, a dotted-path `Symbol` (`:\"sourced.inc\"`, as in
-[`params_table`](@ref)'s `edge` column), or a tuple of edge names from the root.
+[`composed_to_table`](@ref)'s `edge` column), or a tuple of edge names from the root.
 Every path must resolve to a leaf (not a composer subtree), and the tied leaves
 must be parameter-compatible (same inner family and parameter structure), since
 they become one group.
@@ -265,7 +275,7 @@ using ComposedDistributions, Distributions
 d = choose(:index => compose((inc = Gamma(2.0, 1.0),)),
     :sourced => compose((src = LogNormal(0.5, 0.4), inc = Gamma(2.0, 1.0))))
 tied = tie(d, (:index, :inc), (:sourced, :inc); name = :inc)
-params_table(tied)
+composed_to_table(tied)
 ```
 
 # See also

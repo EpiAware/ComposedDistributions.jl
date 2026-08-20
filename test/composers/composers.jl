@@ -368,7 +368,7 @@ end
 
     # Mirrors Choose's existing "alternative names must be unique" guard:
     # every composer must reject a repeated name, since the whole
-    # name-keyed API (event, update, prune, splice, params_table, shared)
+    # name-keyed API (event, update, prune, splice, composed_to_table, shared)
     # can only ever reach the first branch with a duplicate name.
     # Each composer's own message is pinned, not just the exception type, so
     # a swapped guard or a reworded message is caught (the #217 lesson).
@@ -571,14 +571,15 @@ end
     @test_throws DimensionMismatch logpdf(s, [1.0, missing, 2.0])
 end
 
-@testitem "Introspection: params_table, event_names, event_tree, event" begin
+@testitem "Introspection: composed_to_table, event_names, event_tree, event" begin
+    using ComposedDistributions: _param_rows
     using Distributions
 
     tree = compose((onset_admit = LogNormal(1.5, 0.4),
         admit_death = Gamma(2.0, 1.0)))
-    tbl = params_table(tree)
+    tbl = _param_rows(tree)
     @test tbl.edge == [:onset_admit, :onset_admit, :admit_death, :admit_death]
-    @test tbl.param == [:mu, :sigma, :shape, :scale]
+    @test tbl.param == [:mu, :sigma, :alpha, :theta]
     @test event_names(tree) == (:onset, :admit, :death)
     nested = compose((
         admit_path = compose((onset_admit = Gamma(2.0, 1.0),
@@ -605,38 +606,36 @@ end
     @test_throws ArgumentError event(d, :nope)
 end
 
-@testitem "build_priors and default_prior" begin
+@testitem "bare uncertain(tree) marks every free parameter no_prior()" begin
     using Distributions
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
-    nested = build_priors(tbl)
-    @test nested.onset_admit.shape isa Truncated
-    @test nested.admit_death.mu isa Normal
-    # A user override wins over the default.
-    ov = build_priors(tbl;
-        priors = (onset_admit = (shape = truncated(Normal(2, 0.5);
-            lower = 0),),))
-    @test ov.onset_admit.shape == truncated(Normal(2, 0.5); lower = 0)
-    # Probability parameter default is Uniform(0, 1).
-    dp = default_prior((; edge = :r, param = :death, value = 0.3,
-        support = (0.0, 1.0)))
-    @test dp == Uniform(0, 1)
-end
+    everything = uncertain(tree)
+    @test has_uncertain(everything)
+    tbl = composed_to_table(everything)
+    param_idx = tbl.role .== :param
+    # ComposedDistributions guesses no prior: every previously-fixed row is
+    # the no_prior() marker, not a real distribution.
+    @test all(==(no_prior()), tbl.prior[param_idx])
+    @test ComposedDistributions.flat_dimension(everything) ==
+          count(param_idx)
 
-@testitem "param_priors is a thin front-door over build_priors(params_table(...))" begin
-    using Distributions
-
-    tree = compose((onset_admit = Gamma(2.0, 1.0),
+    # A parameter already carrying a real prior is left untouched; only the
+    # rest is marked.
+    partial = compose((
+        onset_admit = uncertain(Gamma(2.0, 1.0);
+            alpha = LogNormal(log(2.0), 0.2)),
         admit_death = LogNormal(0.5, 0.4)))
+    promoted = uncertain(partial)
+    ptbl = composed_to_table(promoted)
+    pparam_idx = ptbl.role .== :param
+    alpha_idx = findfirst(==(:alpha), ptbl.param[pparam_idx])
+    @test ptbl.prior[pparam_idx][alpha_idx] == LogNormal(log(2.0), 0.2)
+    @test count(==(no_prior()), ptbl.prior[pparam_idx]) == 3
 
-    @test param_priors(tree) == build_priors(params_table(tree))
-    # The keyword surface is forwarded unchanged.
-    shape_prior = Normal(2, 0.5)
-    @test param_priors(tree; priors = Dict((:onset_admit, :shape) => shape_prior)) ==
-          build_priors(params_table(tree);
-        priors = Dict((:onset_admit, :shape) => shape_prior))
+    # A fully already-uncertain tree: bare uncertain(tree) is a no-op.
+    @test uncertain(promoted) == promoted
 end
 
 @testitem "Composer show is compact; inspect gives detail" begin
@@ -707,7 +706,7 @@ end
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+    tree2 = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tree2, :onset_admit) == Gamma(3.0, 1.5)
     @test event(tree2, :admit_death) == LogNormal(0.7, 0.5)
@@ -785,7 +784,7 @@ end
 
     # tie descends through the Compete to tag a leaf as shared.
     tied = tie(tree, (:path, :immediate), :other; name = :g)
-    @test :g in params_table(tied).edge
+    @test :g in composed_to_table(tied).edge
     @test logpdf(event(tied, :path, :immediate), 1.5) ≈
           logpdf(Gamma(2.0, 1.0), 1.5)
 end
@@ -906,12 +905,13 @@ end
     @test rand(Xoshiro(1), terminal) isa NamedTuple
 end
 
-@testitem "params_table is a 5-column superset with a thin hook (#96)" begin
+@testitem "the parameter-only walk is a 5-column table with a thin hook (#96)" begin
+    using ComposedDistributions: _param_rows
     using Distributions
     import ComposedDistributions: extra_leaf_params, leaf_param_names
 
     d = compose((onset = Gamma(2.0, 1.0), report = LogNormal(0.5, 0.4)))
-    tbl = params_table(d)
+    tbl = _param_rows(d)
     @test Tuple(propertynames(tbl)) == (:edge, :param, :value, :support, :prior)
     # No modifier owns an extra parameter here, so the extra-parameter hook is
     # empty and no `:thin` row appears (the table matches the plain per-param
@@ -920,6 +920,19 @@ end
     @test extra_leaf_params(leaf) == (;)
     @test :thin ∉ leaf_param_names(leaf)
     @test :thin ∉ tbl.param
+end
+
+@testitem "composed_to_table guards a leaf with vector parameters" begin
+    using Distributions
+
+    # A Categorical leaf's own parameter is a probability Vector, not a
+    # scalar; composing and scoring it stays fine, only the table walk (which
+    # emits one scalar row per parameter) is undefined for it.
+    tree = compose((onset_admit = Categorical([0.3, 0.3, 0.4]),
+        admit_death = Gamma(2.0, 1.0)))
+    @test logpdf(tree, [1, 1.5]) isa Real
+    msg = r"(?=.*Categorical)(?=.*scalar)"
+    @test_throws msg composed_to_table(tree)
 end
 
 @testitem "equality: structural for chains, name-sensitive for Resolve" begin
@@ -983,15 +996,16 @@ end
 end
 
 @testitem "Shared / tie: one free parameter across branches" begin
+    using ComposedDistributions: _param_rows
     using Distributions
 
     inc = shared(:inc, Gamma(2.0, 1.0))
-    @test ComposedDistributions._shared_tag(inc) == :inc
+    @test ComposedDistributions.shared_tag(inc) == :inc
     @test logpdf(inc, 1.5) ≈ logpdf(Gamma(2.0, 1.0), 1.5)  # transparent
     d = compose((a = Gamma(2.0, 1.0), b = Gamma(2.0, 1.0)))
     tied = tie(d, :a, :b; name = :g)
     # The tied leaves are inventoried once under the tag.
-    @test unique(params_table(tied).edge) == [:g]
+    @test unique(_param_rows(tied).edge) == [:g]
 end
 
 @testitem "observed_distribution / convolve interop" begin
@@ -1094,8 +1108,8 @@ end
     leaf = MomentLeaf{LogNormal}((8.0, 2.0))
     tree = sequential(:onset_admit => leaf, :admit_death => Gamma(2.0, 1.0))
 
-    # params_table reports the moments, not the LogNormal's native (mu, sigma).
-    tbl = params_table(tree)
+    # composed_to_table reports the moments, not the LogNormal's native (mu, sigma).
+    tbl = composed_to_table(tree)
     @test :mean in tbl.param
     @test :sd in tbl.param
     @test :mu ∉ tbl.param
@@ -1105,7 +1119,7 @@ end
     # the moment leaf is rebuilt from moment coordinates, the native leaf from
     # its own.
     bumped = update(tree, (onset_admit = (mean = 10.0, sd = 3.0),
-        admit_death = (shape = 2.0, scale = 1.0)))
+        admit_death = (alpha = 2.0, theta = 1.0)))
     @test params(bumped).onset_admit == (10.0, 3.0)
     @test logpdf(bumped, [2.0, 1.5]) ≈
           logpdf(MomentLeaf{LogNormal}((10.0, 3.0)), 2.0) +
@@ -1131,7 +1145,7 @@ end
         :admit_death => Gamma(2.0, 1.0))
     bumped_trunc = update(trunc_tree,
         (onset_admit = (mean = 10.0, sd = 3.0),
-            admit_death = (shape = 2.0, scale = 1.0)))
+            admit_death = (alpha = 2.0, theta = 1.0)))
     # A truncated leaf reports its inner params followed by its bounds: the
     # moments were rebuilt, and the truncation was re-applied around them.
     @test params(bumped_trunc).onset_admit == (10.0, 3.0, nothing, 30.0)
@@ -1142,6 +1156,190 @@ end
     # rebuild, in moment coordinates.
     u_tree = sequential(:onset_admit => u, :admit_death => Gamma(2.0, 1.0))
     collapsed = update(u_tree, (onset_admit = (mean = 9.0, sd = 2.5),
-        admit_death = (shape = 2.0, scale = 1.0)))
+        admit_death = (alpha = 2.0, theta = 1.0)))
     @test params(collapsed).onset_admit == (9.0, 2.5)
+end
+
+@testitem "inner_dist: single-layer peel drives the read-through hooks" begin
+    using Distributions, ComposedDistributions
+
+    # A plain leaf's inner is itself, so peeling is the identity.
+    gamma = Gamma(2.0, 1.0)
+    @test ComposedDistributions.inner_dist(gamma) === gamma
+    @test ComposedDistributions.free_leaf(gamma) === gamma
+    @test ComposedDistributions.shared_tag(gamma) === nothing
+    @test ComposedDistributions.uncertain_specs(gamma) === nothing
+    @test ComposedDistributions.extra_leaf_params(gamma) == NamedTuple()
+
+    # A Truncated wrapper peels through the new hook to the (un)truncated inner.
+    trunc = truncated(Gamma(2.0, 1.0); upper = 10.0)
+    @test ComposedDistributions.free_leaf(trunc) ===
+          ComposedDistributions.free_leaf(Gamma(2.0, 1.0))
+    @test ComposedDistributions.shared_tag(trunc) === nothing
+
+    # A Shared tag survives the peel via the same generic forward.
+    sh = ComposedDistributions.shared(:inc, Gamma(2.0, 1.0))
+    @test ComposedDistributions.inner_dist(sh) === Gamma(2.0, 1.0)
+    @test ComposedDistributions.shared_tag(sh) === :inc
+    @test ComposedDistributions.free_leaf(sh) === Gamma(2.0, 1.0)
+
+    # Nested wrappers peel through every stored layer.
+    nested = truncated(ComposedDistributions.shared(:x, Gamma(2.0, 1.0));
+        upper = 10.0)
+    @test ComposedDistributions.free_leaf(nested) === Gamma(2.0, 1.0)
+    @test ComposedDistributions.shared_tag(nested) === :x
+end
+
+@testitem "rebuild_leaf: reconstruction split from tie identity" begin
+    using ComposedDistributions: update
+    using Distributions
+    using ComposedDistributions
+
+    # A family-in-a-type-parameter leaf, `leaf_ctor`'s motivating shape: the
+    # bare UnionAll cannot rebuild positionally, since `D` is not implied by
+    # the field values. `rebuild_leaf` is an ordinary method with no
+    # egal-stability contract, so overriding only it (not `leaf_ctor`) is
+    # enough to make the leaf reconstructible.
+    struct FamLeaf{D} <: ContinuousUnivariateDistribution
+        a::Float64
+        b::Float64
+    end
+
+    native(d::FamLeaf{Gamma}) = Gamma(d.a, d.b)
+
+    Distributions.params(d::FamLeaf) = (d.a, d.b)
+    Distributions.logpdf(d::FamLeaf, x::Real) = logpdf(native(d), x)
+    Distributions.cdf(d::FamLeaf, x::Real) = cdf(native(d), x)
+    Distributions.quantile(d::FamLeaf, q::Real) = quantile(native(d), q)
+    Base.minimum(::FamLeaf) = 0.0
+    Base.maximum(::FamLeaf) = Inf
+
+    function ComposedDistributions.rebuild_leaf(::FamLeaf{D},
+            vals::Tuple) where {D}
+        return FamLeaf{D}(vals[1], vals[2])
+    end
+
+    # Why the hook is needed: `D` isn't implied by the field values, so the
+    # bare UnionAll cannot be called positionally.
+    @test_throws MethodError FamLeaf(2.0, 1.0)
+
+    leaf = FamLeaf{Gamma}(2.0, 1.0)
+    tree = sequential(:onset_admit => leaf, :admit_death => Gamma(2.0, 1.0))
+
+    # `update` rebuilds through `rebuild_leaf`, not the default `leaf_ctor`
+    # (which would MethodError on the bare UnionAll).
+    bumped = update(tree,
+        (onset_admit = (a = 3.0, b = 1.5),
+            admit_death = (alpha = 2.0, theta = 1.0)))
+    @test params(event(bumped, :onset_admit)) == (3.0, 1.5)
+
+    # `reconstruct` composes `unflatten` then `update` (this change touches
+    # nothing in codec_gen.jl), so it inherits the same split: an unrelated
+    # leaf carries the one estimated parameter, and the fixed `FamLeaf` still
+    # has to round-trip through `rebuild_leaf` on every collapse.
+    tree2 = sequential(:onset_admit => leaf,
+        :admit_death => uncertain(Gamma(2.0, 1.0);
+            alpha = LogNormal(log(2.0), 0.2)))
+    rebuilt = ComposedDistributions.reconstruct(tree2, [3.0])
+    @test params(event(rebuilt, :onset_admit)) == params(leaf)
+    @test params(event(rebuilt, :admit_death)) == (3.0, 1.0)
+
+    # `leaf_signature` -- not `leaf_ctor` -- is what `tie` now groups by; its
+    # default (`(leaf_ctor(leaf), leaf_param_names(leaf))`) is unchanged, so
+    # two structurally identical leaves still tie into one group.
+    twin = sequential(:a => FamLeaf{Gamma}(2.0, 1.0),
+        :b => FamLeaf{Gamma}(2.0, 1.0))
+    tied = tie(twin, :a, :b; name = :g)
+    tied_table = composed_to_table(tied)
+    tied_param_edges = tied_table.edge[findall(==(:param), tied_table.role)]
+    @test unique(tied_param_edges) == [:g]
+end
+
+@testitem "rebuild_leaf and leaf_signature peel wrapper layers" begin
+    using ComposedDistributions: update
+    using Distributions
+    using ComposedDistributions
+
+    # Same family-in-a-type-parameter shape as the sibling testitem, but
+    # exercised through `truncated`/`uncertain` wrappers. `_update_leaf` is
+    # always called with the OUTER leaf, so `rebuild_leaf`'s default must peel
+    # to the leaf that carries the override, rather than re-entering
+    # `leaf_ctor`'s (unrelated) default peeling.
+    struct WrapFamLeaf{D} <: ContinuousUnivariateDistribution
+        a::Float64
+        b::Float64
+    end
+
+    native(d::WrapFamLeaf{Gamma}) = Gamma(d.a, d.b)
+
+    Distributions.params(d::WrapFamLeaf) = (d.a, d.b)
+    Distributions.logpdf(d::WrapFamLeaf, x::Real) = logpdf(native(d), x)
+    Distributions.cdf(d::WrapFamLeaf, x::Real) = cdf(native(d), x)
+    Distributions.quantile(d::WrapFamLeaf, q::Real) = quantile(native(d), q)
+    Base.minimum(::WrapFamLeaf) = 0.0
+    Base.maximum(::WrapFamLeaf) = Inf
+
+    function ComposedDistributions.rebuild_leaf(::WrapFamLeaf{D},
+            vals::Tuple) where {D}
+        return WrapFamLeaf{D}(vals[1], vals[2])
+    end
+
+    leaf = WrapFamLeaf{Gamma}(2.0, 1.0)
+
+    # `update` through `truncated`: without peeling, `rebuild_leaf` falls
+    # back to `leaf_ctor(leaf)(vals...)`, which re-enters the default
+    # `leaf_ctor` recursion and tries to call the bare `WrapFamLeaf`
+    # positionally -- a `MethodError`, since `D` is not implied by the values.
+    trunc_tree = sequential(:onset_admit => truncated(leaf; upper = 10.0),
+        :admit_death => Gamma(2.0, 1.0))
+    trunc_bumped = update(trunc_tree,
+        (onset_admit = (a = 3.0, b = 1.5),
+            admit_death = (alpha = 2.0, theta = 1.0)))
+    @test params(ComposedDistributions.free_leaf(
+        event(trunc_bumped, :onset_admit))) == (3.0, 1.5)
+
+    # `reconstruct` on an `uncertain`-wrapped leaf: the fitting path this
+    # split exists to unblock (RD#25).
+    unc_tree = sequential(
+        :onset_admit => uncertain(leaf;
+            a = LogNormal(log(2.0), 0.2)),
+        :admit_death => Gamma(2.0, 1.0))
+    unc_rebuilt = ComposedDistributions.reconstruct(unc_tree, [3.0])
+    @test params(event(unc_rebuilt, :onset_admit)) == (3.0, 1.0)
+
+    # `leaf_signature`'s default has the same peel-through requirement: an
+    # override on the inner leaf must still be consulted through a wrapper, so
+    # a `tie` that is rejected unwrapped is rejected the same way wrapped.
+    # The family half is routed through the inner leaf's own signature; the
+    # parameter-name half stays the OUTER leaf's `leaf_param_names`, so a
+    # modifier wrapper's `extra_leaf_params` names are not silently dropped.
+    struct SigLeaf <: ContinuousUnivariateDistribution
+        a::Float64
+        variant::Symbol
+    end
+    Distributions.params(d::SigLeaf) = (d.a,)
+    Distributions.logpdf(d::SigLeaf, x::Real) = logpdf(Normal(d.a, 1.0), x)
+    Distributions.cdf(d::SigLeaf, x::Real) = cdf(Normal(d.a, 1.0), x)
+    Distributions.quantile(d::SigLeaf, q::Real) = quantile(Normal(d.a, 1.0), q)
+    Base.minimum(::SigLeaf) = -Inf
+    Base.maximum(::SigLeaf) = Inf
+
+    # The identity half depends on `variant`, not `a`: two `SigLeaf`s of the
+    # same Julia type, with different field values, can still be
+    # parameter-incompatible, and the default `(leaf_ctor(leaf),
+    # leaf_param_names(leaf))` signature (same type, same names) could not
+    # tell them apart. This is the genuine delegation test: if `tie` stopped
+    # calling `leaf_signature` (e.g. `_tie_signature` reverted to computing
+    # `leaf_ctor`/`leaf_param_names` directly), this override would never be
+    # consulted and both calls below would wrongly succeed.
+    ComposedDistributions.leaf_signature(d::SigLeaf) = (
+        d.variant, ComposedDistributions.leaf_param_names(d))
+
+    bare_tree = sequential(:a => SigLeaf(1.0, :left),
+        :b => SigLeaf(1.0, :right))
+    @test_throws ArgumentError tie(bare_tree, :a, :b; name = :g)
+
+    wrapped_tree = sequential(:a => truncated(SigLeaf(1.0, :left); upper = 5.0),
+        :b => truncated(SigLeaf(1.0, :right); upper = 5.0))
+    @test_throws ArgumentError tie(wrapped_tree, :a, :b; name = :g)
 end

@@ -333,19 +333,19 @@ end
     @test rewrap_leaf(conv, Gamma(3.0, 1.5)) == Gamma(3.0, 1.5)
 end
 
-@testitem "Convolved leaf: params_table sees through to component params" begin
+@testitem "Convolved leaf: composed_to_table sees through to component params" begin
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   Difference, difference, product, Product,
                                   Convolved, AnalyticalSolver, NumericSolver,
                                   GaussLegendre, integrate, gl_integrate,
                                   AbstractSolverMethod
-    using ComposedDistributions: Tables
+    using ComposedDistributions: Tables, _param_rows
 
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
 
-    tbl = params_table(seq)
+    tbl = _param_rows(seq)
     rows = collect(Tables.rows(tbl))
     # One row per scalar component parameter (two Gammas) plus the LogNormal's.
     @test length(rows) == 6
@@ -356,38 +356,41 @@ end
     @test Set(r.edge for r in comp_rows) ==
           Set((Symbol("total.component_1"), Symbol("total.component_2")))
     c1 = filter(r -> r.edge == Symbol("total.component_1"), comp_rows)
-    @test [(r.param, r.value) for r in c1] == [(:shape, 2.0), (:scale, 1.0)]
+    @test [(r.param, r.value) for r in c1] == [(:alpha, 2.0), (:theta, 1.0)]
     c2 = filter(r -> r.edge == Symbol("total.component_2"), comp_rows)
-    @test [(r.param, r.value) for r in c2] == [(:shape, 1.0), (:scale, 1.5)]
+    @test [(r.param, r.value) for r in c2] == [(:alpha, 1.0), (:theta, 1.5)]
 
-    # build_priors assembles the nested prior tree down to the components.
-    pr = build_priors(tbl)
-    @test pr isa NamedTuple
-    @test haskey(pr, :report)
-    @test haskey(pr.total.component_1, :shape)
-    @test haskey(pr.total.component_2, :scale)
+    # Bare uncertain(tree) marks every component's parameters, down through
+    # the composite leaf.
+    promoted = uncertain(seq)
+    ptbl = composed_to_table(promoted)
+    prow = Dict((r.edge, r.param) => r.prior
+    for r in Tables.rows(ptbl) if r.role == :param)
+    @test prow[(:report, :mu)] == no_prior()
+    @test prow[(Symbol("total.component_1"), :alpha)] == no_prior()
+    @test prow[(Symbol("total.component_2"), :theta)] == no_prior()
 end
 
-@testitem "Difference leaf: params_table sees through to (x, y) params" begin
+@testitem "Difference leaf: composed_to_table sees through to (x, y) params" begin
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   Difference, difference, product, Product,
                                   Convolved, AnalyticalSolver, NumericSolver,
                                   GaussLegendre, integrate, gl_integrate,
                                   AbstractSolverMethod
-    using ComposedDistributions: Tables
+    using ComposedDistributions: Tables, _param_rows
 
     diff = difference(Gamma(2.0, 1.0), Normal(1.0, 0.5))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
 
-    tbl = params_table(par)
+    tbl = _param_rows(par)
     rows = collect(Tables.rows(tbl))
     comp_rows = filter(r -> r.edge != :other, rows)
     @test Set(r.edge for r in comp_rows) ==
           Set((Symbol("gap.component_1"), Symbol("gap.component_2")))
     # component_1 is the minuend (Gamma), component_2 the subtrahend (Normal).
     @test Set((r.edge, r.param) for r in comp_rows) == Set([
-        (Symbol("gap.component_1"), :shape), (Symbol("gap.component_1"), :scale),
+        (Symbol("gap.component_1"), :alpha), (Symbol("gap.component_1"), :theta),
         (Symbol("gap.component_2"), :mu), (Symbol("gap.component_2"), :sigma)])
 end
 
@@ -407,8 +410,8 @@ end
     # composite from the pinned components (the solver method is preserved).
     seq2 = update(seq,
         (
-            total = (component_1 = (shape = 3.0, scale = 2.0),
-                component_2 = (shape = 1.2, scale = 0.8)),
+            total = (component_1 = (alpha = 3.0, theta = 2.0),
+                component_2 = (alpha = 1.2, theta = 0.8)),
             report = (mu = 0.8, sigma = 0.6)))
     total2 = event(seq2, :total)
     @test total2 isa Convolved
@@ -434,7 +437,7 @@ end
     # A distribution in one component slot makes just that parameter uncertain;
     # untouched components and siblings keep their values.
     est = update(seq,
-        (total = (component_1 = (shape = LogNormal(log(2.0), 0.2),),),))
+        (total = (component_1 = (alpha = LogNormal(log(2.0), 0.2),),),))
     @test has_uncertain(est)
     @test has_uncertain(event(est, :total))
     total_est = event(est, :total)
@@ -456,7 +459,7 @@ end
 
     par2 = update(par,
         (
-            gap = (component_1 = (shape = 3.0, scale = 2.0),
+            gap = (component_1 = (alpha = 3.0, theta = 2.0),
                 component_2 = (mu = 0.5, sigma = 1.0)),
             other = (mu = 0.8, sigma = 0.6)))
     g2 = event(par2, :gap)
@@ -512,15 +515,15 @@ end
     conv = convolved(Gamma(2.0, 1.0), Gamma(1.0, 1.5))
     seq = sequential(:total => conv, :report => LogNormal(0.5, 0.4))
     est = update(seq,
-        (total = (component_1 = (shape = LogNormal(log(2.0), 0.2),),),))
+        (total = (component_1 = (alpha = LogNormal(log(2.0), 0.2),),),))
 
-    # Exactly one estimated parameter: total.component_1.shape.
+    # Exactly one estimated parameter: total.component_1.alpha.
     @test flat_dimension(est) == 1
     # unflatten places the draw at the spec'd component parameter and holds the
     # rest at the template; update then collapses the composite to concrete.
     nt = unflatten(est, [3.0])
-    @test nt.total.component_1.shape == 3.0
-    @test nt.total.component_2.shape == 1.0
+    @test nt.total.component_1.alpha == 3.0
+    @test nt.total.component_2.alpha == 1.0
     collapsed = update(est, nt)
     @test !has_uncertain(collapsed)
     @test event(collapsed, :total).components[1] == Gamma(3.0, 1.0)
@@ -580,10 +583,10 @@ end
     # values (see-through), unlike the old fixed-composite contract where the
     # composite had no key at all. (Read by field, not by NamedTuple equality:
     # `unflatten`'s generated, compile-time walk fixes its NamedTuple's key
-    # order from the tree's TYPE, not necessarily params_table's row order —
-    # see #192 — so a field-by-field read is the order-agnostic check.)
-    @test nt.total.component_1.shape == 2.0 && nt.total.component_1.scale == 1.0
-    @test nt.total.component_2.shape == 1.0 && nt.total.component_2.scale == 1.0
+    # order from the tree's TYPE, not necessarily the parameter walk's row
+    # order — see #192 — so a field-by-field read is the order-agnostic check.)
+    @test nt.total.component_1.alpha == 2.0 && nt.total.component_1.theta == 1.0
+    @test nt.total.component_2.alpha == 1.0 && nt.total.component_2.theta == 1.0
     @test flatten(seq, nt) == [0.9]
     @test flatten(seq, unflatten(seq, [1.3])) == [1.3]
 
@@ -615,6 +618,7 @@ end
 end
 
 @testitem "Varying leaf mapping to Convolved distributions: instantiate then fixed" begin
+    using ComposedDistributions: _param_rows
     using Distributions
     using ConvolvedDistributions: ConvolvedDistributions, convolved, convolve_series,
                                   Difference, difference, product, Product,
@@ -636,7 +640,7 @@ end
     # Resolved, the Convolved leaf is seen through like a plain Convolved leaf:
     # its two components' four scalar params are inventoried (four rows) plus the
     # LogNormal's two, and none is spec'd, so the estimated dimension is zero.
-    tbl = params_table(resolved)
+    tbl = _param_rows(resolved)
     @test length(collect(ComposedDistributions.Tables.rows(tbl))) == 6
     @test ComposedDistributions.flat_dimension(resolved) == 0
     x = [2.3, 0.9]
@@ -661,18 +665,18 @@ end
     # unexpected-key check and errors, listing the component keys. This holds
     # for a distribution (a mis-aimed bid to make it uncertain) ...
     @test_throws r"(?=.*component_1)(?=.*component_2)" update(
-        seq, (total = (shape = Normal(1.0, 2.0),),
+        seq, (total = (alpha = Normal(1.0, 2.0),),
             report = (mu = 0.1, sigma = 0.2)))
 
     # ... and for a `Real` re-pin (no no-op survives: a Real at a valid
     # component path pins that component, see the round-trip testitem, but a
     # Real at the composite level with no component segment errors just the same).
     @test_throws r"(?=.*component_1)(?=.*component_2)" update(
-        seq, (total = (shape = 9.0,), report = (mu = 0.1, sigma = 0.2)))
+        seq, (total = (alpha = 9.0,), report = (mu = 0.1, sigma = 0.2)))
 
     # Same contract for a Difference composite.
     diff = difference(Gamma(2.0, 1.0), Gamma(1.5, 2.0))
     par = parallel(:gap => diff, :other => LogNormal(0.5, 0.4))
     @test_throws ArgumentError update(par,
-        (gap = (shape = Normal(1.0, 2.0),), other = (mu = 0.1, sigma = 0.2)))
+        (gap = (alpha = Normal(1.0, 2.0),), other = (mu = 0.1, sigma = 0.2)))
 end
