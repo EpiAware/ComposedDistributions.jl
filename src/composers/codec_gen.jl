@@ -91,14 +91,8 @@ _CodecCtx() = _CodecCtx(0, Set{Symbol}(), Set{Symbol}(), Symbol[], Any[],
 # `Symbol` reading the node from the top-level `d` argument.
 
 function _unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
-    if T <: Sequential || T <: Parallel
-        return _composer_unflatten_expr(access, :components, T, ctx)
-    elseif T <: Choose
-        return _composer_unflatten_expr(access, :alternatives, T, ctx)
-    elseif T <: Resolve
+    if T <: Resolve
         return _resolve_unflatten_expr(access, T, ctx)
-    elseif T <: Compete
-        return _composer_unflatten_expr(access, :delays, T, ctx)
     elseif T <: Union{Convolved, Difference}
         return _composite_unflatten_expr(access, T, ctx)
     elseif T <: AbstractComposedDistribution
@@ -108,16 +102,18 @@ function _unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
     end
 end
 
-# Any OTHER composer node (a downstream type, not one of the five built-ins
-# above): read its (names, child types) layout purely from its own type
+# EVERY composer node except `Resolve`, whose stick-breaking simplex needs its
+# own handling: the built-ins and a downstream type take the same path, so the
+# shipped composers exercise exactly what a third-party node does rather than a
+# parallel branch that can drift from it -- which is the class of bug #374 was.
+#
+# The (names, child types) layout is read purely from the node's own type
 # parameters -- see `_generic_node_layout`'s docstring for why this must never
-# call a method the generator cannot see -- then recurse exactly like
-# `_composer_unflatten_expr` does, reading each child at RUNTIME through the
-# public `node_children` accessor (a plain call embedded in the returned code,
-# not evaluated by the generator itself, so it carries no world-age risk; the
-# composite-leaf case above already relies on this same pattern). Landing in
-# this branch (rather than falling through to the leaf branch below and
-# silently reporting zero estimated parameters) is what #374 closes.
+# call a method the generator cannot see -- and each child is reached at
+# RUNTIME through the public `node_children` accessor: a plain call embedded in
+# the returned code, not evaluated by the generator itself, so it carries no
+# world-age risk. Landing here rather than falling through to the leaf branch
+# below (and silently reporting zero estimated parameters) is what #374 closes.
 function _generic_node_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
     names, ctypes = _generic_node_layout(T)
     keys_out = Symbol[]
@@ -193,25 +189,6 @@ function _composite_unflatten_expr(access, ::Type{T}, ctx::_CodecCtx) where {T}
         e = _unflatten_expr(child_access, ctypes[i], ctx)
         e === nothing && continue
         push!(keys_out, Symbol(:component_, i))
-        push!(vals_out, e)
-    end
-    return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
-end
-
-# Sequential/Parallel/Choose/Compete share the same shape: named children
-# recursed positionally, skipping any `nothing` (tag-suppressed) entry.
-function _composer_unflatten_expr(
-        access, field::Symbol, ::Type{T}, ctx::_CodecCtx) where {T}
-    names = T.parameters[1]::Tuple
-    C = T.parameters[2]
-    ctypes = C.parameters
-    keys_out = Symbol[]
-    vals_out = Any[]
-    for i in eachindex(names)
-        child_access = :($access.$field[$i])
-        e = _unflatten_expr(child_access, ctypes[i], ctx)
-        e === nothing && continue
-        push!(keys_out, names[i])
         push!(vals_out, e)
     end
     return :(NamedTuple{$(Tuple(keys_out))}(($(vals_out...),)))
@@ -519,14 +496,8 @@ end
 
 function _flatten_reads!(exprs::Vector, d_access, nt_access, ::Type{T},
         ctx::_CodecCtx) where {T}
-    if T <: Sequential || T <: Parallel
-        _composer_flatten_reads!(exprs, d_access, :components, nt_access, T, ctx)
-    elseif T <: Choose
-        _composer_flatten_reads!(exprs, d_access, :alternatives, nt_access, T, ctx)
-    elseif T <: Resolve
+    if T <: Resolve
         _resolve_flatten_reads!(exprs, d_access, nt_access, T, ctx)
-    elseif T <: Compete
-        _composer_flatten_reads!(exprs, d_access, :delays, nt_access, T, ctx)
     elseif T <: Union{Convolved, Difference}
         _composite_flatten_reads!(exprs, d_access, nt_access, T, ctx)
     elseif T <: AbstractComposedDistribution
@@ -559,18 +530,6 @@ function _composite_flatten_reads!(
         child_access = :(ComposedDistributions.node_children($d_access)[$i])
         _flatten_reads!(exprs, child_access,
             :($nt_access.$(Symbol(:component_, i))), ctypes[i], ctx)
-    end
-    return nothing
-end
-
-function _composer_flatten_reads!(exprs::Vector, d_access, field::Symbol,
-        nt_access, ::Type{T}, ctx::_CodecCtx) where {T}
-    names = T.parameters[1]::Tuple
-    C = T.parameters[2]
-    ctypes = C.parameters
-    for i in eachindex(names)
-        _flatten_reads!(exprs, :($d_access.$field[$i]),
-            :($nt_access.$(names[i])), ctypes[i], ctx)
     end
     return nothing
 end
