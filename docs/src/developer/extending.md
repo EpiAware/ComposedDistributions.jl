@@ -194,13 +194,15 @@ ComposedDistributions.leaf_param_names(MomentLeaf{LogNormal}((8.0, 2.0)))
 ## [Writing a new composer node](@id new-composer-node)
 
 A node combines named children into a bigger structure: a table row, a slice of the flat estimated-parameter vector, a slice of the flat event vector.
-Three methods carry the whole contract, reached by the qualified name (`public`, not exported):
+Two methods carry the whole contract, reached by the qualified name (`public`, not exported):
 
-- [`node_children`](@ref)`(node)` returns the node's children as a `Tuple`, positionally matching `component_names`;
-- [`node_rebuild`](@ref)`(node, children)` rebuilds a node of the same type and own fixed structure around a new children tuple;
-- `component_names(node)` returns a `Tuple` of the child names.
+- [`node_children`](@ref)`(node)` returns the node's children as a `Tuple`, positionally matching [`component_names`](@ref);
+- [`node_rebuild`](@ref)`(node, children)` rebuilds a node of the same type and own fixed structure around a new children tuple.
 
-Those three are all a plain node needs.
+[`component_names`](@ref) needs no method: it is derived from the node's first type parameter, the same place the codec below already requires the names to live, so declaring them once serves both.
+A node holding its names elsewhere overrides it, and one with no such parameter gets an error naming the fix rather than a guess.
+
+Those two are all a plain node needs.
 `composed_to_table`, nested `params`, `update`, [`has_varying`](@ref) and [`has_uncertain`](@ref) all walk them generically, dispatching against the public `AbstractComposedDistribution` root rather than a closed list of the built-in types, so a node needs no registration.
 
 A realisation of a composed tree is also one flat vector of leaf values laid out depth-first, and each node reads and writes only its own contiguous slice by an offset.
@@ -231,7 +233,7 @@ A node subtyping `AbstractComposedDistribution` without that shape gets a clear,
 ### Steps
 
 1. Subtype `AbstractComposedDistribution{F, S}`, with your own child names and children's types as the first two type parameters if you want codec support (see above).
-2. Implement `node_children`, `node_rebuild` and `component_names`.
+2. Implement `node_children` and `node_rebuild`.
 3. Override the three `child_*` methods only if the node's combination semantics are not a plain concatenation.
 4. Implement `node_attributes` if the node carries fixed structure that is not a free parameter.
 5. Verify against the suite ([`TestUtils.test_node_interface`](@ref) covers the node contract; run it, don't just read the list above).
@@ -239,8 +241,9 @@ A node subtyping `AbstractComposedDistribution` without that shape gets a clear,
 ```@example extending
 using ComposedDistributions, Distributions
 using ComposedDistributions.TestUtils: test_node_interface
-import ComposedDistributions: node_children, node_rebuild, component_names,
+import ComposedDistributions: node_children, node_rebuild,
                               AbstractComposedDistribution
+using ComposedDistributions: component_names
 
 # A minimal node combining two named branches side by side. `names` and the
 # children's types as the first two type parameters (mirroring
@@ -260,7 +263,7 @@ Both(children::C, names::NTuple{N, Symbol}) where {N, C <: Tuple} =
 
 node_children(d::Both) = d.children
 node_rebuild(d::Both, children::Tuple) = Both(children, component_names(d))
-component_names(::Both{names}) where {names} = names
+# No `component_names` method: it derives from `Both`'s first type parameter.
 nothing # hide
 ```
 
@@ -331,11 +334,11 @@ A composed tree exposes its structure through name introspection.
 `compose(table)` is the inverse of `composed_to_table`: it rebuilds a tree from the rows, so `compose(composed_to_table(d)) == d`.
 It works by dispatching on the table's `node` column, which holds the type itself rather than the type's name, so there is no name-to-type registry for a downstream package to register with.
 
-Three hooks say how a type rebuilds itself, and two of them are defaulted so the extension cost does not move:
+One generic, [`from_table`](@ref), says how a type rebuilds itself — three arities, one per role, and two of them defaulted so the extension cost does not move:
 
-- [`from_table`](@ref)`(::Type{T}, values, attrs)` rebuilds a leaf. The default is `T(values...)`, right for any Distributions.jl family whose `params` are its constructor arguments, so **a leaf still costs zero methods**. A leaf whose free parameters are not its constructor arguments (one overriding `param_names`/`rebuild_leaf`) needs a method; the default detects that case and throws rather than building a wrong leaf silently.
-- [`node_from_table`](@ref)`(::Type{T}, names, children, attrs)` rebuilds a composer node. The default is `T(children, names)` — the shape `Sequential`, `Parallel` and the `Both` example above already use — so **a node built that way still costs only the three methods of the node contract**. A node whose constructor takes something else needs a method; `Choose`, `Compete` and `Resolve` each have one.
-- [`rewrap_from_table`](@ref)`(::Type{T}, inner, attrs)` re-applies a leaf-wrapper layer. This one has **no default**: a wrapper's fixed structure is its own, so a wrapper type needs a method here to round-trip. It receives back exactly what that layer's `node_attributes` reported. An `uncertain` layer needs none — its specs ride the `prior` column.
+- [`from_table`](@ref)`(::Type{T}, values)` rebuilds a leaf. The default is `T(values...)`, right for any Distributions.jl family whose `params` are its constructor arguments, so **a leaf still costs zero methods**. A leaf whose free parameters are not its constructor arguments (one overriding `param_names`/`rebuild_leaf`) needs a method; the default detects that case and throws rather than building a wrong leaf silently.
+- [`from_table`](@ref)`(::Type{T}, names, children, attrs)` rebuilds a composer node. The default is `T(children, names)` — the shape `Sequential`, `Parallel` and the `Both` example above already use — so **a node built that way still costs only the two methods of the node contract**. A node whose constructor takes something else needs a method; `Choose`, `Compete` and `Resolve` each have one.
+- [`from_table`](@ref)`(::Type{T}, inner, attrs)` re-applies a leaf-wrapper layer. This one has **no default**: a wrapper's fixed structure is its own, so a wrapper type needs a method here to round-trip. It receives back exactly what that layer's `node_attributes` reported. An `uncertain` layer needs none — its specs ride the `prior` column.
 
 Anything without an applicable method throws, naming the type and the method to define, rather than losing structure quietly.
 

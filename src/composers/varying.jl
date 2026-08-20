@@ -303,7 +303,7 @@ node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
 
 # The reverse. The covariate map is a live function object, which is why this
 # round trip is in-memory only: no text format can carry it back.
-function rewrap_from_table(::Type{<:Varying}, inner, attrs::NamedTuple)
+function from_table(::Type{<:Varying}, inner, attrs::NamedTuple)
     return Varying(attrs.map, attrs.covariate, inner)
 end
 shared_tag(d::Varying) = shared_tag(d.reference)

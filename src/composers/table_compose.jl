@@ -34,41 +34,78 @@
 
 @doc "
 
-Rebuild a leaf distribution from its [`composed_to_table`](@ref) rows.
+Rebuild a tree component from its [`composed_to_table`](@ref) rows.
 
-The reconstruction half of [`leaf_ctor`](@ref), dispatched on the leaf's type
-rather than on an instance (there is no instance yet). The default calls the
-type with the parameter values positionally, `T(values...)`, which is right
-for any Distributions.jl family whose `params` are its constructor arguments —
-so a leaf still costs zero methods.
+One generic, three arities — two, three and four arguments for a leaf, a
+wrapper layer and a node — dispatched on the type the table's `node` column
+carries (there is no instance yet — that is the point). The arity is the
+role, so the three methods can never collide, and a downstream method cannot
+introduce a dispatch ambiguity:
 
-A leaf whose free parameters are not its constructor arguments (one overriding
-[`param_names`](@ref)/[`rebuild_leaf`](@ref), e.g. a moment-parameterised
-wrapper) needs a method here. The default detects that case rather than
-building a wrong leaf silently: it checks the rebuilt leaf reports the same
-parameter names and values it was given, and throws naming this function if
-not.
+- `from_table(T, values::NamedTuple)` rebuilds a **leaf** from its
+  parameter values, keyed as [`leaf_param_names`](@ref) reports them. Defaults
+  to `T(values...)`, right for any Distributions.jl family whose `params` are
+  its constructor arguments — a leaf still costs zero methods. The default
+  checks the rebuilt leaf reports back the coordinates it was given and throws
+  naming this function if not, so a moment-parameterised family gets an error
+  rather than a silently different distribution.
+- `from_table(T, inner, attrs)` re-applies a **leaf-wrapper layer** around an
+  already-rebuilt inner distribution, from its `:attribute` rows. No default —
+  a wrapper's fixed structure is its own — so an unknown wrapper throws naming
+  itself and this function. The built-ins (`Truncated`, `Censored`,
+  [`Shared`](@ref), [`Varying`](@ref)) have methods; an [`uncertain`](@ref)
+  layer needs none, its specs riding the `prior` column through
+  [`update`](@ref).
+- `from_table(T, names::Tuple, children::Tuple, attrs)` rebuilds a **composer
+  node** around its rebuilt children. Defaults to `T(children, names)`, the
+  shape [`Sequential`](@ref)/[`Parallel`](@ref) and the documented third-party
+  pattern use — a node following the two-method contract needs nothing here.
+
+Each arity is the type-dispatched counterpart of an instance hook —
+[`rebuild_leaf`](@ref), [`inner_dist`](@ref)'s peel, and
+[`node_rebuild`](@ref) — and dispatching on the type is what lets the round
+trip work with no name-to-type registry anywhere.
 
 # Arguments
-- `T`: the leaf type, as carried by the table's `node` column.
-- `values`: the leaf's parameter values, keyed and ordered as
-  [`leaf_param_names`](@ref) reports them.
-- `attrs`: the layer's [`node_attributes`](@ref) entries, as recovered from
-  its `:attribute` rows (empty for a plain leaf family).
+- `T`: the component's type, as carried by the table's `node` column.
+- the middle arguments select the arity, as above.
+- `attrs` (wrapper and node arities): the [`node_attributes`](@ref) entries
+  recovered from the component's `:attribute` rows. A leaf family has none —
+  a leaf carrying fixed structure of its own is a wrapper layer, and the
+  parser says so rather than dropping the rows.
 
 # Examples
 ```@example
 using ComposedDistributions, Distributions
 
-ComposedDistributions.from_table(Gamma, (alpha = 2.0, theta = 1.0), (;))
+ComposedDistributions.from_table(Gamma, (alpha = 2.0, theta = 1.0))
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.from_table(
+    Truncated, Gamma(2.0, 1.0), (lower = nothing, upper = 10.0))
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.from_table(
+    Sequential, (:onset, :admit), (Gamma(2.0, 1.0), LogNormal(0.5, 0.4)), (;))
 ```
 
 # See also
-- [`rewrap_from_table`](@ref): the same job for a leaf-wrapper layer.
-- [`node_from_table`](@ref): the same job for a composer node.
 - [`composed_to_table`](@ref): the table this reads.
+- [`compose`](@ref): the front end that drives it.
 "
-function from_table(::Type{T}, values::NamedTuple, ::NamedTuple) where {T}
+function from_table end
+
+# The leaf arity. `_check_leaf_coordinates` is the post-check described in the
+# docstring: names-and-values round-trip equality, so a family whose fields do
+# not line up with its constructor errors instead of silently rebuilding as a
+# different distribution.
+function from_table(::Type{T}, values::NamedTuple) where {T}
     leaf = _from_table_construct(T, values)
     _check_leaf_coordinates(T, leaf, values)
     return leaf
@@ -86,8 +123,8 @@ function _from_table_construct(::Type{T}, values::NamedTuple) where {T}
         throw(ArgumentError(
             "compose(table): cannot rebuild a $(T) leaf by calling it with " *
             "its parameter values $(values). Define " *
-            "`ComposedDistributions.from_table(::Type{<:$(T)}, values, " *
-            "attrs)` for a leaf whose free parameters are not its " *
+            "`ComposedDistributions.from_table(::Type{<:$(T)}, values)` " *
+            "for a leaf whose free parameters are not its " *
             "constructor arguments"))
     end
 end
@@ -105,90 +142,24 @@ function _check_leaf_coordinates(::Type{T}, leaf, values::NamedTuple) where {T}
         "compose(table): rebuilding a $(T) leaf from $(values) gave a leaf " *
         "reporting $(got) = $(params(free_leaf(leaf))) instead, so its free " *
         "parameters are not its constructor arguments in that order. Define " *
-        "`ComposedDistributions.from_table(::Type{<:$(T)}, values, attrs)`"))
+        "`ComposedDistributions.from_table(::Type{<:$(T)}, values)`"))
 end
 
-@doc "
-
-Re-apply a leaf-wrapper layer around a rebuilt inner distribution, from its
-[`composed_to_table`](@ref) `:attribute` rows.
-
-The reconstruction half of [`node_attributes`](@ref): whatever a wrapper
-reports there as its fixed structure comes back here as `attrs`, and this
-method puts the layer back around `inner`. Dispatched on the layer's type,
-taken from the table's `node` column.
-
-There is no default — a wrapper's structure is its own — so a wrapper type
-that appears in a table without a method here throws, naming itself and this
-function. The built-in wrappers (`Truncated`, `Censored`, [`Shared`](@ref),
-[`Varying`](@ref)) have methods; an [`uncertain`](@ref) layer needs none,
-since its specs ride the `prior` column and are applied by
-[`update`](@ref)`(d, table)`.
-
-# Arguments
-- `T`: the wrapper layer's type, as carried by the table's `node` column.
-- `inner`: the already-rebuilt distribution this layer wraps.
-- `attrs`: the layer's [`node_attributes`](@ref) entries, recovered from its
-  `:attribute` rows.
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-ComposedDistributions.rewrap_from_table(
-    Truncated, Gamma(2.0, 1.0), (lower = nothing, upper = 10.0))
-```
-
-# See also
-- [`from_table`](@ref): the same job for the leaf inside the stack.
-- [`inner_dist`](@ref): the peel this reverses.
-"
-function rewrap_from_table(::Type{T}, inner, attrs::NamedTuple) where {T}
+# The wrapper-layer arity: no default, per the umbrella docstring above. The
+# error lists the attributes recovered, so the author writing the method is
+# told exactly what `attrs` will hold.
+function from_table(::Type{T}, inner, attrs::NamedTuple) where {T}
     throw(ArgumentError(
         "compose(table): $(T) is a leaf-wrapper layer with no way to rebuild " *
-        "it. Define `ComposedDistributions.rewrap_from_table(::Type{<:$(T)}, " *
+        "it. Define `ComposedDistributions.from_table(::Type{<:$(T)}, " *
         "inner, attrs)`, taking the layer's node_attributes back " *
         "($(keys(attrs)) here) and re-applying the layer around `inner`"))
 end
 
-@doc "
-
-Rebuild a composer node from its [`composed_to_table`](@ref) rows and its
-already-rebuilt children.
-
-The reconstruction half of [`node_rebuild`](@ref), dispatched on the node's
-type rather than on an instance (there is no instance yet). The default calls
-the type with its children and their names, `T(children, names)` — the shape
-[`Sequential`](@ref)/[`Parallel`](@ref) and the documented third-party node
-pattern already use — so a node following that pattern still costs only the
-three methods of the node contract.
-
-A node whose constructor takes something else needs a method here.
-[`Choose`](@ref), [`Compete`](@ref) and [`Resolve`](@ref) have their own, as
-do the `Convolved`/`Difference` composites.
-
-# Arguments
-- `T`: the node type, as carried by the table's `node` column.
-- `names`: the child names, in table order, matching
-  [`component_names`](@ref).
-- `children`: the rebuilt children, in the same order.
-- `attrs`: the node's [`node_attributes`](@ref) entries recovered from its
-  `:attribute` rows, plus any node-level parameter block the table records
-  separately (a [`Resolve`](@ref)'s `branch_probs`).
-
-# Examples
-```@example
-using ComposedDistributions, Distributions
-
-ComposedDistributions.node_from_table(
-    Sequential, (:onset, :admit), (Gamma(2.0, 1.0), LogNormal(0.5, 0.4)), (;))
-```
-
-# See also
-- [`node_rebuild`](@ref): the same-shape rebuild from an existing instance.
-- [`node_attributes`](@ref): the hook feeding `attrs`.
-"
-function node_from_table(::Type{T}, names::Tuple, children::Tuple,
+# The node arity: `T(children, names)` by default. `Choose`, `Compete` and
+# `Resolve` have their own methods, as do the `Convolved`/`Difference`
+# composites, each next to its type.
+function from_table(::Type{T}, names::Tuple, children::Tuple,
         ::NamedTuple) where {T}
     try
         return T(children, names)
@@ -197,7 +168,7 @@ function node_from_table(::Type{T}, names::Tuple, children::Tuple,
         throw(ArgumentError(
             "compose(table): cannot rebuild a $(T) node by calling it with " *
             "its children and names. Define " *
-            "`ComposedDistributions.node_from_table(::Type{<:$(T)}, names, " *
+            "`ComposedDistributions.from_table(::Type{<:$(T)}, names, " *
             "children, attrs)`"))
     end
 end
@@ -262,7 +233,7 @@ function _build_from_table(ix::_TableIndex, edge::Symbol)
         # probabilities as an attribute BECAUSE its `branch_probs` param rows
         # are stick coordinates, so the attribute is the better of the two.
         node_attrs = merge(_node_level_params(ix, edge), attrs[1])
-        return node_from_table(layers[1], names, children, node_attrs)
+        return from_table(layers[1], names, children, node_attrs)
     end
     layers[1] === NoEvent && return NoEvent()
     return _build_leaf_from_table(ix, edge, layers, attrs)
@@ -326,10 +297,15 @@ end
 function _build_leaf_from_table(ix::_TableIndex, edge::Symbol, layers, attrs)
     tag = _table_shared_tag(layers, attrs)
     values = _leaf_values(ix, tag === nothing ? edge : tag)
-    leaf = from_table(layers[end], values, attrs[end])
+    isempty(attrs[end]) || throw(ArgumentError(
+        "compose(table): $(layers[end]) is the innermost layer at `$(edge)` " *
+        "but carries attribute rows $(keys(attrs[end])); a leaf with fixed " *
+        "structure of its own is a wrapper layer -- define `inner_dist` for " *
+        "it so the structure is a layer over the free leaf"))
+    leaf = from_table(layers[end], values)
     for i in (length(layers) - 1):-1:1
         layers[i] === Uncertain && continue
-        leaf = rewrap_from_table(layers[i], leaf, attrs[i])
+        leaf = from_table(layers[i], leaf, attrs[i])
     end
     return leaf
 end

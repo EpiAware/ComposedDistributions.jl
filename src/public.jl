@@ -96,6 +96,7 @@ public CentredPoolPrior, centred_pool_rows, pool_centred_logprior,
 # `_centred_pool_rows`/`_pool_centred_logprior` above — until
 # DistributionsInference.jl's fit-protocol extension moves onto the renamed
 # functions, then removed.
+public validate_tree
 public validate_pool_groups, validate_tree_names,
        _validate_pool_groups, _validate_tree_names
 
@@ -119,21 +120,16 @@ public param_names, leaf_ctor
 # just to satisfy `tie`.
 public rebuild_leaf, leaf_signature
 
-# The table round trip's reconstruction half (`compose(table)`, the inverse of
-# `composed_to_table`). Each is the type-dispatched counterpart of a hook that
-# takes an instance — `from_table` of `leaf_ctor`/`rebuild_leaf`,
-# `rewrap_from_table` of `inner_dist`, `node_from_table` of `node_rebuild` —
-# because when a table is being read there is no instance yet, only the type
-# its `node` column carries. Dispatching on the type is what lets the round
-# trip work with no name-to-type registry anywhere.
-#
-# Two of the three are defaulted so the extension cost does not move: a leaf
-# family whose parameters are its constructor arguments needs no `from_table`,
-# and a node constructed as `T(children, names)` (the shape `Sequential` /
-# `Parallel` and the documented third-party pattern use) needs no
-# `node_from_table`. `rewrap_from_table` has no default — a wrapper's fixed
-# structure is its own — so a leaf-wrapper type defines one to round-trip.
-public from_table, rewrap_from_table, node_from_table
+# The table round trip's reconstruction half (`compose(table)`, the inverse
+# of `composed_to_table`): one generic, three arities — leaf from values,
+# wrapper layer around a rebuilt inner, node around rebuilt children — each
+# the type-dispatched counterpart of an instance hook (`rebuild_leaf`,
+# `inner_dist`'s peel, `node_rebuild`), because when a table is read there is
+# no instance yet, only the type its `node` column carries. Dispatching on
+# the type is what lets the round trip work with no name-to-type registry.
+# The leaf and node arities are defaulted so the extension cost does not
+# move; the wrapper arity is not, a wrapper's fixed structure being its own.
+public from_table
 
 # The composer abstract-type hierarchy. `AbstractComposedDistribution` is the
 # root the composer nodes subtype; `AbstractMultiChild` groups the positional

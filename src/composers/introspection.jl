@@ -1076,7 +1076,7 @@ node_attributes(x) = (;)
 # delay's own parameters ride the `:param` rows as always).
 node_attributes(d::Truncated) = (; lower = d.lower, upper = d.upper)
 
-function rewrap_from_table(::Type{<:Truncated}, inner, attrs::NamedTuple)
+function from_table(::Type{<:Truncated}, inner, attrs::NamedTuple)
     return truncated(inner; lower = attrs.lower, upper = attrs.upper)
 end
 

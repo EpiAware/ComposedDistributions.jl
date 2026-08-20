@@ -43,7 +43,7 @@ has_varying(d::Distributions.Censored) = has_varying(d.uncensored)
 # `Truncated`).
 node_attributes(d::Distributions.Censored) = (; lower = d.lower, upper = d.upper)
 
-function rewrap_from_table(::Type{<:Distributions.Censored}, inner,
+function from_table(::Type{<:Distributions.Censored}, inner,
         attrs::NamedTuple)
     return censored(inner; lower = attrs.lower, upper = attrs.upper)
 end

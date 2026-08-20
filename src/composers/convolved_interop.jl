@@ -284,14 +284,14 @@ node_attributes(d::Convolved) = (; method = d.method)
 node_attributes(d::Difference) = (; method = d.method)
 
 # The reverse: a composite takes its components positionally with the solver as
-# a keyword, not the `(children, names)` the default `node_from_table` calls.
+# a keyword, not the `(children, names)` the default `from_table` calls.
 # The `component_i` names are positional labels the walk generates and carry no
 # information, so they are discarded here rather than restored.
-function node_from_table(::Type{<:Convolved}, ::Tuple, children::Tuple,
+function from_table(::Type{<:Convolved}, ::Tuple, children::Tuple,
         attrs::NamedTuple)
     return Convolved(children; method = attrs.method)
 end
-function node_from_table(::Type{<:Difference}, ::Tuple, children::Tuple,
+function from_table(::Type{<:Difference}, ::Tuple, children::Tuple,
         attrs::NamedTuple)
     return Difference(children[1], children[2]; method = attrs.method)
 end

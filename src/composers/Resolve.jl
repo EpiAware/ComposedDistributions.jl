@@ -223,7 +223,7 @@ end
 # `update(d, table)` writes the prior back over this afterwards; the
 # probabilities it leaves alone (merge mode keeps the node's own), which is
 # why they have to be right here rather than approximately right.
-function node_from_table(::Type{<:Resolve}, names::Tuple, children::Tuple,
+function from_table(::Type{<:Resolve}, names::Tuple, children::Tuple,
         attrs::NamedTuple)
     prior = get(attrs, :branch_prob_prior, nothing)
     haskey(attrs, :branch_probs) || throw(ArgumentError(

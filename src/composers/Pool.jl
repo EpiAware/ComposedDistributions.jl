@@ -257,6 +257,41 @@ _collapse_population(pop, ::NamedTuple) = pop
 # The pattern-match target for the fit-protocol extension's prior
 # translation was settled in issue #212.
 @doc "
+
+Check a composed tree's structural invariants, before fitting or reading it.
+
+Runs every gate in one call: each [`pool`](@ref) group's leaves agree on
+population and parameterisation ([`validate_pool_groups`](@ref)), and no pool
+group, [`shared`](@ref) tag, or top-level edge name collides with one from
+another of those three roles ([`validate_tree_names`](@ref)). Returns `d`, so
+it chains. This is the single entry point a caller wants —
+DistributionsInference gates a tree with it once at log-density construction,
+and `compose(table)` runs the same checks while parsing — the two finer
+verbs remaining for a caller needing one gate without the other.
+
+# Arguments
+- `d`: the composed tree to check.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = Gamma(2.0, 1.0), admit = LogNormal(0.5, 0.4)))
+ComposedDistributions.validate_tree(tree)
+nothing # hide
+```
+
+# See also
+- [`validate_pool_groups`](@ref), [`validate_tree_names`](@ref): the
+  individual gates.
+"
+function validate_tree(d)
+    validate_pool_groups(d)
+    validate_tree_names(d)
+    return d
+end
+
+@doc "
 The centred latent's prior marker, carried on the `prior` column of a centred
 pooled parameter's row.
 

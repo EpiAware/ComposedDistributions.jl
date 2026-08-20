@@ -127,7 +127,7 @@ node_attributes(d::Shared{tag}) where {tag} = (; tag = tag)
 
 # The reverse: the tag lives in the type parameter, so it is read back off the
 # layer's own `:attribute` row rather than passed to a constructor argument.
-function rewrap_from_table(::Type{<:Shared}, inner, attrs::NamedTuple)
+function from_table(::Type{<:Shared}, inner, attrs::NamedTuple)
     return Shared{attrs.tag}(inner)
 end
 

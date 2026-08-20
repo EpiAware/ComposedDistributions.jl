@@ -92,8 +92,8 @@ end
 node_attributes(d::Choose) = (; selector = d.selector)
 
 # The reverse: a `Choose` takes its names first and its selector last, not the
-# `(children, names)` the default `node_from_table` calls.
-function node_from_table(::Type{<:Choose}, names::Tuple, children::Tuple,
+# `(children, names)` the default `from_table` calls.
+function from_table(::Type{<:Choose}, names::Tuple, children::Tuple,
         attrs::NamedTuple)
     return Choose(names, children, attrs.selector)
 end

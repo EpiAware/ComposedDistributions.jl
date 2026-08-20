@@ -135,7 +135,7 @@ end
     # A third-party node built the documented way -- `T(children, names)`, as
     # `Sequential`/`Parallel` and the `Both` example in the extending guide are
     # -- round-trips on the node contract's three methods alone. No
-    # `node_from_table` here: the default covers it, so adding a node does not
+    # `from_table` here: the default covers it, so adding a node does not
     # get more expensive.
     struct Both{names, C <: Tuple} <:
            AbstractComposedDistribution{Multivariate, Continuous}
@@ -161,8 +161,8 @@ end
 
     # A Distributions.jl family is a leaf with no methods of its own, so the
     # default `from_table` rebuilds it from its parameter values.
-    @test ComposedDistributions.from_table(Gamma, (alpha = 2.0, theta = 1.0),
-        (;)) == Gamma(2.0, 1.0)
+    @test ComposedDistributions.from_table(
+        Gamma, (alpha = 2.0, theta = 1.0)) == Gamma(2.0, 1.0)
     exotic = compose((a = Weibull(2.0, 1.0), b = Beta(2.0, 3.0),
         c = Uniform(0.0, 4.0)))
     @test compose(composed_to_table(exotic)) == exotic
@@ -225,7 +225,7 @@ end
     Base.rand(rng::AbstractRNG, x::Odd) = rand(rng, x.d)
 
     wrapped = compose((a = Odd(Gamma(2.0, 1.0), 3.0),))
-    @test_throws r"rewrap_from_table" compose(composed_to_table(wrapped))
+    @test_throws r"from_table" compose(composed_to_table(wrapped))
 
     # A leaf whose free parameters are NOT its constructor arguments is the
     # silent-wrongness case: `MomGamma(2.0, 1.0)` constructs happily and is
@@ -250,8 +250,10 @@ end
     @test_throws r"from_table" compose(composed_to_table(moment))
 
     # The one method it needs, and it round-trips.
-    ComposedDistributions.from_table(::Type{MomGamma}, v::NamedTuple,
-        ::NamedTuple) = MomGamma((v.m / v.s)^2, v.s^2 / v.m)
+    ComposedDistributions.from_table(::Type{MomGamma}, v::NamedTuple) = MomGamma(
+        (v.m /
+         v.s)^2, v.s^2 /
+                 v.m)
     @test compose(composed_to_table(moment)) == moment
 end
 
