@@ -2,8 +2,9 @@
 # Uncertain: a leaf whose parameters are themselves distributions
 # ============================================================================
 #
-# An `Uncertain` leaf pairs a concrete `template` with `specs`, priors attached
-# to the template's free parameters. The user-facing story (the hierarchical
+# An `Uncertain` leaf pairs a concrete `template` with `specs`: priors (or
+# `no_prior()` markers, free with no prior yet) attached to the template's
+# free parameters. The user-facing story (the hierarchical
 # model, the marginal `rand`, the collapse-by-`update`, the truncation
 # push-inside) lives in the docstrings below.
 #
@@ -13,8 +14,8 @@
 # *observed* case, `Varying` (`varying.jl`): `Varying` maps an observed covariate
 # read from a `Context` and is resolved by `instantiate`; `Uncertain` maps a
 # latent parameter draw with a prior and is resolved by `rand` (the marginal)
-# or collapsed by `update`. The two share the `_node_children` guard walk (see
-# `has_uncertain` below) and `Varying`'s `instantiate` shares the `_rebuild`
+# or collapsed by `update`. The two share the `node_children` guard walk (see
+# `has_uncertain` below) and `Varying`'s `instantiate` shares the `node_rebuild`
 # reconstruction machinery. Maintenance notes:
 #
 #   - The specs are priors attached to the template's free parameters, so the
@@ -22,8 +23,8 @@
 #     the template's free delay and `rewrap_leaf`/`_update_leaf` rebuild the
 #     concrete leaf *without* the specs. Pinning values with `update` therefore
 #     collapses the uncertainty by design.
-#   - `_uncertain_specs` is the routing hook (default `nothing`,
-#     introspection.jl); wrapper types forward it exactly like `_shared_tag`
+#   - `uncertain_specs` is the routing hook (default `nothing`,
+#     introspection.jl); wrapper types forward it exactly like `shared_tag`
 #     (`Shared` here, `Truncated` in introspection.jl, the modifiers in the
 #     ModifiedDistributions extension).
 #   - The one special behaviour is `rand`, which draws the marginal by drawing
@@ -43,12 +44,26 @@
 #     verb with a confusing `MethodError`, not just the moments this file
 #     otherwise guards.
 
+# A spec value: a prior (any distribution-like leaf), a `pool(...)` group, or
+# the `no_prior()` marker (free, no prior chosen yet). Shared by the
+# `Uncertain` constructor, `uncertain`'s keyword form and `_merge_leaf` so the
+# three accepted kinds cannot drift apart.
+# A prior is drawn and scored exactly as a leaf is, so it is admitted on the
+# same terms a leaf is (`is_composable`) rather than by subtyping. A
+# multivariate composer is excluded: a prior is over ONE scalar parameter, and
+# `is_composable` admits composer nodes as well as leaves.
+function _is_spec_value(v)
+    v isa Union{Pool, NoPrior} ||
+        (is_composable(v) &&
+         !(v isa AbstractComposedDistribution{Multivariate}))
+end
+
 @doc raw"
 
 A leaf distribution whose parameters are themselves distributions.
 
 `Uncertain` pairs a concrete `template` leaf with `specs`, a `NamedTuple`
-mapping parameter names (as in [`params_table`](@ref)'s `param` column) to
+mapping parameter names (as in [`composed_to_table`](@ref)'s `param` column) to
 distributions. A spec entry may itself be an `Uncertain`, so parameter
 uncertainty nests. Parameters without a spec stay fixed at the template's
 values, and the template's fixed wrapper structure (truncation, censoring) is
@@ -85,8 +100,8 @@ with [`update`](@ref)`(tree, params)`.
 - [`uncertain`](@ref): the public constructor.
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 "
-struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
-    S <: NamedTuple} <: UnivariateDistribution{VS}
+struct Uncertain{VS <: ValueSupport, L, S <: NamedTuple} <:
+       UnivariateDistribution{VS}
     "The concrete (possibly wrapped) template leaf: family, fixed parameter
     values, and fixed wrapper structure (truncation / censoring)."
     template::L
@@ -94,9 +109,7 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
     template's free delay, each value a distribution (possibly `Uncertain`)."
     specs::S
 
-    function Uncertain(template::L,
-            specs::S) where {
-            VS <: ValueSupport, L <: UnivariateDistribution{VS}, S <: NamedTuple}
+    function Uncertain(template::L, specs::S) where {L, S <: NamedTuple}
         template isa Uncertain && throw(ArgumentError(
             "the template of an Uncertain must be a concrete distribution; " *
             "nest uncertainty in the parameter specs instead"))
@@ -112,17 +125,19 @@ struct Uncertain{VS <: ValueSupport, L <: UnivariateDistribution{VS},
             "uncertain instead — build the composite from uncertain components, " *
             "or target one via `update(tree, (leaf = (component_1 = " *
             "(param = prior,),),))`"))
-        pnames = _leaf_param_names(template)
+        _check_leaf_param_alignment(free_leaf(template))
+        pnames = leaf_param_names(template)
         for (k, v) in pairs(specs)
             k in pnames || throw(ArgumentError(
                 "unknown uncertain parameter $(repr(k)); the template " *
                 "$(template) has parameters $(collect(pnames))"))
-            v isa Union{UnivariateDistribution, Pool} || throw(ArgumentError(
-                "the spec for $(repr(k)) must be a UnivariateDistribution " *
-                "(a distribution over the parameter) or a `pool(...)` spec " *
-                "(partial pooling across a group); got $(typeof(v))"))
+            _is_spec_value(v) || throw(ArgumentError(
+                "the spec for $(repr(k)) must be a distribution-like leaf " *
+                "(a distribution over the parameter), a `pool(...)` spec " *
+                "(partial pooling across a group), or `no_prior()` (free, " *
+                "no prior yet); got $(typeof(v))"))
         end
-        return new{VS, L, S}(template, specs)
+        return new{value_support(L), L, S}(template, specs)
     end
 end
 
@@ -136,7 +151,7 @@ distributions, nestable to any depth.
 - `uncertain(template; kwargs...)` wraps a concrete `template` leaf so the named
   parameters are drawn from the given distributions rather than fixed. Each
   keyword is a parameter name of the template's free delay (as in
-  [`params_table`](@ref)'s `param` column); a distribution value makes that
+  [`composed_to_table`](@ref)'s `param` column); a distribution value makes that
   parameter uncertain, a `Real` value re-pins it to a new fixed value.
 - `uncertain(Family, args...)` (a type, e.g. `Gamma`) takes one positional
   argument per parameter, in the family's constructor order: a
@@ -156,9 +171,8 @@ The result is a `Distributions.UnivariateDistribution` and composes as a leaf
 everywhere ([`sequential`](@ref), [`parallel`](@ref), [`resolve`](@ref),
 [`compete`](@ref), [`choose`](@ref), [`shared`](@ref)): `rand` draws the
 marginal, and [`update`](@ref)`(tree, params)` collapses an uncertain leaf to
-its concrete template. In [`params_table`](@ref) an uncertain parameter's spec
-rides the row's `prior` column, so [`build_priors`](@ref) picks it up without an
-explicit override.
+its concrete template. In [`composed_to_table`](@ref) an uncertain parameter's
+spec rides the row's `prior` column.
 
 !!! warning \"Only `rand` is marginal\"
     Every other query on the result — `logpdf`/`cdf`/`quantile`/... and the
@@ -188,36 +202,37 @@ sees through a composite leaf to its component parameters).
 ```@example
 using ComposedDistributions, Distributions
 
-# A literature-reported Gamma delay with an uncertain shape.
-u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+# A literature-reported Gamma delay with an uncertain alpha.
+u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 rand(u)
 
-# The positional family form: shape uncertain, scale fixed at 1.0.
+# The positional family form: alpha uncertain, theta fixed at 1.0.
 uncertain(Gamma, LogNormal(log(2.0), 0.2), 1.0)
 
-# Nested: the shape's prior location is itself uncertain.
+# Nested: the alpha's prior location is itself uncertain.
 uncertain(Gamma(2.0, 1.0);
-    shape = uncertain(LogNormal(log(2.0), 0.2); mu = Normal(log(2.0), 0.1)))
+    alpha = uncertain(LogNormal(log(2.0), 0.2); mu = Normal(log(2.0), 0.1)))
 ```
 
 # See also
 - [`Uncertain`](@ref): the wrapper type.
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 "
-function uncertain(template::UnivariateDistribution; kwargs...)
+function uncertain(template; kwargs...)
     nt = values(kwargs)
-    pnames = _leaf_param_names(template)
+    pnames = leaf_param_names(template)
     for (k, v) in pairs(nt)
         k in pnames || throw(ArgumentError(
             "unknown parameter $(repr(k)) for $(template); expected one of " *
             "$(collect(pnames))"))
-        v isa Union{Real, UnivariateDistribution, Pool} || throw(ArgumentError(
-            "the value for $(repr(k)) must be a Real (a fixed value), a " *
-            "UnivariateDistribution (an uncertain parameter), or a `pool(...)` " *
-            "spec (partial pooling); got $(typeof(v))"))
+        v isa Real || _is_spec_value(v) ||
+            throw(ArgumentError(
+                "the value for $(repr(k)) must be a Real (a fixed value), " *
+                "a distribution-like leaf (an uncertain parameter), a " *
+                "`pool(...)` spec (partial pooling), or `no_prior()` " *
+                "(free, no prior yet); got $(typeof(v))"))
     end
-    spec_keys = Tuple(k
-    for (k, v) in pairs(nt) if v isa Union{UnivariateDistribution, Pool})
+    spec_keys = Tuple(k for (k, v) in pairs(nt) if _is_spec_value(v))
     specs = NamedTuple{spec_keys}(Tuple(nt[k] for k in spec_keys))
     fixed_keys = Tuple(k for (k, v) in pairs(nt) if v isa Real)
     pinned = if isempty(fixed_keys)
@@ -248,9 +263,7 @@ end
 # parameter uncertain, a `Real` fixes it. The family's default instance supplies
 # a valid concrete placeholder for the uncertain slots (the specs then drive the
 # draws), and the `Real` slots re-pin it, so this reduces to the keyword form.
-function uncertain(::Type{D}, arg1::Union{Real, UnivariateDistribution},
-        args::Union{Real, UnivariateDistribution}...) where {
-        D <: UnivariateDistribution}
+function uncertain(::Type{D}, arg1, args...) where {D}
     probe = try
         D()
     catch
@@ -259,7 +272,7 @@ function uncertain(::Type{D}, arg1::Union{Real, UnivariateDistribution},
             "instead, e.g. uncertain($(nameof(D))(...); ...)"))
     end
     positional = (arg1, args...)
-    pnames = _leaf_param_names(probe)
+    pnames = leaf_param_names(probe)
     length(positional) == length(pnames) || throw(ArgumentError(
         "uncertain($(nameof(D)), ...) needs one positional argument per " *
         "parameter; $(D) has parameters $(collect(pnames)) but got " *
@@ -268,7 +281,7 @@ function uncertain(::Type{D}, arg1::Union{Real, UnivariateDistribution},
     return uncertain(probe; kwargs...)
 end
 
-function uncertain(::Type{D}; kwargs...) where {D <: UnivariateDistribution}
+function uncertain(::Type{D}; kwargs...) where {D}
     probe = try
         D()
     catch
@@ -277,7 +290,7 @@ function uncertain(::Type{D}; kwargs...) where {D <: UnivariateDistribution}
             "instead, e.g. uncertain($(nameof(D))(...); ...)"))
     end
     nt = values(kwargs)
-    pnames = _leaf_param_names(probe)
+    pnames = leaf_param_names(probe)
     for n in pnames
         haskey(nt, n) || throw(ArgumentError(
             "uncertain($(nameof(D)); ...) needs every parameter given " *
@@ -319,29 +332,33 @@ Promote one or more of an existing tree's free parameters to uncertain.
 the keywords, packed the same way) through the same dotted/nested targeting
 [`update`](@ref) uses — a `Shared` tag routes through its tag, a nested edge
 targets a descendant node — but restricted to calls that introduce or extend
-at least one prior. A distribution value promotes that parameter (replacing
-any spec already there — promoting an already-uncertain parameter *replaces*
-its spec; it does not nest a hyperprior); a `Real` value alongside it re-pins
-a sibling parameter in the same call without itself becoming uncertain. A
-call with no distribution anywhere is refused: use [`update`](@ref) for a
-purely concrete edit.
+at least one spec. A distribution or [`no_prior`](@ref)`()` value promotes
+that parameter (replacing any spec already there — promoting an
+already-uncertain parameter *replaces* its spec; it does not nest a
+hyperprior); a `Real` value alongside it re-pins a sibling parameter in the
+same call without itself becoming uncertain. A call with no spec anywhere is
+refused: use [`update`](@ref) for a purely concrete edit.
 
-`uncertain(tree)` (no `params`) promotes every free parameter with its
-default, support-derived prior — one call in place of
-`update(tree, param_priors(tree))`.
+`uncertain(tree)` (no `params`) marks every currently-fixed free parameter
+[`no_prior`](@ref)`()` — free, no prior chosen yet — including a
+[`Resolve`](@ref)'s branch-probability simplex. ComposedDistributions does not
+choose a prior (that is DistributionsInference.jl's job): attach one
+afterwards with a targeted `uncertain(tree; param = prior, ...)` call, or by
+editing `composed_to_table(tree)`'s `prior` column and calling
+`update(tree, table)`.
 
 This is the preferred way to write a promotion: `update(tree, nt)` still
-accepts the identical distribution-valued `nt` directly (unchanged), for a
-call site that assembles `nt` programmatically without knowing in advance
-whether it promotes anything.
+accepts the identical spec-valued `nt` directly (unchanged), for a call site
+that assembles `nt` programmatically without knowing in advance whether it
+promotes anything.
 
 # Arguments
 - `tree`: the composed distribution to promote parameters of.
 - `params`: a nested `NamedTuple`, dotted/nested like [`update`](@ref)'s
-  `params`, with at least one distribution-valued entry.
+  `params`, with at least one spec-valued entry.
 
 # Keyword Arguments
-- `kwargs...`: the same targeting, as keywords (`onset_admit = (shape = ...,)`).
+- `kwargs...`: the same targeting, as keywords (`onset_admit = (alpha = ...,)`).
 
 # Examples
 ```@example
@@ -350,13 +367,13 @@ using ComposedDistributions, Distributions
 tree = compose((onset_admit = Gamma(2.0, 1.0),
     admit_death = LogNormal(0.5, 0.4)))
 
-# Targeted promotion: only onset_admit.shape becomes uncertain.
-u = uncertain(tree; onset_admit = (shape = LogNormal(log(2.0), 0.2),))
+# Targeted promotion: only onset_admit.alpha becomes uncertain.
+u = uncertain(tree; onset_admit = (alpha = LogNormal(log(2.0), 0.2),))
 has_uncertain(u)
 
-# Promote every free parameter with a default prior.
+# Mark every free parameter estimated, no prior chosen yet.
 everything = uncertain(tree)
-has_uncertain(everything)
+composed_to_table(everything).prior
 ```
 
 # See also
@@ -364,19 +381,22 @@ has_uncertain(everything)
   through; also the concrete-set / node-replacement / flat-vector / table /
   chain verb.
 - [`Uncertain`](@ref): the leaf type a promoted parameter's spec builds.
-- [`param_priors`](@ref): the default priors `uncertain(tree)` (bare) applies.
+- [`no_prior`](@ref): the marker `uncertain(tree)` (bare) applies.
 - [`has_uncertain`](@ref): check whether any promotion remains unresolved.
 "
 function uncertain(d::AbstractComposedDistribution, params::NamedTuple)
     _has_distribution_value(params) || throw(ArgumentError(
-        "uncertain(tree, params) needs at least one distribution-valued " *
-        "parameter; use update(tree, params) to set concrete values"))
+        "uncertain(tree, params) needs at least one spec-valued parameter " *
+        "(a distribution or no_prior()); use update(tree, params) to set " *
+        "concrete values"))
     return _update(d, params, params, true)
 end
 
 function uncertain(d::AbstractComposedDistribution; kwargs...)
-    isempty(kwargs) && return uncertain(d, param_priors(d))
-    return uncertain(d, values(kwargs))
+    isempty(kwargs) || return uncertain(d, values(kwargs))
+    nt = _estimate_all(d)
+    isempty(nt) && return d
+    return uncertain(d, nt)
 end
 
 # --- the leaf-protocol hooks -------------------------------------------------
@@ -389,38 +409,44 @@ end
 # pinning definite values (an `update` from fitted draws) collapses the
 # uncertain leaf to its concrete distribution.
 
-free_leaf(d::Uncertain) = free_leaf(d.template)
+inner_dist(d::Uncertain) = d.template
 rewrap_leaf(d::Uncertain, inner) = rewrap_leaf(d.template, inner)
 
+# `Uncertain` is a wrapper layer of its own in `composed_to_table`, peeling to
+# the template's layers through `inner_dist` above; it has no attributes of
+# its own (its specs already ride the `:param` rows' `prior` column, so the
+# default empty `node_attributes` is right and needs no override).
+
 # A modifier-owned extra parameter (e.g. a thinned template's `:thin` factor)
-# survives an uncertain leaf, so `params_table` still surfaces it. There is no
+# survives an uncertain leaf, so `composed_to_table` still surfaces it
+# (forwarded via `inner_dist(::Uncertain)`). There is no
 # `set_extra_leaf_params(::Uncertain)`: `rewrap_leaf` strips the uncertainty, so
 # the setter always runs on the rebuilt concrete leaf, not on the `Uncertain`.
-extra_leaf_params(d::Uncertain) = extra_leaf_params(d.template)
 
 # A shared tag survives an uncertain leaf (a `shared(:inc, uncertain(...))`
 # is tagged outside, but forward for robustness when nested the other way).
-_shared_tag(d::Uncertain) = _shared_tag(d.template)
+shared_tag(d::Uncertain) = shared_tag(d.template)
 
 # The uncertain-spec protocol hook (default `nothing` in introspection.jl):
 # an `Uncertain` reports its own specs, and the known wrapper leaves forward so
-# a wrapped uncertain leaf still exposes them to `params_table`'s prior column.
-# (Extension wrapper types add their own forwarding methods.)
-_uncertain_specs(d::Uncertain) = d.specs
-_uncertain_specs(d::Shared) = _uncertain_specs(d.dist)
+# a wrapped uncertain leaf still exposes them to `composed_to_table`'s prior
+# column. (Extension wrapper types add their own forwarding methods.)
+uncertain_specs(d::Uncertain) = d.specs
+uncertain_specs(d::Shared) = uncertain_specs(d.dist)
 
 # --- merge mode: `update` introduces or extends uncertainty ------------------
 #
 # `_merge_leaf` folds a (possibly partial) NamedTuple of specs/values into a
-# leaf: a distribution value makes that parameter uncertain (a spec), a `Real`
-# value pins it (collapsing any existing spec), and an absent parameter keeps
-# the leaf's current spec or fixed value. This is the object-level spelling of
-# "distribution in the slot = estimate, value = fix": `update` with distribution
-# values is the targeted way to make parameters uncertain, and
-# `update(tree, param_priors(tree))` promotes a whole tree to uncertainty over
-# its free parameters with default priors (the explicit estimate-everything
-# escape hatch). Called from the leaf `_update` in merge mode; the methods live
-# here (not introspection.jl) so they can dispatch on `Shared`/`Uncertain`.
+# leaf: a spec value (a distribution, `pool(...)`, or `no_prior()`) makes that
+# parameter uncertain, a `Real` value pins it (collapsing any existing spec),
+# and an absent parameter keeps the leaf's current spec or fixed value. This
+# is the object-level spelling of "spec in the slot = estimate, value = fix":
+# `update` with spec values is the targeted way to make parameters uncertain,
+# and bare `uncertain(tree)` promotes a whole tree to uncertainty over its
+# free parameters with the `no_prior()` marker (the explicit
+# estimate-everything escape hatch, no prior guessed). Called from the leaf
+# `_update` in merge mode; the methods live here (not introspection.jl) so
+# they can dispatch on `Shared`/`Uncertain`.
 # Shared stays outermost so its tag keeps routing; `Uncertain` wraps the
 # concrete (possibly `Truncated`) template so its `ValueSupport` stays concrete
 # (see the parameterisation note above).
@@ -431,11 +457,11 @@ function _merge_leaf(leaf::Shared{tag}, updates::NamedTuple) where {tag}
 end
 
 function _merge_leaf(leaf, updates::NamedTuple)
-    pnames = _leaf_param_names(leaf)
+    pnames = leaf_param_names(leaf)
     _check_merge_keys(updates, pnames, nameof(typeof(leaf)))
     tvals = params(free_leaf(leaf))
     extras = extra_leaf_params(leaf)
-    existing = _uncertain_specs(leaf)
+    existing = uncertain_specs(leaf)
     # Re-pin the fixed value at any `Real` update; keep the current value else.
     # A native parameter's current value comes from `tvals` positionally; an
     # extra (modifier-owned) parameter's from the extra map (`tvals` holds only
@@ -456,7 +482,7 @@ function _merge_leaf(leaf, updates::NamedTuple)
     names = Symbol[]
     vals = Any[]
     for p in pnames
-        if haskey(updates, p) && updates[p] isa Union{UnivariateDistribution, Pool}
+        if haskey(updates, p) && _is_spec_value(updates[p])
             push!(names, p)
             push!(vals, updates[p])
         elseif haskey(updates, p) && updates[p] isa Real
@@ -508,9 +534,21 @@ from its spec (recursively, so a nested `Uncertain` spec draws via its own
 draw the value. Each call draws a fresh parameter set, so repeated draws are iid
 from the marginal.
 
-See also: [`Uncertain`](@ref), [`update`](@ref)
+A parameter still marked [`no_prior`](@ref)`()` (free, no prior chosen yet)
+has nothing to draw from, so `rand` refuses eagerly, naming every such
+parameter, rather than failing deep inside the draw with a confusing
+`MethodError`.
+
+See also: [`Uncertain`](@ref), [`update`](@ref), [`no_prior`](@ref)
 "
 function Base.rand(rng::AbstractRNG, d::Uncertain)
+    unresolved = Tuple(k for (k, v) in pairs(d.specs) if v isa NoPrior)
+    isempty(unresolved) || throw(ArgumentError(
+        "cannot draw from $(d): $(join(unresolved, ", ")) " *
+        (length(unresolved) == 1 ? "is" : "are") * " marked no_prior() " *
+        "(free, no prior chosen yet); attach a prior with uncertain(tree; " *
+        "param = prior, ...) or update(tree, table) before drawing, or " *
+        "collapse first with update(tree, params)"))
     return rand(rng, _uncertain_leaf(d.template,
         map(spec -> rand(rng, spec), d.specs)))
 end
@@ -520,7 +558,7 @@ end
 # the `free_leaf`/`rewrap_leaf` protocol so the fixed wrapper structure carries
 # through. Reused by `rand` (and available for a hand-written two-stage draw).
 function _uncertain_leaf(template, drawn::NamedTuple)
-    pnames = _leaf_param_names(template)
+    pnames = leaf_param_names(template)
     tvals = params(free_leaf(template))
     extras = extra_leaf_params(template)
     # A native parameter's fallback is its current value in `tvals`; an extra
@@ -583,9 +621,13 @@ Distributions.truncated(d::Uncertain, ::Nothing, ::Nothing) = d
 
 # --- has-uncertainty predicate ----------------------------------------------
 
-# The composer nodes recurse through the shared `_node_children` accessor,
+# The composer nodes recurse through the shared `node_children` accessor,
 # mirroring `has_varying` (the two deferred-leaf guards share one walk); the
-# leaf base case reports a spec via the `_uncertain_specs` routing hook.
+# leaf base case reports a spec via the `uncertain_specs` routing hook.
+# Structural dispatch against the public `AbstractComposedDistribution` root,
+# not a closed list of the built-in types (`has_varying` in `varying.jl`
+# mirrors this exactly, including the `Multivariate`/`AbstractOneOf` split
+# that keeps the two methods below from colliding on a univariate one_of node).
 
 @doc "
 
@@ -604,7 +646,7 @@ logpdf(collapsed, x)
 ```
 
 `has_uncertain` walks the tree (through `Sequential`/`Parallel`/`Choose`/the
-one_of composers, and through wrapper leaves via the `_uncertain_specs` routing
+one_of composers, and through wrapper leaves via the `uncertain_specs` routing
 hook so a `shared`/modifier-wrapped uncertain leaf is still seen) and returns
 `true` as soon as any leaf carries a spec; a fully collapsed tree returns
 `false`.
@@ -616,11 +658,11 @@ hook so a `shared`/modifier-wrapped uncertain leaf is still seen) and returns
 ```@example
 using ComposedDistributions, Distributions
 
-u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
 has_uncertain(tree)   # an uncertain leaf remains
 
-collapsed = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+collapsed = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
     admit_death = (mu = 0.7, sigma = 0.5)))
 has_uncertain(collapsed)   # resolved: false
 ```
@@ -630,13 +672,14 @@ has_uncertain(collapsed)   # resolved: false
 - [`update`](@ref): collapse an uncertain leaf to a concrete distribution.
 - [`has_varying`](@ref): the same guard for the observed (varying) case.
 "
-function has_uncertain(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    return any(has_uncertain, _node_children(d))
+function has_uncertain(d::AbstractComposedDistribution{Multivariate})
+    return any(has_uncertain, node_children(d))
 end
+has_uncertain(d::AbstractOneOf) = any(has_uncertain, node_children(d))
 # A `Resolve` is also uncertain when its branch probabilities carry an attached
 # simplex prior (a node-level uncertain parameter, not a leaf), so a tree with
 # an uncertain branch-probability simplex but fully fixed delays is still seen.
 function has_uncertain(c::Resolve)
     return c.branch_prob_prior !== nothing || any(has_uncertain, c.delays)
 end
-has_uncertain(leaf) = _uncertain_specs(leaf) !== nothing
+has_uncertain(leaf) = uncertain_specs(leaf) !== nothing

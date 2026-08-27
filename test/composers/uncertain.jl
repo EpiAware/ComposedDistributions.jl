@@ -6,30 +6,30 @@
     using Distributions
 
     # Keyword form on a concrete template (partial: one param uncertain).
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     @test u isa Uncertain
     @test u.template == Gamma(2.0, 1.0)
-    @test u.specs == (; shape = LogNormal(log(2.0), 0.2))
+    @test u.specs == (; alpha = LogNormal(log(2.0), 0.2))
 
     # A Real keyword re-pins the template's fixed value.
-    u2 = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2),
-        scale = 2.5)
+    u2 = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2),
+        theta = 2.5)
     @test u2.template == Gamma(2.0, 2.5)
 
     # Positional family form: both parameters uncertain (the family's default
     # instance is a valid placeholder; the specs drive the draws).
     pf = uncertain(Gamma, LogNormal(log(2.0), 0.2), Exponential(1.0))
     @test pf isa Uncertain
-    @test keys(pf.specs) == (:shape, :scale)
+    @test keys(pf.specs) == (:alpha, :theta)
     @test pf.template == Gamma()
 
-    # Positional family form: shape uncertain, scale fixed at 1.0.
+    # Positional family form: alpha uncertain, theta fixed at 1.0.
     pf2 = uncertain(Gamma, LogNormal(log(2.0), 0.2), 1.0)
-    @test keys(pf2.specs) == (:shape,)
+    @test keys(pf2.specs) == (:alpha,)
     @test params(pf2.template)[2] == 1.0
 
     # Type keyword form: every parameter given explicitly.
-    tf = uncertain(Gamma; shape = LogNormal(log(2.0), 0.2), scale = 1.0)
+    tf = uncertain(Gamma; alpha = LogNormal(log(2.0), 0.2), theta = 1.0)
     @test tf isa Uncertain
     @test tf.specs == u.specs
     @test params(tf.template)[2] == 1.0
@@ -39,39 +39,39 @@
     delay = Gamma(2.0, 1.0)
     @test_throws "unknown parameter :rate" uncertain(
         delay; rate = LogNormal(0.0, 1.0))
-    @test_throws "the value for :shape must be a Real" uncertain(
-        delay; shape = "no")
+    @test_throws "the value for :alpha must be a Real" uncertain(
+        delay; alpha = "no")
     @test_throws "needs at least one distribution-valued parameter" uncertain(
         delay)
-    @test_throws "missing :scale" uncertain(Gamma;
-        shape = LogNormal(log(2.0), 0.2))
+    @test_throws "missing :theta" uncertain(Gamma;
+        alpha = LogNormal(log(2.0), 0.2))
     # Positional form needs one argument per parameter.
     @test_throws "needs one positional argument per parameter" uncertain(
         Gamma, LogNormal(log(2.0), 0.2))
     # Nesting goes in the specs, not the template.
     @test_throws "template of an Uncertain must be a concrete" Uncertain(
-        u, (; shape = LogNormal(0.0, 1.0)))
+        u, (; alpha = LogNormal(0.0, 1.0)))
 end
 
 @testitem "uncertain: equality, hash, show" begin
     using Distributions
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
-    v = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
-    w = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.5))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
+    v = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
+    w = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.5))
     @test u == v
     @test hash(u) == hash(v)
     @test u != w
 
     @test occursin("uncertain(", string(u))
-    @test occursin("shape", string(u))
+    @test occursin("alpha", string(u))
 end
 
 @testitem "uncertain: standard interface delegates to the template" begin
     using Distributions
 
     tmpl = Gamma(2.0, 1.0)
-    u = uncertain(tmpl; shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(tmpl; alpha = LogNormal(log(2.0), 0.2))
 
     @test params(u) == params(tmpl)
     @test minimum(u) == minimum(tmpl)
@@ -103,13 +103,13 @@ end
 @testitem "rand: marginal draw matches a hand-written two-stage draw" begin
     using Distributions, Random
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 
     # The marginal draw is: draw the spec, then draw the value from the concrete
     # leaf, on the SAME rng stream.
     rng = Xoshiro(42)
-    shape = rand(rng, LogNormal(log(2.0), 0.2))
-    expected = rand(rng, Gamma(shape, 1.0))
+    alpha = rand(rng, LogNormal(log(2.0), 0.2))
+    expected = rand(rng, Gamma(alpha, 1.0))
     @test rand(Xoshiro(42), u) == expected
 
     # A fresh parameter set each call (marginal iid) with the right mean.
@@ -124,7 +124,7 @@ end
     using Distributions, Random
 
     tu = uncertain(truncated(Gamma(2.0, 1.0); upper = 10.0);
-        shape = LogNormal(log(2.0), 0.2))
+        alpha = LogNormal(log(2.0), 0.2))
     draws = [rand(Xoshiro(i), tu) for i in 1:200]
     @test all(x -> 0.0 <= x <= 10.0, draws)
 end
@@ -133,17 +133,58 @@ end
     using Distributions, Random
 
     nested = uncertain(Gamma(2.0, 1.0);
-        shape = uncertain(LogNormal(log(2.0), 0.2);
+        alpha = uncertain(LogNormal(log(2.0), 0.2);
             mu = Normal(log(2.0), 0.1)))
     @test rand(Xoshiro(2), nested) isa Real
     @test rand(Xoshiro(2), nested) == rand(Xoshiro(2), nested)
     @test all(>=(0), [rand(Xoshiro(i), nested) for i in 1:50])
 end
 
+@testitem "rand: refuses to draw an unresolved no_prior() parameter" begin
+    using Distributions, Random
+
+    # `Uncertain`'s `rand` checks every spec eagerly, before drawing anything,
+    # and names the unresolved parameter. Pinned here because the check would
+    # otherwise survive its own deletion undetected: `NoPrior` also has its own
+    # `Base.rand` fallback (tested below), which throws too if the eager check
+    # is removed and a `no_prior()` spec is drawn like any other — but with a
+    # generic message that does not name the parameter, which the assertions
+    # below distinguish.
+    u = uncertain(Gamma(2.0, 1.0); alpha = no_prior())
+    @test_throws ArgumentError rand(u)
+    @test_throws "alpha" rand(u)
+    @test_throws "no_prior()" rand(u)
+    @test_throws "update(tree, params)" rand(u)
+
+    # A resolved sibling parameter alongside the unresolved one still names
+    # only the unresolved one: the eager check runs before any spec is drawn,
+    # so `alpha`'s real prior is never reached.
+    mixed = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2),
+        theta = no_prior())
+    @test_throws "theta" rand(Xoshiro(1), mixed)
+
+    # A fully resolved leaf still draws normally (the guard is not a blanket
+    # refusal).
+    resolved = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
+    @test rand(Xoshiro(1), resolved) isa Real
+end
+
+@testitem "rand: NoPrior's own guard refuses a direct draw" begin
+    using Random
+
+    # `Base.rand(::AbstractRNG, ::NoPrior)` is a defensive fallback for a
+    # marker reaching `rand` some other way than through `Uncertain`'s eager
+    # check (e.g. nested inside a `pool(...)` population); pinned directly so
+    # it cannot be deleted unnoticed even though `Uncertain`'s own guard
+    # already covers the ordinary leaf path.
+    @test_throws ArgumentError rand(Xoshiro(1), no_prior())
+    @test_throws "cannot draw from no_prior()" rand(Xoshiro(1), no_prior())
+end
+
 @testitem "truncated pushes inside an uncertain leaf" begin
     using Distributions, Random
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     t = truncated(u; upper = 5.0)
     @test t isa Uncertain
     @test t.template isa Truncated
@@ -167,7 +208,7 @@ end
     # `censored(u; ...)` would nest as `Censored{Uncertain}` and the generated
     # codec (which only recognises `Uncertain` as the OUTERMOST wrapper) would
     # silently treat the whole leaf as fixed, dropping the estimated parameter.
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     c = censored(u; upper = 5.0)
     @test c isa Uncertain
     @test c.template isa Distributions.Censored
@@ -188,10 +229,10 @@ end
     using ComposedDistributions: update
     using Distributions
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
 
-    tree2 = update(tree, (onset_admit = (shape = 3.0, scale = 1.5),
+    tree2 = update(tree, (onset_admit = (alpha = 3.0, theta = 1.5),
         admit_death = (mu = 0.7, sigma = 0.5)))
     @test event(tree2, :onset_admit) == Gamma(3.0, 1.5)
     @test !has_uncertain(tree2)
@@ -202,9 +243,9 @@ end
 
     # A wrapped uncertain leaf keeps its fixed structure through the update.
     tu = uncertain(truncated(Gamma(2.0, 1.0); upper = 10.0);
-        shape = LogNormal(log(2.0), 0.2))
+        alpha = LogNormal(log(2.0), 0.2))
     ttree = compose((onset_admit = tu,))
-    ttree2 = update(ttree, (onset_admit = (shape = 3.0, scale = 1.5),))
+    ttree2 = update(ttree, (onset_admit = (alpha = 3.0, theta = 1.5),))
     leaf = event(ttree2, :onset_admit)
     @test leaf isa Truncated
     @test leaf.upper == 10.0
@@ -213,9 +254,9 @@ end
     # A censored uncertain leaf keeps its fixed structure through the update,
     # exactly like the truncated case above.
     cu = uncertain(censored(Gamma(2.0, 1.0); upper = 10.0);
-        shape = LogNormal(log(2.0), 0.2))
+        alpha = LogNormal(log(2.0), 0.2))
     ctree = compose((onset_admit = cu,))
-    ctree2 = update(ctree, (onset_admit = (shape = 3.0, scale = 1.5),))
+    ctree2 = update(ctree, (onset_admit = (alpha = 3.0, theta = 1.5),))
     cleaf = event(ctree2, :onset_admit)
     @test cleaf isa Distributions.Censored
     @test cleaf.upper == 10.0
@@ -228,7 +269,7 @@ end
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 
     utree = update(tree, :onset_admit => u)
     @test event(utree, :onset_admit) === u
@@ -242,55 +283,49 @@ end
 @testitem "a shared-tied uncertain leaf samples through the tag" begin
     using Distributions, Random
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     su = shared(:inc, u)
 
     # The tag is transparent to sampling: the marginal draws through it once.
     @test rand(Xoshiro(1), su) == rand(Xoshiro(1), u)
 
     # The specs stay visible through the tag (routing + the prior column).
-    @test ComposedDistributions._uncertain_specs(su) == u.specs
+    @test ComposedDistributions.uncertain_specs(su) == u.specs
     @test has_uncertain(su)
 
     # It composes and samples as a leaf, and is inventoried once under its tag.
     p = parallel(:a => su, :b => LogNormal(0.5, 0.4))
     @test rand(Xoshiro(2), p) isa NamedTuple
-    tbl = params_table(p)
-    idx = findfirst(==(:shape), tbl.param)
+    tbl = composed_to_table(p)
+    idx = findfirst(==(:alpha), tbl.param)
     @test tbl.edge[idx] == :inc
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
 end
 
-@testitem "params_table prior column and build_priors precedence" begin
+@testitem "composed_to_table prior column carries attached specs" begin
     using Distributions
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     tree = compose((onset_admit = u, admit_death = LogNormal(0.5, 0.4)))
-    tbl = params_table(tree)
+    tbl = composed_to_table(tree)
     @test :prior in propertynames(tbl)
 
-    # The uncertain shape row carries its spec; fixed rows carry nothing.
+    # The uncertain alpha row carries its spec; fixed rows carry nothing.
     idx = findfirst(i -> tbl.edge[i] == :onset_admit &&
-                         tbl.param[i] == :shape,
+                         tbl.param[i] == :alpha,
         eachindex(tbl.edge))
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
     fixed = findfirst(i -> tbl.edge[i] == :onset_admit &&
-                           tbl.param[i] == :scale,
+                           tbl.param[i] == :theta,
         eachindex(tbl.edge))
     @test tbl.prior[fixed] === nothing
 
-    # Precedence: attached spec beats the default, override beats both.
-    nested = build_priors(tbl)
-    @test nested.onset_admit.shape == LogNormal(log(2.0), 0.2)
-    @test nested.onset_admit.scale isa Distribution
-    ovr = build_priors(tbl;
-        priors = (onset_admit = (shape = Exponential(1.0),),))
-    @test ovr.onset_admit.shape == Exponential(1.0)
-
-    # A four-column table (no prior column) still works.
-    legacy = (edge = collect(tbl.edge), param = collect(tbl.param),
-        value = collect(tbl.value), support = collect(tbl.support))
-    @test build_priors(legacy).onset_admit.shape isa Distribution
+    # Bare uncertain(tree) keeps the attached spec and marks the rest
+    # no_prior() (ComposedDistributions does not guess a default).
+    promoted = uncertain(tree)
+    ptbl = composed_to_table(promoted)
+    @test ptbl.prior[idx] == LogNormal(log(2.0), 0.2)
+    @test ptbl.prior[fixed] == no_prior()
 
     # The table prints, with blank prior cells for fixed rows.
     @test occursin("prior", sprint(show, MIME("text/plain"), tbl))
@@ -300,13 +335,13 @@ end
     using ComposedDistributions: update
     using Distributions
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     seq = sequential(:onset_admit => u, :admit_death => LogNormal(0.5, 0.4))
     # The reworded guidance points at `update(tree, params)`, not `realise`.
     @test_throws "update(tree, params)" observed_distribution(seq)
 
     # After collapsing with `update`, the chain lowers to its convolved total.
-    collapsed = update(seq, (onset_admit = (shape = 2.0, scale = 1.0),
+    collapsed = update(seq, (onset_admit = (alpha = 2.0, theta = 1.0),
         admit_death = (mu = 0.5, sigma = 0.4)))
     @test observed_distribution(collapsed) isa UnivariateDistribution
 end
@@ -315,7 +350,7 @@ end
     using ComposedDistributions: update
     using Distributions, Random
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 
     # Sequential: samples, and its tree moment reads the template's free delay.
     s = sequential(:onset_admit => u, :admit_death => LogNormal(0.5, 0.4))
@@ -338,15 +373,15 @@ end
     r = resolve(:death => (u, 0.3), :disch => Gamma(2.0, 1.5))
     @test isfinite(logpdf(r, rand(Xoshiro(1), r)))
     @test isfinite(rand(Xoshiro(1), as_mixture(r)))
-    rc = update(r, (death = (shape = 2.0, scale = 1.0),
-        disch = (shape = 2.0, scale = 1.5)))
+    rc = update(r, (death = (alpha = 2.0, theta = 1.0),
+        disch = (alpha = 2.0, theta = 1.5)))
     @test !has_uncertain(rc)
     @test isfinite(logpdf(rc, rand(Xoshiro(1), rc)))
 
     # Choose: it composes, and its prior column carries the spec.
     ch = choose(:index => u, :sourced => Gamma(2.0, 1.0))
-    tbl = params_table(ch)
-    idx = findfirst(i -> tbl.edge[i] == :index && tbl.param[i] == :shape,
+    tbl = composed_to_table(ch)
+    idx = findfirst(i -> tbl.edge[i] == :index && tbl.param[i] == :alpha,
         eachindex(tbl.edge))
     @test tbl.prior[idx] == LogNormal(log(2.0), 0.2)
 
@@ -360,7 +395,7 @@ end
     using ComposedDistributions: update
     using Distributions
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
 
     @test has_uncertain(u)
     @test !has_uncertain(Gamma(2.0, 1.0))
@@ -386,8 +421,8 @@ end
     @test has_uncertain(shared(:inc, u))
 
     # Collapsing with `update` removes the uncertainty from the tree.
-    rc = update(r, (death = (shape = 2.0, scale = 1.0),
-        disch = (shape = 2.0, scale = 1.5)))
+    rc = update(r, (death = (alpha = 2.0, theta = 1.0),
+        disch = (alpha = 2.0, theta = 1.5)))
     @test !has_uncertain(rc)
 end
 
@@ -401,12 +436,12 @@ end
 
     # A distribution in a parameter slot makes just that parameter uncertain;
     # a partial NamedTuple leaves the rest of the tree fixed.
-    est = update(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+    est = update(tree, (onset_admit = (alpha = LogNormal(log(2.0), 0.2),),))
     @test has_uncertain(est)
     leaf = event(est, :onset_admit)
     @test leaf isa Uncertain
-    @test leaf.specs == (; shape = LogNormal(log(2.0), 0.2))
-    @test leaf.template == Gamma(2.0, 1.0)   # scale stays fixed at 1.0
+    @test leaf.specs == (; alpha = LogNormal(log(2.0), 0.2))
+    @test leaf.template == Gamma(2.0, 1.0)   # theta stays fixed at 1.0
     # admit_death is untouched and stays a fixed leaf.
     @test event(est, :admit_death) == LogNormal(0.5, 0.4)
     @test !has_uncertain(event(est, :admit_death))
@@ -418,72 +453,72 @@ end
     using ComposedDistributions: update
     using Distributions
 
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     tree = compose((onset_admit = u,))
 
-    # Extending: add a spec on scale while keeping the shape spec (merge).
-    ext = update(tree, (onset_admit = (scale = Exponential(1.0),),))
+    # Extending: add a spec on theta while keeping the alpha spec (merge).
+    ext = update(tree, (onset_admit = (theta = Exponential(1.0),),))
     leaf = event(ext, :onset_admit)
     @test leaf isa Uncertain
-    @test keys(leaf.specs) == (:shape, :scale)
-    @test leaf.specs.shape == LogNormal(log(2.0), 0.2)
-    @test leaf.specs.scale == Exponential(1.0)
+    @test keys(leaf.specs) == (:alpha, :theta)
+    @test leaf.specs.alpha == LogNormal(log(2.0), 0.2)
+    @test leaf.specs.theta == Exponential(1.0)
 
     # A Real on a spec'd parameter drops that spec and pins the value, while a
     # distribution on another parameter (re)specs it in the same call.
-    col = update(tree, (onset_admit = (shape = 3.0, scale = Exponential(1.0)),))
+    col = update(tree, (onset_admit = (alpha = 3.0, theta = Exponential(1.0)),))
     cleaf = event(col, :onset_admit)
-    @test keys(cleaf.specs) == (:scale,)
+    @test keys(cleaf.specs) == (:theta,)
     @test cleaf.template == Gamma(3.0, 1.0)
 end
 
-@testitem "promote: update(tree, param_priors(tree)) specs every parameter" begin
-    using ComposedDistributions: update
+@testitem "promote: bare uncertain(tree) specs every parameter no_prior()" begin
+    using ComposedDistributions: update, _param_rows
     using Distributions
     using ComposedDistributions: flat_dimension
 
     tree = compose((onset_admit = Gamma(2.0, 1.0),
         admit_death = LogNormal(0.5, 0.4)))
-    promoted = update(tree, param_priors(tree))
+    promoted = uncertain(tree)
 
     @test has_uncertain(promoted)
     # Every free parameter is now estimated (the escape hatch to estimate-all).
-    @test flat_dimension(promoted) == length(params_table(tree).edge)
+    @test flat_dimension(promoted) == length(_param_rows(tree).edge)
     oa = event(promoted, :onset_admit)
     @test oa isa Uncertain
-    @test keys(oa.specs) == (:shape, :scale)
-    # The specs are the support-derived defaults.
-    @test oa.specs.scale == param_priors(tree).onset_admit.scale
+    @test keys(oa.specs) == (:alpha, :theta)
+    # No prior is guessed: the specs are the no_prior() marker.
+    @test oa.specs.theta == no_prior()
 end
 
-@testitem "promote keeps an existing spec and defaults the rest" begin
+@testitem "promote keeps an existing spec and marks the rest no_prior()" begin
     using ComposedDistributions: update
     using Distributions
 
     tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-        shape = LogNormal(log(2.0), 0.2)),))
-    promoted = update(tree, param_priors(tree))
+        alpha = LogNormal(log(2.0), 0.2)),))
+    promoted = uncertain(tree)
     oa = event(promoted, :onset_admit)
-    @test keys(oa.specs) == (:shape, :scale)
-    # The user's shape spec is kept; scale gets the support-derived default.
-    @test oa.specs.shape == LogNormal(log(2.0), 0.2)
-    @test oa.specs.scale == param_priors(tree).onset_admit.scale
+    @test keys(oa.specs) == (:alpha, :theta)
+    # The user's alpha spec is kept; theta gets no_prior() (no default guessed).
+    @test oa.specs.alpha == LogNormal(log(2.0), 0.2)
+    @test oa.specs.theta == no_prior()
 end
 
 @testitem "promote through a shared tag ties the estimated parameter" begin
     using ComposedDistributions: update
     using Distributions
-    using ComposedDistributions: flat_dimension, _shared_tag
+    using ComposedDistributions: flat_dimension, shared_tag
 
     d = compose((a = shared(:g, Gamma(2.0, 1.0)),
         b = shared(:g, Gamma(2.0, 1.0))))
-    promoted = update(d, param_priors(d))
+    promoted = uncertain(d)
 
     @test has_uncertain(promoted)
-    # The tied leaf is inventoried once, so shape + scale = two estimated rows.
+    # The tied leaf is inventoried once, so alpha + theta = two estimated rows.
     @test flat_dimension(promoted) == 2
     la = event(promoted, :a)
-    @test _shared_tag(la) == :g
+    @test shared_tag(la) == :g
     @test has_uncertain(la)
     # Collapsing the promoted tree from a flat draw keeps the tie: both
     # occurrences are the same shared leaf at the drawn values.
@@ -505,7 +540,7 @@ end
         (onset_admit = (rate = LogNormal(0.0, 1.0),),))
     # A non-Real, non-distribution value errors.
     @test_throws ArgumentError update(tree,
-        (onset_admit = (shape = LogNormal(0.0, 1.0), scale = "no"),))
+        (onset_admit = (alpha = LogNormal(0.0, 1.0), theta = "no"),))
 end
 
 @testitem "rand/logpdf round trip through a nested uncertain leaf" begin
@@ -515,7 +550,7 @@ end
     # uncertain leaf: exercises the composed `rand`/`logpdf` surfaces (the
     # package's stack of per-leaf draws / densities) on a genuinely nested
     # tree shape, not just a flat sibling list.
-    u = uncertain(Gamma(2.0, 1.0); shape = LogNormal(log(2.0), 0.2))
+    u = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(log(2.0), 0.2))
     inner = parallel(:admit => u, :notif => LogNormal(1.0, 0.5))
     tree = sequential(:onset => Gamma(1.5, 1.0), :branch => inner)
 
@@ -543,35 +578,36 @@ end
         admit_death = LogNormal(0.5, 0.4)))
 
     # Keyword form: a targeted promotion, matching update's merge mode.
-    u1 = uncertain(tree; onset_admit = (shape = LogNormal(log(2.0), 0.2),))
+    u1 = uncertain(tree; onset_admit = (alpha = LogNormal(log(2.0), 0.2),))
     @test has_uncertain(u1)
     @test u1 == update(tree,
-        (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+        (onset_admit = (alpha = LogNormal(log(2.0), 0.2),),))
 
     # Positional NamedTuple form is equivalent.
-    u2 = uncertain(tree, (onset_admit = (shape = LogNormal(log(2.0), 0.2),),))
+    u2 = uncertain(tree, (onset_admit = (alpha = LogNormal(log(2.0), 0.2),),))
     @test u1 == u2
 
     # A Real sibling in the same call re-pins without becoming uncertain.
     u3 = uncertain(tree; onset_admit = (
-        shape = LogNormal(log(2.0), 0.2), scale = 2.5))
+        alpha = LogNormal(log(2.0), 0.2), theta = 2.5))
     @test u3.components[1].template.θ == 2.5
 
-    # Bare `uncertain(tree)` promotes every free parameter (matches
-    # `update(tree, param_priors(tree))`).
+    # Bare `uncertain(tree)` promotes every free parameter to `no_prior()`
+    # (free, no prior guessed).
     everything = uncertain(tree)
     @test has_uncertain(everything)
-    @test everything == update(tree, param_priors(tree))
+    etbl = composed_to_table(everything)
+    @test all(==(no_prior()), etbl.prior[etbl.role .== :param])
 
     # No distribution anywhere: refused, pointed at `update`.
-    @test_throws ArgumentError uncertain(tree; onset_admit = (scale = 2.5,))
+    @test_throws ArgumentError uncertain(tree; onset_admit = (theta = 2.5,))
 
     # A `Resolve` node (AbstractOneOf, itself a UnivariateDistribution) also
     # dispatches to the tree-level promotion, not the leaf-construction
     # method — the two never collide because AbstractComposedDistribution is
     # a strict subtype of UnivariateDistribution for this arm.
     r = resolve(:death => (Gamma(1.5, 1.0), 0.3), :disch => Gamma(2.0, 1.5))
-    ru = uncertain(r; death = (shape = LogNormal(log(1.5), 0.2),))
+    ru = uncertain(r; death = (alpha = LogNormal(log(1.5), 0.2),))
     @test has_uncertain(ru)
 end
 
@@ -579,11 +615,11 @@ end
     using Distributions
 
     tree = compose((onset_admit = uncertain(Gamma(2.0, 1.0);
-        shape = LogNormal(log(2.0), 0.2)),))
+        alpha = LogNormal(log(2.0), 0.2)),))
 
-    replaced = uncertain(tree; onset_admit = (shape = Normal(2.0, 0.5),))
-    spec = ComposedDistributions._uncertain_specs(replaced.components[1])
+    replaced = uncertain(tree; onset_admit = (alpha = Normal(2.0, 0.5),))
+    spec = ComposedDistributions.uncertain_specs(replaced.components[1])
     # Replace semantics, not hyperprior nesting: the new spec is the plain
     # Normal, not a distribution wrapping the old LogNormal.
-    @test spec.shape == Normal(2.0, 0.5)
+    @test spec.alpha == Normal(2.0, 0.5)
 end

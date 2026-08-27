@@ -74,7 +74,7 @@ population).
 - [`shared`](@ref)/[`tie`](@ref): complete pooling (the tied extreme).
 - [`uncertain`](@ref): builds a population with hyperparameter priors.
 "
-struct Pool{group, noncentred, P <: UnivariateDistribution}
+struct Pool{group, noncentred, P}
     "The population distribution; its free parameters are the hyperparameters."
     population::P
 end
@@ -83,7 +83,7 @@ end
 # instantiates them directly from the runtime `pool(...)` call, with no
 # call-site change from the field-based constructor.
 function Pool{group, noncentred}(population::P) where {
-        group, noncentred, P <: UnivariateDistribution}
+        group, noncentred, P}
     return Pool{group, noncentred, P}(population)
 end
 
@@ -136,13 +136,13 @@ a shared `population` distribution.
 
 ```julia
 uncertain(Gamma(2.0, 1.0);
-    shape = pool(:district,
+    alpha = pool(:district,
         uncertain(LogNormal(0.0, 1.0); mu = Normal(0.0, 1.0),
             sigma = truncated(Normal(0.0, 1.0); lower = 0.0))))
 ```
 
-reading as: *`shape` is partially pooled across the `:district` leaves — each
-district's `shape` is drawn from one shared `LogNormal` population whose
+reading as: *`alpha` is partially pooled across the `:district` leaves — each
+district's `alpha` is drawn from one shared `LogNormal` population whose
 `(mu, sigma)` are estimated.* The `population` is an ordinary distribution;
 build it with [`uncertain`](@ref) so its free parameters carry their priors
 through the same machinery as any uncertain leaf (those become the
@@ -177,12 +177,12 @@ members) comes from sampling the flat priors and rebuilding with
 ```@example
 using ComposedDistributions, Distributions
 
-# Three districts' onset->death delays with a partially pooled shape, drawn
+# Three districts' onset->death delays with a partially pooled alpha, drawn
 # from a shared estimated-LogNormal population.
 model = compose((
-    north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    east  = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+    north = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    east  = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:district))))
 # 2 hyperparameters + 3 latents = 5 estimated parameters.
 ComposedDistributions.flat_dimension(model)
 ```
@@ -193,7 +193,7 @@ ComposedDistributions.flat_dimension(model)
 - [`shared`](@ref)/[`tie`](@ref): the complete-pooling (tied) extreme.
 "
 function pool(group::Symbol,
-        population::UnivariateDistribution = _default_pool_population();
+        population = _default_pool_population();
         noncentred::Union{Bool, Nothing} = nothing)
     ls = _is_location_scale(_population_family(population))
     nc = noncentred === nothing ? ls : noncentred
@@ -214,9 +214,9 @@ end
 # overrides `leaf_ctor` returns a callable that is not a family: routing this
 # through the hook would make `_is_location_scale` false for such a leaf and
 # silently demote a non-centred pool to a centred one.
-_population_template(pop::UnivariateDistribution) = pop
+_population_template(pop) = pop
 _population_template(pop::Uncertain) = pop.template
-function _population_family(pop::UnivariateDistribution)
+function _population_family(pop)
     return Base.typename(typeof(free_leaf(_population_template(pop)))).wrapper
 end
 
@@ -252,10 +252,45 @@ _pool_seen_key(group::Symbol) = Symbol("pool.", group)
 function _collapse_population(pop::Uncertain, hyper::NamedTuple)
     _uncertain_leaf(pop.template, hyper)
 end
-_collapse_population(pop::UnivariateDistribution, ::NamedTuple) = pop
+_collapse_population(pop, ::NamedTuple) = pop
 
 # The pattern-match target for the fit-protocol extension's prior
 # translation was settled in issue #212.
+@doc "
+
+Check a composed tree's structural invariants, before fitting or reading it.
+
+Runs every gate in one call: each [`pool`](@ref) group's leaves agree on
+population and parameterisation ([`validate_pool_groups`](@ref)), and no pool
+group, [`shared`](@ref) tag, or top-level edge name collides with one from
+another of those three roles ([`validate_tree_names`](@ref)). Returns `d`, so
+it chains. This is the single entry point a caller wants —
+DistributionsInference gates a tree with it once at log-density construction,
+and `compose(table)` runs the same checks while parsing — the two finer
+verbs remaining for a caller needing one gate without the other.
+
+# Arguments
+- `d`: the composed tree to check.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+tree = compose((onset = Gamma(2.0, 1.0), admit = LogNormal(0.5, 0.4)))
+ComposedDistributions.validate_tree(tree)
+nothing # hide
+```
+
+# See also
+- [`validate_pool_groups`](@ref), [`validate_tree_names`](@ref): the
+  individual gates.
+"
+function validate_tree(d)
+    validate_pool_groups(d)
+    validate_tree_names(d)
+    return d
+end
+
 @doc "
 The centred latent's prior marker, carried on the `prior` column of a centred
 pooled parameter's row.
@@ -287,7 +322,7 @@ end
 # The pooled subset of a leaf's uncertain specs (`param => Pool`), or `nothing`
 # when the leaf pools nothing. Drives the pooled reconstruction in `_update`.
 function _pool_specs(leaf)
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     specs === nothing && return nothing
     ks = filter(k -> specs[k] isa Pool, keys(specs))
     isempty(ks) && return nothing
@@ -298,28 +333,37 @@ end
 #
 # Emit the population's hyperparameter rows once per group (deduped through the
 # walk's `seen` set, so they precede every member's latent and the flat vector
-# opens with `[hyper..., ...]`), then this member's latent: a `Normal(0, 1)`
-# `z` row (non-centred) or the member's own parameter carrying the centred-pool
-# marker (centred). All ordinary scalar rows.
-function _pool_rows!(edges, params_col, values, supports, priors, seen,
-        p::Pool, leaf_edge, pname, v, s)
+# opens with `[hyper..., ...]`), then an `:attribute` row describing this
+# member's pooling (so a member row's pooling is recoverable from
+# `composed_to_table` without joining on `edge`), then this member's latent: a
+# `Normal(0, 1)` `z` row (non-centred) or the member's own parameter carrying
+# the centred-pool marker (centred). All ordinary scalar rows (`node = Pool`).
+#
+# The `:attribute` row carries the `Pool` spec itself and the member's own
+# template value alongside the group/centring pair, because the `:param` rows
+# alone do not determine either under the NON-CENTRED parameterisation: that
+# member's row is a `Normal(0, 1)` `z` latent (`_pool_z_prior`, a fresh
+# distribution unrelated to the spec) at a synthetic `<leaf>.<param>` edge, and
+# `_pool_hyper_rows!` below lists only the population's SPEC'D names under the
+# group edge -- so the population family, its fixed parameters and this
+# member's own value would all be unrecoverable. (Centred pooling never had the
+# gap: its `:param` row carries both the value and the whole spec, wrapped in
+# `CentredPoolPrior`.) Emitted for both parameterisations so a reader has one
+# place to look rather than two.
+function _pool_rows!(sink, seen, p::Pool, leaf_edge, pname, v, s)
     gkey = _pool_seen_key(pool_group(p))
     if !(gkey in seen)
         push!(seen, gkey)
-        _pool_hyper_rows!(edges, params_col, values, supports, priors, p)
+        _pool_hyper_rows!(sink, p)
     end
+    _push_attr!(sink, leaf_edge, Pool, pname,
+        (; group = pool_group(p), noncentred = pool_noncentred(p),
+            spec = p, template = v))
     if pool_noncentred(p)
-        push!(edges, _join_path((_split_edge(leaf_edge)..., pname)))
-        push!(params_col, :z)
-        push!(values, 0.0)
-        push!(supports, (-Inf, Inf))
-        push!(priors, _pool_z_prior(p))
+        edge = _join_path((_split_edge(leaf_edge)..., pname))
+        _push_param!(sink, edge, :z, Pool, 0.0, (-Inf, Inf), _pool_z_prior(p))
     else
-        push!(edges, leaf_edge)
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, s)
-        push!(priors, CentredPoolPrior(p))
+        _push_param!(sink, leaf_edge, pname, Pool, v, s, CentredPoolPrior(p))
     end
     return nothing
 end
@@ -328,21 +372,23 @@ end
 # emitted under the `<group>` edge with the specs' priors. A population with no
 # uncertain specs (a fully fixed population) contributes no hyperparameters.
 # This is exactly the uncertain-leaf param walk restricted to the spec'd rows.
-function _pool_hyper_rows!(edges, params_col, values, supports, priors, p::Pool)
-    specs = _uncertain_specs(p.population)
+function _pool_hyper_rows!(sink, p::Pool)
+    specs = uncertain_specs(p.population)
     specs === nothing && return nothing
     tmpl = _population_template(p.population)
     inner = free_leaf(tmpl)
-    pnames = _leaf_param_names(tmpl)
+    pnames = leaf_param_names(tmpl)
     vals = params(inner)
     sup = (minimum(inner), maximum(inner))
     for (pname, v) in zip(pnames, vals)
-        haskey(specs, pname) || continue
-        push!(edges, pool_group(p))
-        push!(params_col, pname)
-        push!(values, v)
-        push!(supports, sup)
-        push!(priors, specs[pname])
+        # A leaf's parameter names are `Symbol`s by contract, but the element
+        # type of `leaf_param_names(tmpl)` is not inferable for a population
+        # template whose type is not concrete here. The assertion states the
+        # contract, so the row push resolves against a `Symbol` name rather
+        # than one of unknown type.
+        name = pname::Symbol
+        haskey(specs, name) || continue
+        _push_param!(sink, pool_group(p), name, Pool, v, sup, specs[name])
     end
     return nothing
 end
@@ -352,7 +398,7 @@ end
 # `codec_gen.jl`'s leaf case cannot compute a leaf's NATIVE parameter order at
 # generation time (S3 removed the type-level table that used to carry it),
 # yet `_pool_rows!`/`_pool_hyper_rows!` above insert a pooled group's
-# hyperparameter rows into `params_table` at the pooled parameter's OWN
+# hyperparameter rows into `composed_to_table` at the pooled parameter's OWN
 # native-order position -- not before or after the whole leaf's block, and a
 # population's own hyperparameters are walked in ITS native order, not its
 # `uncertain(...)` kwargs order. Both need `leaf_param_names` resolved on a
@@ -407,7 +453,7 @@ function _leaf_entry_grouped(leaf, ::Val{speckeys}, ::Val{pool_names},
         ::Val{materialize}, slots::Tuple) where {speckeys, pool_names, materialize}
     names = leaf_param_names(leaf)
     vals = leaf_param_values(leaf)
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     entry_vals, group_keys, group_vals, _ = _leaf_walk_grouped(
         names, vals, speckeys, materialize, specs, slots)
     entry = NamedTuple{names}(entry_vals)
@@ -443,9 +489,9 @@ end
 # names, walked in the population's NATIVE order (mirroring
 # `_pool_hyper_rows!` exactly), each consuming one `slots` value. A fully
 # fixed population contributes no names and consumes nothing.
-_pool_hyper_entry(pop::UnivariateDistribution, slots::Tuple) = NamedTuple(), slots
+_pool_hyper_entry(pop, slots::Tuple) = NamedTuple(), slots
 function _pool_hyper_entry(pop::Uncertain, slots::Tuple)
-    specs = _uncertain_specs(pop)
+    specs = uncertain_specs(pop)
     pnames = leaf_param_names(_population_template(pop))
     ks, vs, rest = _hyper_walk(pnames, specs, slots)
     return NamedTuple{ks}(vs), rest
@@ -468,39 +514,50 @@ end
 # exactly like `_pool_hyper_flatten_reads!`'s removed matching read) back out
 # as a flat value sequence in the SAME interleaved order `_leaf_entry_grouped`
 # consumes, so the two stay inverse.
+#
+# The walk order comes from `entry`'s own `keys` (via `Val`) rather than from
+# a fresh `leaf_param_names(leaf)` call, and the whole recursion dispatches on
+# `Val{names}` rather than looping over a runtime `Tuple` -- the same move
+# `_leaf_extract` (introspection.jl) and `_hyper_flatten_walk` (below) already
+# made, for the same reason: relying on `leaf_param_names(leaf)` folding to a
+# compile-time constant is fragile (#352). It holds for every built-in leaf
+# tested here only because `param_names` happens to return a literal tuple;
+# a leaf whose native names come from anything less trivially foldable (a
+# `Ref`, a field read behind a branch) breaks the fold, and `pname` stops
+# being a `Core.Const`. `specs[pname]` then can't resolve which field of a
+# heterogeneous `NamedTuple` it is indexing, and the whole walk (and `flatten`
+# after it) widens to `Union`/`Any` -- silently, with no error, only a slower
+# and boxed gradient. Driving the recursion off `Val{names}` sidesteps this
+# entirely: `pname` is part of the TYPE at every step, so it is a `Core.Const`
+# regardless of whether `leaf_param_names` itself folds.
 function _leaf_flatten_grouped(leaf, ::Val{speckeys}, ::Val{pool_names},
-        ::Val{materialize}, entry::NamedTuple, nt::NamedTuple) where
-        {speckeys, pool_names, materialize}
-    names = leaf_param_names(leaf)
-    specs = _uncertain_specs(leaf)
+        ::Val{materialize}, entry::NamedTuple{names},
+        nt::NamedTuple) where
+        {speckeys, pool_names, materialize, names}
+    specs = uncertain_specs(leaf)
     return _leaf_flatten_walk_grouped(
-        names, speckeys, pool_names, materialize, specs, entry, nt)
+        Val(names), Val(speckeys), Val(pool_names), Val(materialize),
+        specs, entry, nt)
 end
 
-@inline function _leaf_flatten_walk_grouped(::Tuple{}, ::Tuple, ::Tuple, ::Tuple,
-        specs, entry::NamedTuple, nt::NamedTuple)
-    return ()
-end
-@inline function _leaf_flatten_walk_grouped(names::Tuple, speckeys::Tuple,
-        pool_names::Tuple, materialize::Tuple, specs, entry::NamedTuple,
-        nt::NamedTuple)
+@inline _leaf_flatten_walk_grouped(::Val{()}, ::Val, ::Val, ::Val,
+    specs, entry::NamedTuple, nt::NamedTuple) = ()
+@inline function _leaf_flatten_walk_grouped(::Val{names}, ::Val{speckeys},
+        ::Val{pool_names}, ::Val{materialize}, specs, entry::NamedTuple,
+        nt::NamedTuple) where {names, speckeys, pool_names, materialize}
+    rest = _leaf_flatten_walk_grouped(Val(Base.tail(names)), Val(speckeys),
+        Val(pool_names), Val(materialize), specs, entry, nt)
     pname = names[1]
-    hit = pname in speckeys
-    hyper_vals = if hit && pname in materialize
+    pname in speckeys || return rest
+    hyper_vals = if pname in materialize
         spec = specs[pname]
         _pool_hyper_flatten(spec.population, getproperty(nt, pool_group(spec)))
     else
         ()
     end
-    own_vals = if hit
-        raw = getproperty(entry, pname)
-        (pname in pool_names ? raw.z : raw,)
-    else
-        ()
-    end
-    rest = _leaf_flatten_walk_grouped(Base.tail(names), speckeys, pool_names,
-        materialize, specs, entry, nt)
-    return (hyper_vals..., own_vals..., rest...)
+    raw = getproperty(entry, pname)
+    own_val = pname in pool_names ? raw.z : raw
+    return (hyper_vals..., own_val, rest...)
 end
 
 # The dual of `_pool_hyper_entry`: the population's spec'd values read back
@@ -518,9 +575,9 @@ end
 # return type on every pooled tree. The unflatten direction has no such
 # shortcut (it is the side that constructs the names) and keeps deriving them
 # from the population template.
-_pool_hyper_flatten(pop::UnivariateDistribution, ::NamedTuple) = ()
+_pool_hyper_flatten(pop, ::NamedTuple) = ()
 function _pool_hyper_flatten(pop::Uncertain, hyper_nt::NamedTuple)
-    return _hyper_flatten_walk(_uncertain_specs(pop), hyper_nt)
+    return _hyper_flatten_walk(uncertain_specs(pop), hyper_nt)
 end
 
 @inline function _hyper_flatten_walk(
@@ -570,7 +627,7 @@ end
 # with no estimated hyperparameters carries no group entry, so an empty
 # NamedTuple (the population stays at its template) is returned.
 function _pool_hyper(shared, p::Pool)
-    _uncertain_specs(p.population) === nothing && return NamedTuple()
+    uncertain_specs(p.population) === nothing && return NamedTuple()
     group = pool_group(p)
     (shared isa NamedTuple && haskey(shared, group)) || throw(ArgumentError(
         "update(...) is missing the pooled population $(repr(group)); a " *
@@ -607,12 +664,19 @@ end
 
 The centred pooled parameters' `(path, param, pool)` triples, in table order.
 
-Collected once per [`params_table`](@ref) walk (typically at
-`distribution_to_logdensity` construction time), so a tree with only
-non-centred (or no) pooling adds no per-evaluation cost. Reached by qualified
-name from outside this package — DistributionsInference.jl's fit-protocol
-extension calls this directly to find the rows
-[`pool_centred_logprior`](@ref) needs to score.
+Collected from one `_ParamSink` walk (typically at
+`distribution_to_logdensity` construction time) — the same zero-extra-work
+parameter-only walk [`composed_to_table`](@ref) widens, run directly rather
+than through the full table, so a tree with only non-centred (or no) pooling
+adds no per-evaluation cost. Reached by qualified name from outside this
+package — DistributionsInference.jl's fit-protocol extension calls this
+directly to find the rows [`pool_centred_logprior`](@ref) needs to score
+(#212).
+
+A bare pooled leaf (no enclosing composer) has no name path, so its row's
+`path` is the single empty-`Symbol` component `(Symbol(\"\"),)` — the same
+root-row convention [`composed_to_table`](@ref) uses for a leaf at the tree
+root.
 
 # Arguments
 - the composed tree whose centred-pooled rows are collected.
@@ -622,8 +686,8 @@ extension calls this directly to find the rows
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions.centred_pool_rows(tree)
 ```
 
@@ -631,14 +695,12 @@ ComposedDistributions.centred_pool_rows(tree)
 - [`CentredPoolPrior`](@ref), [`pool_centred_logprior`](@ref)
 "
 function centred_pool_rows(dist)
-    tbl = params_table(dist)
-    prcol = Tables.getcolumn(tbl, :prior)
-    edges = Tables.getcolumn(tbl, :edge)
-    params_col = Tables.getcolumn(tbl, :param)
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), dist, ())
     rows = Tuple{Tuple, Symbol, Pool}[]
-    for i in eachindex(prcol)
-        prcol[i] isa CentredPoolPrior || continue
-        push!(rows, (_split_edge(edges[i]), params_col[i], prcol[i].pool))
+    for i in eachindex(s.prior)
+        s.prior[i] isa CentredPoolPrior || continue
+        push!(rows, (_split_edge(s.edge[i]), s.param[i], s.prior[i].pool))
     end
     return rows
 end
@@ -664,8 +726,8 @@ off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions._centred_pool_rows(tree)
 ```
 
@@ -692,8 +754,8 @@ population term.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 rows = ComposedDistributions.centred_pool_rows(tree)
 x = fill(0.5, ComposedDistributions.flat_dimension(tree))
 nt = ComposedDistributions.unflatten(tree, x)
@@ -732,8 +794,8 @@ moved off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 rows = ComposedDistributions.centred_pool_rows(tree)
 x = fill(0.5, ComposedDistributions.flat_dimension(tree))
 nt = ComposedDistributions.unflatten(tree, x)
@@ -758,7 +820,7 @@ const _pool_centred_logprior = pool_centred_logprior
 Check that every leaf of each `pool` group declares the same population
 distribution and parameterisation, throwing an `ArgumentError` on a mismatch.
 
-Called once at [`params_table`](@ref) construction time (typically at
+Called once at [`composed_to_table`](@ref) construction time (typically at
 `distribution_to_logdensity` construction), not per gradient evaluation.
 Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
@@ -772,8 +834,8 @@ gate a tree before fitting (#212).
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions.validate_pool_groups(tree)
 ```
 
@@ -806,8 +868,8 @@ moved off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions._validate_pool_groups(tree)
 ```
 
@@ -818,14 +880,14 @@ const _validate_pool_groups = validate_pool_groups
 
 function _collect_pools!(acc::Dict,
         d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    for c in _node_children(d)
+    for c in node_children(d)
         _collect_pools!(acc, c)
     end
     return nothing
 end
 
 function _collect_pools!(acc::Dict, leaf)
-    specs = _uncertain_specs(leaf)
+    specs = uncertain_specs(leaf)
     specs === nothing && return nothing
     for (k, v) in pairs(specs)
         v isa Pool || continue
@@ -874,9 +936,9 @@ groups, shared tags, and root edge names into the same flat namespace; a name
 crossing roles would silently clobber another entry there. Reusing the same
 tag for a deliberate tie (`shared`/`tie`, or a pool group with several
 members) is the intended feature and is not flagged; only a name crossing
-roles is an error. Called once at [`params_table`](@ref) construction time
-(typically at `distribution_to_logdensity` construction), not per gradient
-evaluation. Reached by qualified name from outside this package —
+roles is an error. Called once at [`composed_to_table`](@ref) construction
+time (typically at `distribution_to_logdensity` construction), not per
+gradient evaluation. Reached by qualified name from outside this package —
 DistributionsInference.jl's fit-protocol extension calls this directly to
 gate a tree before fitting (#212).
 
@@ -888,8 +950,8 @@ gate a tree before fitting (#212).
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions.validate_tree_names(tree)
 ```
 
@@ -940,8 +1002,8 @@ moved off it.
 using ComposedDistributions, Distributions
 
 tree = compose((north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:region, Beta(2.0, 3.0))),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:region, Beta(2.0, 3.0)))))
+        alpha = pool(:region, Beta(2.0, 3.0))),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:region, Beta(2.0, 3.0)))))
 ComposedDistributions._validate_tree_names(tree)
 ```
 

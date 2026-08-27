@@ -85,10 +85,12 @@ south_tied = instantiate(tied_template,
 (north_report = event(north_tied, :onset_report),
     south_report = event(south_tied, :onset_report))
 
-# [`params_table`](@ref) inventories the tied leaf once, under its tag, rather
-# than once per stratum.
+# [`composed_to_table`](@ref) inventories the tied leaf once, under its tag,
+# rather than once per stratum; filter its `role` column to `:param` for the
+# free-parameter-only rows.
 
-unique(params_table(north_tied).edge)
+tied_tbl = composed_to_table(north_tied);
+unique(tied_tbl.edge[tied_tbl.role .== :param])
 
 # ## Adding parameter uncertainty
 #
@@ -110,11 +112,13 @@ resolved = instantiate(est_template, Context(time = 5.0))
 
 (has_varying = has_varying(resolved), has_uncertain = has_uncertain(resolved))
 
-# [`params_table`](@ref) carries the uncertain parameter's prior on its `prior`
-# column, so [`build_priors`](@ref) picks it up with no separate override.
+# [`composed_to_table`](@ref) carries the uncertain parameter's prior on its
+# `prior` column.
 
-tbl = params_table(resolved)
-(edge = tbl.edge, param = tbl.param, prior = tbl.prior)
+tbl = composed_to_table(resolved)
+param_rows = tbl.role .== :param;
+(edge = tbl.edge[param_rows], param = tbl.param[param_rows],
+    prior = tbl.prior[param_rows])
 
 # Only `rand` reports the marginal: it draws the uncertain parameter from its
 # prior, rebuilds the leaf, then draws the record.
@@ -127,7 +131,7 @@ rand(Xoshiro(1), resolved)
 # [`update`](@ref) collapses the uncertain leaf to a concrete one, and the guard
 # then passes.
 
-fitted = update(resolved, (onset_admit = (shape = 2.0, scale = 1.1),
+fitted = update(resolved, (onset_admit = (alpha = 2.0, theta = 1.1),
     admit_death = (mu = 0.6, sigma = 0.4)))
 
 (before = has_uncertain(resolved), after = has_uncertain(fitted))
@@ -152,10 +156,11 @@ flat = ComposedDistributions.flat_dimension(resolved)
 
 # [`uncertain`](@ref) is the verb that moves the estimation boundary on an
 # already-built tree: `uncertain(tree, params)` promotes just the named
-# parameters
-# (a targeted promotion, built on `update`'s merge mode); bare `uncertain(tree)`
-# promotes every free parameter with support-derived default priors, the
-# explicit estimate-everything path.
+# parameters (a targeted promotion, built on `update`'s merge mode); bare
+# `uncertain(tree)` marks every free parameter [`no_prior`](@ref)`()` instead
+# — free, no prior chosen — the explicit estimate-everything path.
+# ComposedDistributions does not guess a prior; attach one afterwards with a
+# targeted `uncertain(tree; param = prior, ...)` call.
 
 promoted = uncertain(resolved)
 (before = ComposedDistributions.flat_dimension(resolved),
@@ -175,20 +180,21 @@ promoted = uncertain(resolved)
 # other uncertain leaf. The strata are the leaves that name the same group.
 
 pooled = compose((
-    north = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    east = uncertain(Gamma(2.0, 1.0); shape = pool(:district)),
-    south = uncertain(Gamma(2.0, 1.0); shape = pool(:district))))
+    north = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    east = uncertain(Gamma(2.0, 1.0); alpha = pool(:district)),
+    south = uncertain(Gamma(2.0, 1.0); alpha = pool(:district))))
 
 # `pool(:district)` uses a default estimated-`LogNormal` population. The codec
 # lowers the group to ordinary scalar rows: the population's hyperparameters
 # `district.mu`, `district.sigma` (once), plus one latent per stratum. A
 # `LogNormal` population is reparameterised non-centred, so the latent is
-# `<stratum>.shape.z ~ Normal(0, 1)` and each stratum's shape is reconstructed as
+# `<stratum>.alpha.z ~ Normal(0, 1)` and each stratum's alpha is reconstructed as
 # `exp(mu + sigma*z_k)`.
 # So `K = 3` strata estimate `2 + 3 = 5` parameters.
 
-pooled_table = params_table(pooled)
-(edge = pooled_table.edge, param = pooled_table.param)
+pooled_full = composed_to_table(pooled)
+pooled_rows = pooled_full.role .== :param;
+(edge = pooled_full.edge[pooled_rows], param = pooled_full.param[pooled_rows])
 
 # The estimated flat vector is `[mu, sigma, z_north, z_east, z_south]` — the same
 # layout a CensoredDistributions user hand-writes in a Turing `@model`
@@ -203,19 +209,19 @@ pooled_table = params_table(pooled)
 
 gamma_pool = compose((
     north = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:district,
+        alpha = pool(:district,
             uncertain(Gamma(2.0, 1.0);
-                shape = truncated(Normal(2.0, 1.0); lower = 0),
-                scale = truncated(Normal(1.0, 1.0); lower = 0)))),
+                alpha = truncated(Normal(2.0, 1.0); lower = 0),
+                theta = truncated(Normal(1.0, 1.0); lower = 0)))),
     east = uncertain(Gamma(2.0, 1.0);
-        shape = pool(:district,
+        alpha = pool(:district,
             uncertain(Gamma(2.0, 1.0);
-                shape = truncated(Normal(2.0, 1.0); lower = 0),
-                scale = truncated(Normal(1.0, 1.0); lower = 0))))))
+                alpha = truncated(Normal(2.0, 1.0); lower = 0),
+                theta = truncated(Normal(1.0, 1.0); lower = 0))))))
 
 (gamma_pool_dimension = ComposedDistributions.flat_dimension(gamma_pool),)
 
-# One edit to the `shape` spec moves along the whole pooling spectrum: a
+# One edit to the `alpha` spec moves along the whole pooling spectrum: a
 # [`shared`](@ref)/[`tie`](@ref) gives one tied value, an independent
 # [`uncertain`](@ref) gives unlinked per-stratum values, and [`pool`](@ref) gives
 # the population hyperparameters plus the linked per-stratum latents.
@@ -231,8 +237,9 @@ gamma_pool = compose((
 # - [`pool`](@ref) partially pools a parameter across the leaves of a group: each
 #   stratum's parameter is drawn from one shared, estimated population
 #   distribution, the middle of the pooling spectrum.
-# - An [`uncertain`](@ref) leaf carries a parameter's prior; [`params_table`](@ref)
-#   rides it on the `prior` column, `rand` draws the marginal, and
+# - An [`uncertain`](@ref) leaf carries a parameter's prior;
+#   [`composed_to_table`](@ref) rides it on the `prior` column, `rand` draws
+#   the marginal, and
 #   [`update`](@ref) collapses it to a concrete leaf, guarded by
 #   [`has_uncertain`](@ref).
 #

@@ -5,23 +5,171 @@
 # tree. These helpers do the flat-slice recursion shared by `Sequential` and
 # `Parallel`. This layer adds no censored-internal behaviour.
 
-# A composable child is any univariate distribution (a leaf or a `Resolve`), a
-# nested `Sequential` / `Parallel` / `Choose`. Used to validate composer
-# components and `Choose` alternatives.
-_is_composable(::UnivariateDistribution) = true
-_is_composable(::Union{Sequential, Parallel}) = true
-_is_composable(::Choose) = true
-_is_composable(::Any) = false
+# Implementation notes (the user-facing contract is the docstring below).
+# Every method returns a literal, so `all(is_composable, children)` folds to
+# `true` at compile time and the composer constructors on the `reconstruct`
+# gradient path keep no branch. Used both to validate a child and to
+# discriminate a one_of payload shape (`_is_prob_payload` in `Resolve.jl`),
+# so a duck-typed leaf gets the right `resolve` / `compete` error rather
+# than a misleading one.
+@doc "
 
-# Whether a value is admissible as a one_of outcome delay: a univariate leaf
-# (a plain delay, the `NoEvent` marker, or a nested `Resolve`) or a composer
-# subtree (`Sequential` / `Parallel` / `Choose`, the non-terminal branch of #466
-# Feature 3). Used by the `one_of` / `Resolve` / `Compete`
-# constructors to validate a branch payload without referencing the later-loaded
-# composer types in their method signatures.
-_is_one_of_branch(::UnivariateDistribution) = true
-_is_one_of_branch(::Union{Sequential, Parallel, Choose}) = true
-_is_one_of_branch(::Any) = false
+Whether a value is admissible as a composer child.
+
+A leaf must *implement* the univariate `Distributions` interface (`params`,
+`logpdf`, `rand`, `minimum`, `maximum`) but need not *subtype*
+`UnivariateDistribution`, so this is a blacklist rather than a whitelist: only
+the shapes the [`compose`](@ref) front ends already spend on something else are
+rejected, and any other object composes with no method defined here. A `Real`
+is a one_of branch probability, a `Tuple`/`AbstractVector` is a chain to lower
+and a `NamedTuple` a subtree to recurse, a `Pair` is an unsplatted outcome, a
+`Symbol`/`AbstractString` is a label, a `Type` is a distribution left
+unconstructed and a `Function` a [`varying`](@ref) body left unwrapped.
+
+A leaf that genuinely has one of those shapes — a leaf that subtypes `Number`,
+say — opts back in with a single method, which is the only registration a leaf
+ever needs:
+
+    ComposedDistributions.is_composable(::MyNumberLeaf) = true
+
+# Arguments
+- `x`: the candidate child (a leaf, a composer node, or neither).
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.is_composable(Gamma(2.0, 1.0))
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+# A branch probability is not a delay.
+ComposedDistributions.is_composable(0.5)
+```
+
+# See also
+- [`value_support`](@ref): the matching type-domain leaf hook.
+- [`compose`](@ref): the front end whose children this gates.
+"
+is_composable(::Union{Number, AbstractString, Symbol, AbstractArray, Tuple,
+    NamedTuple, Pair, Nothing, Missing, Function, Type}) = false
+is_composable(::Any) = true
+
+@doc "
+
+The `Distributions.ValueSupport` a leaf's draws take, in the type domain.
+
+Fixes the `ValueSupport` an [`Uncertain`](@ref) leaf reports on its own
+supertype, so a leaf that does not subtype `Distribution` can still be made
+uncertain. A leaf that subtypes `Distribution` reports the support it already
+declares; any other leaf is read off `Base.eltype`, integer-valued draws being
+`Discrete` and anything else (including a leaf declaring no `eltype`)
+`Continuous`. A duck-typed leaf therefore needs no method here unless it wants a
+support its element type does not imply.
+
+# Arguments
+- `L`: the leaf TYPE (not an instance) whose value support is read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.value_support(Gamma{Float64})
+```
+
+```@example
+using ComposedDistributions, Distributions
+
+ComposedDistributions.value_support(Poisson{Float64})
+```
+
+# See also
+- [`is_composable`](@ref): the matching admission gate for a leaf.
+- [`Uncertain`](@ref): the wrapper whose supertype this fixes.
+"
+value_support(::Type{<:Distribution{<:VariateForm, VS}}) where {VS} = VS
+function value_support(::Type{L}) where {L}
+    return eltype(L) <: Integer ? Discrete : Continuous
+end
+
+@doc "
+
+The child names of a composer node, positionally matching
+[`node_children`](@ref).
+
+Read from the node's FIRST type parameter by default, which is the layout the
+flat-vector codec already requires of any node wanting `flatten`/`unflatten`
+support (see [Writing a new composer node](@ref new-composer-node)). A node
+declaring its names there — the shape `Sequential`, `Parallel`, `Choose`,
+`Compete` and `Resolve` all use — therefore needs no method of its own, and
+the node contract is [`node_children`](@ref) and [`node_rebuild`](@ref) alone.
+
+A node holding its names elsewhere defines this explicitly; the default throws
+naming the type rather than guessing.
+
+# Arguments
+- `node`: the composer node whose child names are read.
+
+# Examples
+```@example
+using ComposedDistributions, Distributions
+
+component_names(compose((onset = Gamma(2.0, 1.0), report = Gamma(1.5, 1.0))))
+```
+
+# See also
+- [`node_children`](@ref): the children these name.
+"
+function component_names(node::AbstractComposedDistribution)
+    names = Base.unwrap_unionall(typeof(node)).parameters[1]
+    _is_name_tuple(names) || _throw_no_names(node)
+    return names
+end
+
+_is_name_tuple(x) = x isa Tuple && all(n -> n isa Symbol, x)
+
+@noinline function _throw_no_names(node)
+    T = nameof(typeof(node))
+    throw(ArgumentError(
+        "$(T) does not carry its child names as its first type parameter, " *
+        "so `component_names` cannot be derived. Give it that layout (the " *
+        "shape the flat-vector codec also requires), or define " *
+        "`ComposedDistributions.component_names(::$(T))`."))
+end
+
+# --- generic root behaviour for a multivariate composer node ---------------
+#
+# A node satisfying the contract gets these off `child_nleaves`/`node_children`
+# rather than needing its own, so a downstream node is usable as a standalone
+# root -- it can be `rand`ed, scored, measured and inspected, not merely nested.
+# That matters for fitting: DistributionsInference's default likelihood is
+# `sum(record -> logpdf(obj, record), data)`, so a node with no root `logpdf`
+# cannot be a fit root at all. The built-ins define their own and are
+# unaffected; these are strictly more general.
+
+Base.length(d::AbstractComposedDistribution{Multivariate}) = child_nleaves(d)
+
+function Base.eltype(::Type{T}) where {T <: AbstractComposedDistribution{Multivariate}}
+    P = Base.unwrap_unionall(T).parameters
+    return length(P) >= 2 && P[2] isa Type && P[2] <: Tuple ?
+           _composer_eltype(fieldtypes(P[2])) : Float64
+end
+
+function Base.rand(rng::AbstractRNG, d::AbstractComposedDistribution{Multivariate})
+    out = Vector{float(eltype(d))}(undef, length(d))
+    child_rand!(out, 0, rng, d)
+    return out
+end
+Base.rand(d::AbstractComposedDistribution{Multivariate}) = rand(default_rng(), d)
+
+function Distributions.logpdf(d::AbstractComposedDistribution{Multivariate},
+        x::AbstractVector)
+    n = child_nleaves(d)
+    length(x) == n || _throw_logpdf_dimmismatch(d, x, "event")
+    return child_logpdf(d, x, 0, n)
+end
 
 # Whether an outcome's payload is itself a composer subtree (a non-terminal
 # one_of branch, #466 Feature 3) rather than a leaf delay. A nested `Resolve`
@@ -29,7 +177,7 @@ _is_one_of_branch(::Any) = false
 # slot. A leaf delay (including the `NoEvent` marker) is terminal. Defined here
 # (not in `Resolve.jl`) so `Sequential` / `Parallel` / `Choose` are all loaded.
 _is_composer_outcome(::Union{Sequential, Parallel, Choose, AbstractOneOf}) = true
-_is_composer_outcome(::UnivariateDistribution) = false
+_is_composer_outcome(::Any) = false
 
 # Whether a one_of node is non-terminal: any outcome's payload is a composer
 # subtree. A non-terminal one_of node is multivariate (its outcomes span their
@@ -85,7 +233,7 @@ end
 # `public.jl`) and documented in `docs/src/developer/extending.md`. They are
 # reached by the qualified name (`ComposedDistributions.child_nleaves` etc.), as
 # the leaf hooks `free_leaf` / `rewrap_leaf` are. The underscored aliases
-# (`_child_nleaves` / `_child_logpdf` / `_child_rand!`) defined alongside each
+# (`child_nleaves` / `child_logpdf` / `child_rand!`) defined alongside each
 # are retained for the package's existing internal callers, so dropping the
 # underscore is source-compatible.
 #
@@ -125,8 +273,16 @@ ComposedDistributions.child_nleaves(node)
 """
 function child_nleaves end
 
-child_nleaves(::UnivariateDistribution) = 1
+child_nleaves(::Any) = 1
 child_nleaves(c::Union{Sequential, Parallel}) = length(c)
+# Any OTHER multivariate composer node: the sum of its children's widths, the
+# generic default for a "concatenating" node (one whose flat value vector is
+# just its children's laid end to end, exactly `Sequential`/`Parallel`'s own
+# semantics). A node with different combination semantics (a disjunction like
+# `Choose`, above) overrides this directly.
+function child_nleaves(d::AbstractComposedDistribution{Multivariate})
+    return _nleaves(node_children(d))
+end
 # A nested `Choose` swaps in one alternative of fixed width, so it occupies a
 # fixed flat slot only when every alternative has the same leaf count. The
 # common width is the nested Choose's leaf count; disagreeing widths cannot
@@ -142,10 +298,9 @@ end
 
 # Backward-compatible internal alias: the package's existing callers reach the
 # node contract by the underscored name.
-const _child_nleaves = child_nleaves
 
 # Total leaf count over a tuple of children. A head/tail recursion, not
-# `sum(_child_nleaves, components)`: `sum(f, ::Tuple)` over a heterogeneous tuple
+# `sum(child_nleaves, components)`: `sum(f, ::Tuple)` over a heterogeneous tuple
 # is inferred `Any` on the CI compilers (`lts`/`1`) -- it lowers to a generic
 # `mapreduce` whose accumulator type the older inference cannot resolve -- which
 # poisons every downstream `Vector{...}(undef, _nleaves(...) + 1)` constructor
@@ -155,18 +310,39 @@ const _child_nleaves = child_nleaves
 # below resolves to a concrete `Int` per step on every supported version.
 _nleaves(::Tuple{}) = 0
 function _nleaves(components::Tuple)
-    _child_nleaves(first(components)) + _nleaves(Base.tail(components))
+    child_nleaves(first(components)) + _nleaves(Base.tail(components))
+end
+
+# A child's declared value type, or `Union{}` when it declares none. Base's
+# `eltype` fallback answers `Any` for a duck-typed leaf, which carries no
+# information and must not poison the promotion -- `float(Any)` throws where
+# `_composer_rand` allocates the flat draw. `Union{}` is `promote_type`'s
+# identity, so a declining child is simply skipped.
+_value_eltype(::Type{T}) where {T} = eltype(T) === Any ? Union{} : eltype(T)
+
+# The promotion of a children tuple's value types, for a composer's `eltype`. A
+# head/tail recursion, not `mapreduce`, for the inference reason `_nleaves`
+# documents above; an all-declining tree reduces to `Union{}` and takes the
+# `Float64` default rather than the `Any` that `float` cannot widen.
+_promote_value_eltypes(::Tuple{}) = Union{}
+function _promote_value_eltypes(types::Tuple)
+    return promote_type(_value_eltype(first(types)),
+        _promote_value_eltypes(Base.tail(types)))
+end
+function _composer_eltype(types::Tuple)
+    T = _promote_value_eltypes(types)
+    return T === Union{} ? Float64 : T
 end
 
 # Number of event slots a child contributes to the flat event vector.
-# Distinct from `_child_nleaves` (the generic value-vector layout): a `Resolve`
+# Distinct from `child_nleaves` (the generic value-vector layout): a `Resolve`
 # node contributes one value (its marginal time-to-resolution) to the value
 # vector but exposes one event slot per outcome so a record's death/discharge
 # columns each land in their own slot and the observed outcome is identified
 # positionally (self-dispatch). Every other child contributes the same count
-# as `_child_nleaves`, so the value and event layouts coincide for Resolve-free
+# as `child_nleaves`, so the value and event layouts coincide for Resolve-free
 # trees and `length`/the generic value path are untouched.
-_event_child_nleaves(c) = _child_nleaves(c)
+_event_child_nleaves(c) = child_nleaves(c)
 # Both one_of nodes (the mixture `Resolve` and the racing-hazard
 # `Compete`) expose event slots per outcome. A leaf outcome (a plain
 # delay) occupies one slot; a non-terminal outcome whose payload is itself a
@@ -194,7 +370,7 @@ end
 
 # Event-slot width of one one_of outcome's payload: a leaf delay (including the
 # no-event marker) is one slot; a composer payload recurses to its subtree width.
-_one_of_outcome_slots(::UnivariateDistribution) = 1
+_one_of_outcome_slots(::Any) = 1
 function _one_of_outcome_slots(d::Union{Sequential, Parallel, Choose,
         AbstractOneOf})
     return _event_child_nleaves(d)
@@ -225,7 +401,7 @@ function _event_nleaves(components::Tuple)
 end
 
 # Sum the per-child log-densities over the matching flat slices of `x`. A leaf
-# consumes one scalar; a nested composer consumes a `_child_nleaves`-long slice
+# consumes one scalar; a nested composer consumes a `child_nleaves`-long slice
 # and recurses. The offset walk is pure control flow over the constant index, so
 # the differentiated arithmetic sees only concrete values (AD-safe).
 function _composite_logpdf(components::Tuple, x::AbstractVector)
@@ -284,16 +460,19 @@ ComposedDistributions.child_logpdf(node, x, 0, n)
 """
 function child_logpdf end
 
-child_logpdf(c::UnivariateDistribution, x, offset, ::Int) = logpdf(c, x[offset + 1])
-# `missing` in a leaf slot means the value was not observed (the ecosystem-wide
-# convention, matching the outcome-node record): its own marginal integrates to
-# 1 over its support, so an unobserved leaf contributes zero log density rather
-# than throwing. More specific than the plain method above, so it is only
-# selected when `x`'s element type actually admits `Missing`.
-function child_logpdf(c::UnivariateDistribution, x::AbstractVector{>:Missing},
-        offset, ::Int)
+# A leaf occupies one flat slot: score its own value there. `missing` in the
+# slot means the value was not observed (the ecosystem-wide convention, matching
+# the outcome-node record): its own marginal integrates to 1 over its support,
+# so an unobserved leaf contributes zero log density rather than throwing. The
+# check is on the value, not a second method on `x`'s element type: a leaf base
+# case dispatching on `::Any` would make an `AbstractVector{>:Missing}` method
+# ambiguous with the composer methods below, and for a vector that cannot hold
+# `missing` the comparison is statically false and the branch is eliminated, so
+# the AD'd path is unchanged either way.
+function child_logpdf(c, x, offset, ::Int)
     v = x[offset + 1]
-    return v === missing ? zero(nonmissingtype(eltype(x))) : logpdf(c, v)
+    v === missing && return zero(nonmissingtype(eltype(x)))
+    return logpdf(c, v)
 end
 # A nested child scores its own contiguous slice of the value vector; a `@view`
 # avoids a copy and differentiates on every supported backend.
@@ -306,9 +485,15 @@ end
 function child_logpdf(c::Choose, x, offset, n::Int)
     return child_logpdf(_flat_select_alternative(c), x, offset, n)
 end
+# Any OTHER multivariate composer node: sum the per-child log-densities over
+# the matching sub-slices of this node's own slice, the generic
+# "concatenating" default (see `child_nleaves` above).
+function child_logpdf(d::AbstractComposedDistribution{Multivariate}, x, offset,
+        n::Int)
+    return _composite_logpdf(node_children(d), @view x[(offset + 1):(offset + n)])
+end
 
 # Backward-compatible internal alias (see `child_nleaves`).
-const _child_logpdf = child_logpdf
 
 # The alternative a nested Choose commits to on the data-free path: the first.
 # The row/record path overrides this by the row's selector value (`_pick` /
@@ -365,7 +550,7 @@ out
 """
 function child_rand! end
 
-function child_rand!(out, offset, rng::AbstractRNG, c::UnivariateDistribution)
+function child_rand!(out, offset, rng::AbstractRNG, c)
     out[offset + 1] = rand(rng, c)
     return nothing
 end
@@ -395,10 +580,20 @@ end
 function child_rand!(out, offset, rng::AbstractRNG, c::Choose)
     return child_rand!(out, offset, rng, _flat_select_alternative(c))
 end
+# Any OTHER multivariate composer node: draw each child in turn into the
+# matching sub-slice of this node's own slice, the generic "concatenating"
+# default (see `child_nleaves` above).
+function child_rand!(
+        out, offset, rng::AbstractRNG, d::AbstractComposedDistribution{Multivariate})
+    sub = _composite_rand(rng, node_children(d), float(eltype(out)))
+    @inbounds for k in eachindex(sub)
+        out[offset + k] = sub[k]
+    end
+    return nothing
+end
 
 # Backward-compatible internal alias (see `child_nleaves`).
-const _child_rand! = child_rand!
 
-# The recursive indented-tree printing and the `params`/`params_table` traversal
+# The recursive indented-tree printing and the `params`/`composed_to_table` traversal
 # share the hand-rolled, type-stable helpers defined in `introspection.jl`
 # (`_named_children`, `_show_children`, `_node_header`).

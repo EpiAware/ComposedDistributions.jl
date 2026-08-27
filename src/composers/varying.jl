@@ -14,7 +14,7 @@
 #     resolved by `rand` (the marginal) or collapsed by `update`.
 #
 # They share one resolution machinery: `instantiate` rebuilds through the same
-# `_node_children` / `_rebuild` walk that `update`'s value collapse and
+# `node_children` / `node_rebuild` walk that `update`'s value collapse and
 # `structural_edits.jl`'s path edits use, rather than hand-rolling its own tree
 # walk.
 # A leaf can be both (a time-varying delay whose per-level parameter is itself
@@ -125,7 +125,7 @@ end
 A context-indexed leaf: a delay whose distribution varies with a covariate.
 
 `Varying` holds a map `f` from a covariate value to a `UnivariateDistribution`
-(e.g. `t -> Gamma(shape(t), scale)`), the `covariate` name it reads from a
+(e.g. `t -> Gamma(alpha(t), theta)`), the `covariate` name it reads from a
 [`Context`](@ref) (default `:time`), and a `reference` distribution used whenever
 the leaf is queried *without* a context. Because `Varying <: UnivariateDistribution`
 it drops into [`Sequential`](@ref) / [`Parallel`](@ref) / [`compose`](@ref) as an
@@ -146,7 +146,7 @@ convolve the concrete result.
     [`has_varying`](@ref).
 
 The varying map `f` is fixed structure (like a truncation bound or a censoring
-window), so the introspection interface ([`params_table`](@ref), [`update`](@ref))
+window), so the introspection interface ([`composed_to_table`](@ref), [`update`](@ref))
 treats the `reference`'s parameters as the free parameters and peels/rewraps
 through the wrapper; the coefficients of `f` are not (yet) inventoried (see the
 design note's open questions).
@@ -161,7 +161,7 @@ design note's open questions).
 - [`instantiate`](@ref): resolves the leaf against a context.
 - [`Context`](@ref): the covariate bag.
 "
-struct Varying{F, D <: UnivariateDistribution} <: UnivariateDistribution{Continuous}
+struct Varying{F, D} <: UnivariateDistribution{Continuous}
     "Map from a covariate value to a `UnivariateDistribution`."
     f::F
     "The `Context` field name this leaf reads (default `:time`)."
@@ -203,8 +203,8 @@ mean(instantiate(d, Context(time = 5.0))) # the delay at t = 5
 - [`instantiate`](@ref): resolve against a context.
 "
 function varying(f; covariate::Symbol = :time, reference = f(0.0))
-    reference isa UnivariateDistribution || throw(ArgumentError(
-        "varying `reference` must be a UnivariateDistribution; got " *
+    is_composable(reference) || throw(ArgumentError(
+        "varying `reference` must be a distribution-like leaf; got " *
         "$(typeof(reference))"))
     return Varying(f, covariate, reference)
 end
@@ -245,8 +245,7 @@ instantiate(sw, Context(x = 15.0))   # the `above` subtree
 - [`varying`](@ref): the general covariate-indexed map this specialises.
 "
 function threshold(covariate::Symbol, cutoff::Real;
-        below::UnivariateDistribution, above::UnivariateDistribution,
-        reference::UnivariateDistribution = below)
+        below, above, reference = below)
     return varying(x -> x < cutoff ? below : above; covariate, reference)
 end
 
@@ -288,14 +287,26 @@ logpdf(d::Varying, x::NamedTuple) = logpdf(d.reference, x)
 probs(d::Varying) = probs(d.reference)
 
 # The varying map is fixed structure; the reference carries the free parameters.
-# Peel/rewrap through the wrapper so `params_table` / `update` see the inner free
-# delay and a parameter update rebuilds the same varying leaf around it.
-free_leaf(d::Varying) = free_leaf(d.reference)
+# Peel/rewrap through the wrapper so `composed_to_table` / `update` see the
+# inner free delay and a parameter update rebuilds the same varying leaf
+# around it.
+inner_dist(d::Varying) = d.reference
 function rewrap_leaf(d::Varying, inner)
     return Varying(d.f, d.covariate, rewrap_leaf(d.reference, inner))
 end
-_shared_tag(d::Varying) = _shared_tag(d.reference)
-extra_leaf_params(d::Varying) = extra_leaf_params(d.reference)
+
+# The covariate map is fixed structure (an `:attribute` row; `map` carries a
+# live function object, so composed_to_table's in-memory round trip only, no
+# CSV), and `Varying` is a wrapper layer of its own, peeling to the
+# reference's layers.
+node_attributes(d::Varying) = (; covariate = d.covariate, map = d.f)
+
+# The reverse. The covariate map is a live function object, which is why this
+# round trip is in-memory only: no text format can carry it back.
+function from_table(::Type{<:Varying}, inner, attrs::NamedTuple)
+    return Varying(attrs.map, attrs.covariate, inner)
+end
+shared_tag(d::Varying) = shared_tag(d.reference)
 
 @doc "
 
@@ -423,7 +434,7 @@ observed_distribution(at_day5)                     # the convolution kernel at t
 - [`observed_distribution`](@ref): collapse the resolved chain to its kernel.
 "
 instantiate(d, ::Nothing) = d
-instantiate(d::UnivariateDistribution, ::AbstractContext) = d
+instantiate(d, ::AbstractContext) = d
 # Recurses into the produced subtree, not just `d.f(...)` alone: `f` can
 # itself build a composite node (a `Resolve`/`Compete`) whose own outcomes
 # may embed a further `Varying` leaf, and that nested leaf needs resolving
@@ -437,14 +448,14 @@ end
 
 # A composer resolves every child against the context and rebuilds itself
 # unchanged, so the tree shape and names are preserved and only the leaves
-# change. This reuses the `_node_children` / `_rebuild` reconstruction machinery
+# change. This reuses the `node_children` / `node_rebuild` reconstruction machinery
 # that `update`'s value walk and `structural_edits.jl`'s path edits already
 # share, so
 # resolution is not a third hand-rolled tree walk. `Resolve` / `Compete` are
 # `UnivariateDistribution`s, so these node methods win over the leaf identity.
 function instantiate(d::Union{Sequential, Parallel, Resolve, Compete},
         ctx::AbstractContext)
-    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
+    return node_rebuild(d, map(c -> instantiate(c, ctx), node_children(d)))
 end
 
 # A `Choose` selects an alternative by an observed data field (its `selector`).
@@ -458,12 +469,12 @@ function instantiate(d::Choose, ctx::AbstractContext)
     if _has_covariate(ctx, d.selector)
         return instantiate(_pick(d, _covariate(ctx, d.selector)), ctx)
     end
-    return _rebuild(d, map(c -> instantiate(c, ctx), _node_children(d)))
+    return node_rebuild(d, map(c -> instantiate(c, ctx), node_children(d)))
 end
 
 # A tagged shared leaf keeps its tag through resolution (the resolved value is
 # still the same shared parameter group); it is a wrapper leaf, so it forwards
-# into its wrapped distribution rather than through `_node_children`.
+# into its wrapped distribution rather than through `node_children`.
 function instantiate(d::Shared{tag}, ctx::AbstractContext) where {tag}
     return Shared{tag}(instantiate(d.dist, ctx))
 end
@@ -508,15 +519,21 @@ has_varying(instantiate(tree, Context(time = 5.0)))  # resolved: false
 - [`has_uncertain`](@ref): the same guard for the latent (uncertain) case.
 "
 has_varying(d::Varying) = true
-has_varying(::UnivariateDistribution) = false
+has_varying(::Any) = false
 has_varying(d::Truncated) = has_varying(d.untruncated)
 has_varying(d::Shared) = has_varying(d.dist)
-# The composer nodes recurse through the shared `_node_children` accessor (the
-# one `instantiate` also rebuilds through), so the guard is not a hand-rolled
-# per-node walk; `has_uncertain` mirrors this.
-function has_varying(d::Union{Sequential, Parallel, AbstractOneOf, Choose})
-    return any(has_varying, _node_children(d))
+# Structural dispatch against the public `AbstractComposedDistribution` root
+# (the one `instantiate` also rebuilds through via `node_children`), not a
+# closed list of the built-in types, so a downstream composer node gets this
+# for free once it defines `node_children` — `has_uncertain` mirrors this, and
+# the `::Any` leaf case above matches `has_uncertain`'s own fallback so a
+# duck-typed leaf needs no method. `AbstractOneOf` dispatches on its own line
+# since parameterising the generic method on `Multivariate` leaves a univariate
+# one_of node to the leaf fallback otherwise.
+function has_varying(d::AbstractComposedDistribution{Multivariate})
+    return any(has_varying, node_children(d))
 end
+has_varying(d::AbstractOneOf) = any(has_varying, node_children(d))
 
 # --- required_covariates / missing_covariates -------------------------------
 #
@@ -524,8 +541,8 @@ end
 # these name *which* one(s), keyed to the node paths that read them, so a
 # fitting loop can validate a data source's columns up front rather than
 # discovering a gap reactively, one covariate at a time, mid-`instantiate`.
-# A dedicated tree walk (not routed through `_node_children`) since it needs
-# per-position edge names (`component_names`), like `params_table`'s walk.
+# A dedicated tree walk (not routed through `node_children`) since it needs
+# per-position edge names (`component_names`), like `composed_to_table`'s walk.
 
 @doc "
 
@@ -536,7 +553,7 @@ that read them.
 Returns a `Dict{Symbol, Vector{Symbol}}`: each key is a covariate name a
 [`Varying`](@ref) leaf's `covariate` field or a [`Choose`](@ref)'s `selector`
 names, and each value is the dotted edge path (the same `edge` namespace
-[`params_table`](@ref) uses) of every node that reads it. A stationary tree
+[`composed_to_table`](@ref) uses) of every node that reads it. A stationary tree
 (no `Varying` leaf, no data-selected `Choose`) returns an empty `Dict`.
 
 Pair with [`missing_covariates`](@ref) to check a [`Context`](@ref) up front,
@@ -576,8 +593,8 @@ end
 # A `Choose` itself reads a covariate (its `selector`, a data-selected
 # disjunction) in addition to whatever its alternatives read; its own
 # requirement is labelled with a `:selector` suffix (mirroring how
-# `params_table` labels a `Resolve`'s own `branch_probs` row), so a root-level
-# `Choose` reports a real edge name instead of an empty path.
+# `composed_to_table` labels a `Resolve`'s own `branch_probs` row), so a
+# root-level `Choose` reports a real edge name instead of an empty path.
 function _walk_covariates!(acc, d::Choose, path)
     push!(get!(acc, d.selector, Symbol[]), _join_path((path..., :selector)))
     for (name, alt) in zip(component_names(d), d.alternatives)
@@ -607,18 +624,22 @@ function _walk_covariates!(acc, d::Distributions.Censored, path)
 end
 _walk_covariates!(acc, d::Shared, path) = _walk_covariates!(acc, d.dist, path)
 
-_walk_covariates!(acc, ::UnivariateDistribution, path) = nothing
+_walk_covariates!(acc, ::Any, path) = nothing
 
 @doc "
 
 The unpinned (estimated) parameters a composed distribution's
-[`params_table`](@ref) still needs, as `(edge, param)` pairs.
+[`composed_to_table`](@ref) still needs, as `(edge, param)` pairs.
 
 The symmetric sibling of [`required_covariates`](@ref): where that lists the
 covariate columns a tree's [`Varying`](@ref)/[`Choose`](@ref) leaves still
 need from a [`Context`](@ref), this lists the parameters an [`uncertain`](@ref)
-leaf still needs a value for (every [`params_table`](@ref) row whose `prior`
-is not `nothing`). A fully concrete (pinned) tree returns an empty vector.
+leaf still needs a value for (every `:param` row whose `prior` is not
+`nothing`). A fully concrete (pinned) tree returns an empty vector.
+
+A bare leaf (`d` is not wrapped in a composer) has no name path, so its edge
+is the empty `Symbol` (`Symbol(\"\")`) — the same root-row convention
+[`composed_to_table`](@ref) uses for a leaf at the tree root.
 
 # Arguments
 - `d`: the composed distribution, node, or leaf to inspect.
@@ -627,19 +648,20 @@ is not `nothing`). A fully concrete (pinned) tree returns an empty vector.
 ```@example
 using ComposedDistributions, Distributions
 
-tree = compose((onset = uncertain(Gamma(2.0, 1.0); shape = LogNormal(0.0, 0.3)),
+tree = compose((onset = uncertain(Gamma(2.0, 1.0); alpha = LogNormal(0.0, 0.3)),
     admit = LogNormal(0.5, 0.4)))
 required_parameters(tree)
 ```
 
 # See also
 - [`required_covariates`](@ref): the symmetric sibling over covariate columns.
-- [`params_table`](@ref): the full parameter inventory this reads.
+- [`composed_to_table`](@ref): the full structural inventory this reads.
 "
 function required_parameters(d)
-    tbl = params_table(d)
+    s = _ParamSink()
+    _walk_rows!(s, Set{Symbol}(), d, ())
     return [(edge = e, param = p)
-            for (e, p, prior) in zip(tbl.edge, tbl.param, tbl.prior)
+            for (e, p, prior) in zip(s.edge, s.param, s.prior)
             if prior !== nothing]
 end
 

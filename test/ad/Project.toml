@@ -21,6 +21,6 @@ ADFixtures = {path = "../ADFixtures"}
 ComposedDistributions = {path = "../.."}
 
 [compat]
-ConvolvedDistributions = "0.4, 1"
+ConvolvedDistributions = "0.4.1, 1"
 EpiAwareADTools = "0.1.2, 0.2"
 EpiAwarePackageTools = "0.3"
