@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   test:
-    uses: EpiAware/.github/.github/workflows/tests.yml@ce7c6223533f472468f94619907281c205c4b870
+    uses: EpiAware/.github/.github/workflows/tests.yml@2c7ce73459772f11dad46ac7f456e35f0d296faf
     with:
       # The unregistered deps are pinned via `[sources]`, which needs
       # Julia >= 1.11, so the 1.10 lts cell cannot resolve. Drop it
